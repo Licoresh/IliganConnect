@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.expo/
+.expo-map-check/
+dist/
+.env*
+!.env.example
+*.tsbuildinfo
+
+web/public/maplibre/
+app/public/maplibre/

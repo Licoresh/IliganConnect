@@ -1,0 +1,15 @@
+{
+  "name": "iligan-connect-resident-app",
+  "private": true,
+  "workspaces": ["app", "shared"],
+  "scripts": {
+    "start": "npm run start -w app",
+    "android": "npm run android -w app",
+    "ios": "npm run ios -w app",
+    "typecheck": "npm run typecheck -w app",
+    "export": "npm run export -w app"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  }
+}

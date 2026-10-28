@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Iligan Connect",
+    "slug": "iligan-connect",
+    "scheme": "iliganconnect",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Select the location of your community report."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose a profile photo or attach evidence to a report.",
+          "cameraPermission": "Take a profile photo or photograph an issue from a safe position."
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.iligan.community"
+    },
+    "android": {
+      "package": "org.iligan.community"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    }
+  }
+}

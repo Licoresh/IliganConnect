@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { parseDecimal, textInputError } from "./validation";
+export { parseDecimal, textInputError, emailInputError, passwordInputError, imageHeaderError, UUID_PATTERN, SHORT_REASON_LIMIT, characterLimitHint } from "./validation";
 export { ILIGAN_MAP_BOUNDS } from "./iligan";
 export { resolveGoogleLocation } from "./google-geocoding";
 export type { GoogleGeocodeResult, BarangayMatch, CityCheck } from "./google-geocoding";
@@ -23,16 +25,22 @@ export const transitions: Record<Status, readonly Status[]> = {
   rejected: ["under_review"],
   duplicate: ["under_review"],
 };
+function textSchema(min: number, max: number) {
+  return z.string().superRefine((value, ctx) => {
+    const message = textInputError(value, { min, max, required: min > 0 });
+    if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+  }).transform((value) => value.trim());
+}
 export const reportSchema = z.object({
   category_id: z.string().uuid("Choose a report type."),
   barangay_id: z.string().uuid("Choose a barangay."),
-  title: z.string().trim().min(8, "Use at least 8 characters for the title.").max(160, "That title is too long. Please shorten it."),
-  description: z.string().trim().min(20, "Use at least 20 characters for the description.").max(4000, "That description is too long. Please shorten it."),
-  latitude: z.coerce.number().min(-90, "Enter a valid latitude.").max(90, "Latitude must be between -90 and 90."),
-  longitude: z.coerce.number().min(-180, "Enter a valid longitude.").max(180, "Longitude must be between -180 and 180."),
-  landmark: z.string().max(240).default(""),
+  title: textSchema(8, 160),
+  description: textSchema(20, 4000),
+  latitude: z.preprocess(parseDecimal, z.number({ invalid_type_error: "Enter a decimal latitude from −90 to 90." }).finite().min(-90).max(90)),
+  longitude: z.preprocess(parseDecimal, z.number({ invalid_type_error: "Enter a decimal longitude from −180 to 180." }).finite().min(-180).max(180)),
+  landmark: textSchema(0, 240).default(""),
   problem_type: z.string().nullable().optional(),
-  problem_other: z.string().trim().max(240, "That answer is too long. Please shorten it.").nullable().optional(),
+  problem_other: textSchema(0, 240).nullable().optional(),
 });
 export function createReportSchema(categories: Lookup[]) {
   return reportSchema.superRefine((report, ctx) => {
@@ -104,7 +112,7 @@ export function distanceMeters(a: ReportMapPoint, b: ReportMapPoint) {
   return 6371000 * 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, h))));
 }
 export function parseReportCoordinates(latitude: string, longitude: string): ReportMapPoint | null {
-  const lat = Number(latitude), lon = Number(longitude);
+  const lat = parseDecimal(latitude), lon = parseDecimal(longitude);
   return latitude.trim() && longitude.trim() && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180
     ? { latitude: lat, longitude: lon } : null;
 }

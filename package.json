@@ -1,15 +1,28 @@
 {
   "name": "iligan-connect-resident-app",
   "private": true,
-  "workspaces": ["app", "shared"],
+  "workspaces": ["app", "shared", "web"],
   "scripts": {
+    "postinstall": "node scripts/prepare-map-assets.mjs",
     "start": "npm run start -w app",
+    "dev:app": "npm run start -w app",
+    "preview:app": "npm run web -w app",
+    "dev:web": "npm run dev -w web",
     "android": "npm run android -w app",
     "ios": "npm run ios -w app",
-    "typecheck": "npm run typecheck -w app",
-    "export": "npm run export -w app"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "tsx --test tests/*.test.ts",
+    "test:live": "node scripts/acceptance-live.mjs",
+    "test:storage": "node scripts/acceptance-live-storage.mjs",
+    "test:location": "node scripts/acceptance-location.mjs",
+    "test:samples": "node scripts/verify-sample-workspace.mjs",
+    "test:navigation": "node scripts/acceptance-navigation.mjs --reports",
+    "build": "npm run build -w web",
+    "export": "npm run export -w app",
+    "export:app": "npm run export -w app"
   },
   "devDependencies": {
+    "tsx": "4.23.15",
     "typescript": "~5.9.2"
   }
 }

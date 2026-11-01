@@ -6,6 +6,8 @@ dist/
 .env*
 !.env.example
 *.tsbuildinfo
+artifacts/
+graphify-out/
 
 web/public/maplibre/
 app/public/maplibre/

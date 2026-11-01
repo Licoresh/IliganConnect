@@ -1,0 +1,13 @@
+create schema if not exists private;
+revoke all on schema private from public,anon,authenticated;
+grant usage on schema private to authenticated;
+create or replace function private.is_admin() returns boolean language sql stable security definer set search_path='' as $$select exists(select 1 from public.profiles where id=auth.uid() and role='admin')$$;
+create or replace function private.can_manage(b uuid,o uuid default null) returns boolean language sql stable security definer set search_path='' as $$select exists(select 1 from public.profiles p where p.id=auth.uid() and (p.role='admin' or (p.role='barangay' and p.barangay_id=b) or (p.role='office' and exists(select 1 from public.organization_memberships m where m.user_id=p.id and m.organization_id=o))))$$;
+create or replace function private.owns_report(r uuid) returns boolean language sql stable security definer set search_path='' as $$select exists(select 1 from public.reports where id=r and resident_id=auth.uid())$$;
+create or replace function private.can_read_report(r uuid) returns boolean language sql stable security definer set search_path='' as $$select exists(select 1 from public.reports where id=r and (resident_id=auth.uid() or private.can_manage(barangay_id,organization_id)))$$;
+grant execute on function private.is_admin(),private.can_manage(uuid,uuid),private.owns_report(uuid),private.can_read_report(uuid) to authenticated;
+create or replace function public.is_admin() returns boolean language sql stable security invoker set search_path='' as $$select private.is_admin()$$;
+create or replace function public.can_manage(b uuid,o uuid default null) returns boolean language sql stable security invoker set search_path='' as $$select private.can_manage(b,o)$$;
+create or replace function public.owns_report(r uuid) returns boolean language sql stable security invoker set search_path='' as $$select private.owns_report(r)$$;
+create or replace function public.can_read_report(r uuid) returns boolean language sql stable security invoker set search_path='' as $$select private.can_read_report(r)$$;
+delete from public.barangays where name='Pala-o' and psgc_code is null;

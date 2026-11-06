@@ -5,7 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, ArrowUpRight, BadgeCheck, BarChart3, CheckCircle2, CircleAlert, Cog, FileText, Flame, Layers3, List, MapPin, MapPinned, RefreshCw, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { db, result } from "../lib/client";
-import { Report, statuses, label } from "@community/shared";
+import { Report, statuses, label, hasReportCoordinates } from "@community/shared";
 import { ILIGAN_MAP_BOUNDS } from "../../shared/iligan";
 import {
   barangayAreaKm2,
@@ -23,6 +23,7 @@ import { philippineDateBoundary } from "../lib/export";
 import { pointInPolygon } from "../lib/map-geometry";
 import { reportHeatCells } from "../lib/report-map-data";
 import { reportCategoryPresentation, reportCategoryPresentationForKey, ReportCategoryLabel, type CategoryKey } from "./report-category";
+import { reportLocalAddress } from "../lib/report-location";
 
 const categoryKeys: CategoryKey[] = ["streetlights", "roads", "drainage", "garbage", "wires", "signs", "other"];
 const markerKinds = Object.fromEntries(categoryKeys.map((key) => [key, reportCategoryPresentationForKey(key)])) as Record<CategoryKey, ReturnType<typeof reportCategoryPresentationForKey>>;
@@ -215,14 +216,16 @@ export default function IssueMap({
     reportListHeading.current?.focus({ preventScroll: true });
     reportListHeading.current?.scrollIntoView({ block: "start" });
   };
+  const coordinateReports = useMemo(() => (invalidDates ? [] : q.data ?? []).filter(hasReportCoordinates), [invalidDates, q.data]);
+  const reportsWithoutPins = (invalidDates ? 0 : q.data?.length ?? 0) - coordinateReports.length;
   const withinBoundaryReports = useMemo(() => {
-    const reports = invalidDates ? [] : q.data ?? [];
+    const reports = coordinateReports;
     if (!mapScopeFeature) return reports;
     return reports.filter((report) =>
       pointInPolygon([report.longitude, report.latitude], mapScopeFeature.geometry),
     );
-  }, [invalidDates, mapScopeFeature, q.data]);
-  const mapReports = showSavedLocations && !invalidDates ? q.data ?? [] : withinBoundaryReports;
+  }, [coordinateReports, mapScopeFeature]);
+  const mapReports = showSavedLocations ? coordinateReports : withinBoundaryReports;
   const hotspotCells = useMemo(() => reportHeatCells(mapReports.map((report) => ({
     latitude: report.latitude,
     longitude: report.longitude,
@@ -234,7 +237,7 @@ export default function IssueMap({
       .filter((item) => item.count > 0)
       .sort((a, b) => b.count - a.count);
   }, [mapReports, refs.categories]);
-  const outOfScopeMapReports = Math.max(0, (invalidDates ? 0 : q.data?.length ?? 0) - withinBoundaryReports.length);
+  const outOfScopeMapReports = coordinateReports.length - withinBoundaryReports.length;
   const reportCountsByBarangay = useMemo(() => {
     return (invalidDates ? [] : gis.data ?? []).reduce<Record<string, number>>((counts, row) => {
       counts[barangayMapKey(row.barangay_name)] = Number(row.report_count);
@@ -645,9 +648,9 @@ export default function IssueMap({
     setShowSavedLocations(show);
     const target = map.current;
     if (!target || !mapScopeFeature) return;
-    if (show && q.data?.length) {
+    if (show && coordinateReports.length) {
       const locations = new maplibregl.LngLatBounds(...boundsForBoundary(mapScopeFeature));
-      q.data.forEach((report) => locations.extend([report.longitude, report.latitude]));
+      coordinateReports.forEach((report) => locations.extend([report.longitude, report.latitude]));
       target.fitBounds(locations, { padding: compact ? 32 : 52, maxZoom: 15, duration: 360 });
     } else target.fitBounds(boundsForBoundary(mapScopeFeature), { padding: compact ? 32 : 52, maxZoom: 14, duration: 360 });
   };
@@ -761,6 +764,7 @@ export default function IssueMap({
         </p>
       )}
       {!overview && scopeWarning}
+      {mode !== "barangays" && reportsWithoutPins > 0 && <p className="notice" role="status">{reportsWithoutPins} {reportsWithoutPins === 1 ? "report uses a manual address" : "reports use manual addresses"} without map pins. {hideReportList ? "Their Purok, Zone and location details are available in Issue reports." : "Open the report list to review their Purok, Zone and location details."}{overview && mode !== "list" && <button type="button" className="secondary" onClick={() => setMode("list")}>Open report list</button>}</p>}
       {q.data?.length === 1000 && <p className="notice" role="status">Pins and the report list are limited to 1,000 matching reports. Narrow the filters for detail. Barangay GIS totals count all permitted matches.</p>}
       {overview ? <div className="overview-map-stage">
         <div ref={container} className={`map${mode === "list" || (mode === "map" && tileError) ? " hidden" : ""}`} aria-label={mode === "barangays" ? "Barangay report count map" : "Iligan issue map"} />
@@ -866,6 +870,8 @@ export default function IssueMap({
                 <th scope="row"><button className="report-title" aria-label={`Open report: ${r.title}`} onClick={() => setSelectedId(r.id)}><span>{r.title}</span><ArrowUpRight size={15} aria-hidden="true" /></button>
                   <small className="record-meta">{r.id.slice(0, 8).toUpperCase()}{r.severity && ` · Severity ${r.severity}/5`}</small></th>
                 <td data-label="Location"><span className="report-location"><MapPin size={13} aria-hidden="true" /><strong>{locationName}</strong></span>
+                  {reportLocalAddress(r) && <small className="record-meta">{reportLocalAddress(r)}</small>}
+                  {!hasReportCoordinates(r) && <small className="record-meta">Manual address · no map pin</small>}
                   <ReportCategoryLabel name={categoryName} compact className="report-category" /></td>
                 <td data-label="Status"><span className={`badge ${r.status}`}>{label(r.status)}</span></td>
                 <td data-label="Office">{officeName}</td>

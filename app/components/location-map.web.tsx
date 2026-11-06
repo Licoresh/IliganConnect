@@ -5,7 +5,7 @@ import type { MapProps, MapStyle } from "./location-map";
 import * as maplibre from "maplibre-gl";
 import { aggregateReportCells } from "@community/shared";
 import { barangayAreaKm2, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
-import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor } from "./ui";
+import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, colors } from "./ui";
 import "maplibre-gl/dist/maplibre-gl.css";
 const EMPTY_POINTS: NonNullable<MapProps["points"]> = [];
 export default function LocationMap({
@@ -19,7 +19,6 @@ export default function LocationMap({
   userPoint,
   density = false,
   showPoints = true,
-  showClusterCounts = true,
   selectedPointId,
   height = 300,
   onExpand,
@@ -39,26 +38,22 @@ export default function LocationMap({
     map = useRef<maplibre.Map | null>(null),
     choose = useRef(onChoose),
     pointPress = useRef(onPointPress),
-    pointData = useRef(points),
     densityCellPress = useRef(onDensityCellPress),
     barangayPress = useRef(onBarangayPress),
     backgroundPress = useRef(onMapBackgroundPress),
     barangayView = useRef(showBarangayBoundaries),
     viewportChange = useRef(onViewportChange),
-    hoverPopup = useRef<maplibre.Popup | null>(null),
-    hoveredPointId = useRef<string>(""),
-    hoveredFeatureId = useRef<string | number | undefined>(undefined),
     markers = useRef<maplibre.Marker[]>([]);
   choose.current = onChoose;
   pointPress.current = onPointPress;
-  pointData.current = points;
   densityCellPress.current = onDensityCellPress;
   barangayPress.current = onBarangayPress;
   backgroundPress.current = onMapBackgroundPress;
   barangayView.current = showBarangayBoundaries;
   viewportChange.current = onViewportChange;
   const pointsKey = useMemo(() => points.map((p) => `${p.id}:${p.latitude}:${p.longitude}`).join("|"), [points]);
-  const reportCells = useMemo(() => aggregateReportCells(points), [points]);
+  const reportPoints = useMemo(() => points.filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180), [points]);
+  const reportCells = useMemo(() => aggregateReportCells(reportPoints), [reportPoints]);
   const barangayCountsKey = useMemo(() => JSON.stringify([barangayCounts, selectedBarangayName, barangayMetric]), [barangayCounts, selectedBarangayName, barangayMetric]);
   const maxBarangayDensity = useMemo(() => Math.max(0, ...iliganBarangayBoundaries.map((item) => barangayDensity(barangayCounts[barangayMapKey(item.properties.adm4_en)] ?? 0, barangayAreaKm2(item)))), [barangayCounts]);
   const [ready, setReady] = useState(false),
@@ -73,6 +68,7 @@ export default function LocationMap({
     maplibre.setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
     const m = new maplibre.Map({
       container: container.current,
+      attributionControl: { compact: true },
       center: initialRegion ? [initialRegion.longitude, initialRegion.latitude] : [124.2452, 8.228],
       zoom: initialRegion ? Math.max(2, Math.min(18, Math.log2(360 / initialRegion.longitudeDelta))) : 11.2,
       maxBounds: bounds ? [[bounds.southWest.longitude, bounds.southWest.latitude], [bounds.northEast.longitude, bounds.northEast.latitude]] : undefined,
@@ -102,7 +98,6 @@ export default function LocationMap({
           },
           density: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
           barangays: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
-          reports: { type: "geojson", data: { type: "FeatureCollection", features: [] }, cluster: true, clusterRadius: 48, clusterMaxZoom: 14 },
         },
         layers: [
           { id: "osm", type: "raster", source: "osm", layout: { visibility: base === "map" ? "visible" : "none" } },
@@ -113,17 +108,25 @@ export default function LocationMap({
           } },
           { id: "barangay-fill", type: "fill", source: "barangays", paint: { "fill-color": ["get", "fill"], "fill-opacity": 0.58, "fill-outline-color": "#ffffff" } },
           { id: "barangay-outline", type: "line", source: "barangays", paint: { "line-color": ["case", ["get", "selected"], "#083f75", "#ffffff"], "line-width": ["case", ["get", "selected"], 3, 1.25], "line-opacity": 0.92 } },
-          { id: "report-cluster-halo", type: "circle", source: "reports", filter: ["has", "point_count"], layout: { visibility: "none" }, paint: { "circle-color": "#08756b", "circle-radius": ["step", ["get", "point_count"], 26, 10, 30, 25, 36], "circle-opacity": 0.18, "circle-blur": 0.35 } },
-          { id: "report-clusters", type: "circle", source: "reports", filter: ["has", "point_count"], layout: { visibility: "none" }, paint: { "circle-color": ["step", ["get", "point_count"], "#0b8f84", 10, "#08756b", 25, "#075c55"], "circle-radius": ["step", ["get", "point_count"], 19, 10, 23, 25, 28], "circle-stroke-width": 3, "circle-stroke-color": "#fff" } },
-          { id: "report-cluster-count", type: "symbol", source: "reports", filter: ["has", "point_count"], layout: { visibility: "none", "text-field": ["get", "point_count_abbreviated"], "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"], "text-size": 13, "text-allow-overlap": true }, paint: { "text-color": "#fff" } },
-          { id: "report-point-halo", type: "circle", source: "reports", filter: ["!", ["has", "point_count"]], layout: { visibility: "none" }, paint: { "circle-color": ["get", "color"], "circle-radius": 12, "circle-opacity": 0.22, "circle-blur": 0.4 } },
-          { id: "report-points", type: "circle", source: "reports", filter: ["!", ["has", "point_count"]], layout: { visibility: "none" }, paint: { "circle-color": ["get", "color"], "circle-radius": ["case", ["boolean", ["feature-state", "hover"], false], 9, 7], "circle-stroke-width": 2.5, "circle-stroke-color": "#fff" } },
         ],
       },
       maxPitch: 70,
     });
     map.current = m;
-    m.on("load", () => setReady(true));
+    let resizeFrame = 0;
+    const resize = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        if (container.current?.clientWidth && container.current.clientHeight) m.resize();
+      });
+    });
+    resize.observe(container.current);
+    m.on("load", () => {
+      const attribution = m.getContainer().querySelector("details.maplibregl-ctrl-attrib");
+      attribution?.classList.remove("maplibregl-compact-show");
+      attribution?.removeAttribute("open");
+      setReady(true);
+    });
     m.on("click", (e) => {
       if (barangayView.current) {
         if (!m.queryRenderedFeatures(e.point, { layers: ["barangay-fill"] }).length) backgroundPress.current?.();
@@ -135,77 +138,9 @@ export default function LocationMap({
       const count = Number(e.features?.[0]?.properties?.count);
       if (count) densityCellPress.current?.(count);
     });
-    const reportForFeature = (feature?: maplibre.MapGeoJSONFeature) => {
-      const id = String(feature?.properties?.id ?? "");
-      return pointData.current.find((item) => item.id === id);
-    };
-    const reportCard = (p: NonNullable<MapProps["points"]>[number], interactive: boolean) => {
-      const card = document.createElement("article");
-      card.style.cssText = "display:grid;gap:6px;min-width:190px;max-width:260px;padding:12px 14px;border:1px solid #e0e9e6;border-radius:14px;background:#fff;color:#10263f;box-shadow:0 6px 18px #173b3a20;font-family:system-ui,sans-serif";
-      const category = document.createElement("span");
-      category.textContent = p.categoryName ? categoryDisplayName(p.categoryName) : "Community report";
-      category.style.cssText = `color:${p.color || "#08756b"};font-size:10px;font-weight:800;letter-spacing:.04em`;
-      const title = document.createElement("strong");
-      title.textContent = p.title || "Reported issue";
-      title.style.cssText = "color:#10263f;font-size:13px;line-height:17px";
-      const meta = document.createElement("span");
-      meta.textContent = [p.statusLabel, p.barangayName && `${p.barangayName} · approximate location`].filter(Boolean).join(" · ");
-      meta.style.cssText = "color:#647571;font-size:11px;line-height:15px";
-      card.append(category, title, meta);
-      if (interactive) {
-        const action = document.createElement("button");
-        action.type = "button";
-        action.textContent = "View report details";
-        action.style.cssText = "min-height:36px;margin-top:3px;border:0;border-radius:10px;background:#e5f6f2;color:#08756b;font-size:11px;font-weight:800;cursor:pointer";
-        action.addEventListener("click", (event) => { event.stopPropagation(); pointPress.current?.(p); hoverPopup.current?.remove(); hoverPopup.current = null; });
-        card.append(action);
-      }
-      return card;
-    };
-    m.on("mouseenter", "report-points", () => { m.getCanvas().style.cursor = "pointer"; });
-    m.on("mousemove", "report-points", (event) => {
-      const feature = event.features?.[0], report = reportForFeature(feature);
-      if (!feature || !report) return;
-      const featureId = feature.id;
-      if (featureId !== undefined && hoveredFeatureId.current !== featureId) {
-        if (hoveredFeatureId.current !== undefined) m.setFeatureState({ source: "reports", id: hoveredFeatureId.current }, { hover: false });
-        hoveredFeatureId.current = featureId;
-        m.setFeatureState({ source: "reports", id: featureId }, { hover: true });
-      }
-      const id = String(report.id);
-      if (hoveredPointId.current !== id) {
-        hoverPopup.current?.remove();
-        hoveredPointId.current = id;
-        hoverPopup.current = new maplibre.Popup({ closeButton: false, closeOnClick: false, closeOnMove: false, offset: 12, maxWidth: "280px", className: "report-pin-popup" })
-          .setDOMContent(reportCard(report, false)).addTo(m);
-      }
-      hoverPopup.current?.setLngLat(event.lngLat);
-    });
-    m.on("mouseleave", "report-points", () => {
-      m.getCanvas().style.cursor = "";
-      if (hoveredFeatureId.current !== undefined) m.setFeatureState({ source: "reports", id: hoveredFeatureId.current }, { hover: false });
-      hoveredFeatureId.current = undefined;
-      hoveredPointId.current = "";
-      hoverPopup.current?.remove();
-      hoverPopup.current = null;
-    });
-    m.on("click", "report-points", (event) => {
-      const feature = event.features?.[0], report = reportForFeature(feature);
-      if (!report) return;
-      pointPress.current?.(report);
-      hoverPopup.current?.remove();
-      hoverPopup.current = new maplibre.Popup({ closeButton: true, closeOnClick: true, offset: 14, maxWidth: "290px", className: "report-pin-popup" })
-        .setLngLat(event.lngLat).setDOMContent(reportCard(report, true)).addTo(m);
-    });
     m.on("click", "barangay-fill", (e) => {
       const name = e.features?.[0]?.properties?.name;
       if (typeof name === "string") barangayPress.current?.(name);
-    });
-    m.on("click", "report-clusters", (e) => {
-      const cluster = e.features?.[0], clusterId = Number(cluster?.properties?.cluster_id);
-      if (!cluster || !Number.isFinite(clusterId)) return;
-      (m.getSource("reports") as maplibre.GeoJSONSource).getClusterExpansionZoom(clusterId)
-        .then((zoom) => m.easeTo({ center: (cluster.geometry as GeoJSON.Point).coordinates as [number, number], zoom, duration: 300 }));
     });
     m.on("moveend", () => {
       const bounds = m.getBounds(), center = m.getCenter();
@@ -215,8 +150,8 @@ export default function LocationMap({
       setError(onChoose ? "Map tiles unavailable. Use current location or enter coordinates below." : "Map tiles unavailable. Try another base layer or switch to List view."),
     );
     return () => {
-      hoverPopup.current?.remove();
-      hoverPopup.current = null;
+      resize.disconnect();
+      cancelAnimationFrame(resizeFrame);
       markers.current.forEach((marker) => marker.remove());
       markers.current = [];
       m.remove();
@@ -231,32 +166,23 @@ export default function LocationMap({
       if (!current.isStyleLoaded()) { current.once("idle", update); return; }
       for (const id of ["osm", "topo", "imagery"])
         current.setLayoutProperty(id, "visibility", id === (base === "map" ? "osm" : base === "terrain" ? "topo" : "imagery") ? "visible" : "none");
-       current.setLayoutProperty("report-density", "visibility", density && points.length && !showBarangayBoundaries ? "visible" : "none");
+      current.setLayoutProperty("report-density", "visibility", density && points.length && !showBarangayBoundaries ? "visible" : "none");
       current.setLayoutProperty("barangay-fill", "visibility", showBarangayBoundaries ? "visible" : "none");
       current.setLayoutProperty("barangay-outline", "visibility", showBarangayBoundaries ? "visible" : "none");
-       for (const id of ["report-clusters", "report-cluster-count", "report-cluster-halo"])
-         current.setLayoutProperty(id, "visibility", showPoints && showClusterCounts && !showBarangayBoundaries ? "visible" : "none");
-       for (const id of ["report-points", "report-point-halo"])
-         current.setLayoutProperty(id, "visibility", showPoints && !showBarangayBoundaries ? "visible" : "none");
       current.easeTo({ pitch: base === "terrain" ? 45 : 0, duration: 350 });
     };
     update();
     return () => { map.current?.off("idle", update); };
-  }, [base, density, ready, points.length, showPoints, showClusterCounts, showBarangayBoundaries]);
+  }, [base, density, ready, points.length, showBarangayBoundaries]);
   useEffect(() => {
     if (!ready || !map.current) return;
-    const reports: GeoJSON.FeatureCollection<GeoJSON.Point> = { type: "FeatureCollection", features: points.filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180).map((p) => ({
-      type: "Feature", id: p.id, geometry: { type: "Point", coordinates: [p.longitude, p.latitude] },
-      properties: { id: p.id, weight: 1, color: p.color || "#08756b" },
-    })) };
     const cells: GeoJSON.FeatureCollection<GeoJSON.Polygon> = { type: "FeatureCollection", features: reportCells.map((cell) => ({
       type: "Feature", geometry: { type: "Polygon", coordinates: [
         [...cell.bounds.map(({ latitude, longitude }) => [longitude, latitude] as [number, number]), [cell.bounds[0].longitude, cell.bounds[0].latitude]],
       ] }, properties: { count: cell.count, color: cell.color },
     })) };
     (map.current.getSource("density") as maplibre.GeoJSONSource).setData(cells);
-    (map.current.getSource("reports") as maplibre.GeoJSONSource).setData(reports);
-  }, [ready, pointsKey]);
+  }, [ready, reportCells]);
   useEffect(() => {
     if (!ready || !showBarangayBoundaries || !map.current) return;
     const area = bounds;
@@ -282,10 +208,10 @@ export default function LocationMap({
   useEffect(() => {
     if (!ready || !map.current) return;
     const previous = new Map(markers.current.map((marker) => [marker.getElement().dataset.markerKey, marker]));
-    markers.current = [...(point ? [point] : []), ...(userPoint ? [userPoint] : [])].map((p) => {
+    markers.current = [...(point ? [point] : []), ...(userPoint ? [userPoint] : []), ...(showPoints && !showBarangayBoundaries ? reportPoints : [])].map((p, index) => {
       const isUser = p === userPoint;
-      const markerKey = isUser ? "user" : point ? "chosen" : p.id ?? `${p.latitude}:${p.longitude}`;
-      const signature = JSON.stringify([p.latitude, p.longitude, p.title, p.subtitle, p.categoryName, p.color, p.createdAt, p.photoUrl, p.statusLabel, p.barangayName, !!onChoose]);
+      const markerKey = isUser ? "user" : p === point ? "chosen" : p.id ?? `${p.latitude}:${p.longitude}:${index}`;
+      const signature = JSON.stringify([p.latitude, p.longitude, p.title, p.subtitle, p.categoryName, p.color, p.createdAt, p.photoUrl, p.photoCredit, p.statusLabel, p.barangayName, !!onChoose]);
       const existing = previous.get(markerKey);
       previous.delete(markerKey);
       if (existing?.getElement().dataset.signature === signature) return existing;
@@ -326,14 +252,14 @@ export default function LocationMap({
         pin.append(hover);
         pin.addEventListener("click", () => pointPress.current?.(p));
       }
-      const marker = new maplibre.Marker({ element: pin, anchor: "bottom", draggable: !!point && !!onChoose })
+      const marker = new maplibre.Marker({ element: pin, anchor: "bottom", draggable: p === point && !!onChoose })
         .setLngLat([p.longitude, p.latitude])
         .addTo(map.current!);
       if (p.title || p === userPoint) {
         const popup = new maplibre.Popup({ closeButton: false, offset: 18, maxWidth: "280px", className: "report-pin-popup" });
         const card = document.createElement("article");
         card.className = "report-pin-card";
-        card.style.cssText = "width:276px;box-sizing:border-box;padding:12px;border:1px solid #e0e9e6;border-radius:18px;background:#fff;color:#10263f;box-shadow:0 6px 18px #173b3a24;font-family:system-ui,sans-serif";
+        card.style.cssText = `width:276px;box-sizing:border-box;padding:12px;border:1px solid ${colors.line};border-radius:18px;background:#fff;color:${colors.brandDark};box-shadow:0 6px 18px #173b3a24;font-family:system-ui,sans-serif`;
         const top = document.createElement("div");
         top.className = "report-pin-card__top";
         const eyebrow = document.createElement("span");
@@ -359,7 +285,7 @@ export default function LocationMap({
         const title = document.createElement("strong");
         title.className = "report-pin-card__title";
         title.textContent = isUser ? "You are here" : p.title!;
-        title.style.cssText = "display:block;color:#10263f;font-size:14px;line-height:18px;font-weight:800";
+        title.style.cssText = "display:block;color:#12343d;font-size:14px;line-height:18px;font-weight:800";
         const content = document.createElement("div");
         content.style.cssText = "display:flex;align-items:stretch;gap:10px;min-width:0";
         const details = document.createElement("div");
@@ -406,6 +332,19 @@ export default function LocationMap({
             viewer.addEventListener("click", (e) => { if (e.target === viewer) dismiss(); });
             viewer.addEventListener("keydown", (e) => { if (e.key === "Escape") dismiss(); });
             viewer.append(fullImage, close);
+            if (p.photoCredit?.attribution) {
+              const credit = document.createElement("aside");
+              credit.style.cssText = "position:absolute;bottom:20px;left:20px;right:20px;max-height:180px;overflow:auto;padding:12px;border-radius:12px;background:#06111eee;color:#e3efed;font:12px/17px system-ui,sans-serif";
+              credit.textContent = p.photoCredit.attribution;
+              if (p.photoCredit.source_url?.startsWith("https://")) {
+                const source = document.createElement("a");
+                source.href = p.photoCredit.source_url; source.target = "_blank"; source.rel = "noopener noreferrer";
+                source.textContent = "Original source and license ↗";
+                source.style.cssText = "display:block;min-height:44px;padding-top:8px;color:#8ce0d0";
+                credit.append(source);
+              }
+              viewer.append(credit);
+            }
             document.body.append(viewer);
             close.focus();
           });
@@ -418,14 +357,14 @@ export default function LocationMap({
           const subtitle = document.createElement("p");
           subtitle.className = "report-pin-card__subtitle";
           subtitle.textContent = p.barangayName ? `${p.barangayName} · approximate location` : p.subtitle;
-          subtitle.style.cssText = "margin:0;color:#647571;font-size:11px;line-height:15px";
+          subtitle.style.cssText = "margin:0;color:#5d7378;font-size:11px;line-height:15px";
           details.append(subtitle);
         }
         if (!isUser && p.createdAt) {
           const date = document.createElement("p");
           date.className = "report-pin-card__subtitle";
           date.textContent = new Date(p.createdAt).toLocaleDateString();
-          date.style.cssText = "margin:0;color:#647571;font-size:11px;line-height:15px";
+          date.style.cssText = "margin:0;color:#5d7378;font-size:11px;line-height:15px";
           details.append(date);
         }
         content.append(details);
@@ -435,7 +374,7 @@ export default function LocationMap({
           action.className = "report-pin-card__action";
           action.type = "button";
           action.textContent = "View report details";
-          action.style.cssText = "width:100%;min-height:38px;margin-top:10px;border:0;border-radius:12px;background:#e5f6f2;color:#08756b;font-size:12px;font-weight:800;cursor:pointer";
+          action.style.cssText = `width:100%;min-height:48px;margin-top:10px;border:0;border-radius:12px;background:${colors.brandSoft};color:${colors.brand};font-size:12px;font-weight:800;cursor:pointer`;
           action.addEventListener("click", (event) => { event.stopPropagation(); pointPress.current?.(p); popup.remove(); });
           const note = document.createElement("p");
           note.className = "report-pin-card__note";
@@ -455,7 +394,7 @@ export default function LocationMap({
       return marker;
     });
     previous.forEach((marker) => marker.remove());
-  }, [point?.latitude, point?.longitude, ready, userPoint?.latitude, userPoint?.longitude, !!onChoose]);
+  }, [point?.latitude, point?.longitude, ready, userPoint?.latitude, userPoint?.longitude, !!onChoose, reportPoints, showPoints, showBarangayBoundaries]);
   useEffect(() => {
     markers.current.forEach((marker) => {
       const element = marker.getElement();
@@ -473,15 +412,31 @@ export default function LocationMap({
   }, [point?.latitude, point?.longitude, pointsKey, ready, userPoint?.latitude, userPoint?.longitude, selectedPointId]);
   return (
     <>
-      <style>{`.report-photo-lightbox{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:24px;background:#06111eee}.report-photo-lightbox img{max-width:100%;max-height:100%;object-fit:contain}.report-photo-lightbox__close{position:fixed;top:max(18px,env(safe-area-inset-top));right:18px;width:44px;height:44px;border:0;border-radius:50%;background:#fff;color:#10263f;font-size:30px;line-height:1;cursor:pointer}.report-photo-lightbox__close:focus-visible{outline:3px solid #f5b840;outline-offset:2px}.report-pin-card__photo-button{display:block;width:100%;padding:0;border:0;background:transparent;text-align:left;cursor:zoom-in}`}</style>
+      <style>{`
+        .report-map-pin{width:48px;height:48px;padding:6px;border:0;border-radius:50%;background:transparent;cursor:pointer;overflow:visible}
+        .report-map-pin__core{display:flex;width:36px;height:36px;align-items:center;justify-content:center;border:3px solid #fff;border-radius:50%;background:var(--pin-color,${colors.brand});color:#fff;box-shadow:0 2px 8px #173b3a66;font:20px Ionicons,ionicons,sans-serif;box-sizing:border-box}
+        .report-map-pin--you .report-map-pin__core{border-radius:50%;transform:none}
+        .report-map-pin--selected .report-map-pin__core{box-shadow:0 0 0 4px #f5b840aa,0 2px 8px #173b3a66}
+        .report-map-pin:focus-visible{outline:3px solid #f5b840;outline-offset:3px}
+        .report-map-pin__hover{display:none;position:absolute;bottom:48px;left:50%;transform:translateX(-50%);width:180px;padding:10px;border-radius:12px;background:#fff;color:#12343d;box-shadow:0 3px 14px #173b3a33;text-align:left;font:12px/1.4 system-ui,sans-serif;pointer-events:none}
+        .report-map-pin__hover strong,.report-map-pin__hover span{display:block;overflow-wrap:anywhere}
+        .report-map-pin:hover .report-map-pin__hover,.report-map-pin:focus-visible .report-map-pin__hover{display:block}
+        .report-pin-popup .maplibregl-popup-content{padding:0;border-radius:18px;box-shadow:none}
+        .report-pin-card__close{margin-left:auto;min-width:48px;min-height:48px;border:0;border-radius:50%;background:#eef5f3;color:#12343d;font-size:24px;cursor:pointer}
+        .maplibregl-ctrl-attrib.maplibregl-compact{min-width:48px;min-height:48px;padding:0;box-sizing:border-box}
+        .maplibregl-ctrl-attrib.maplibregl-compact-show{padding:8px 54px 8px 10px;max-width:min(280px,calc(100vw - 64px))}
+        .maplibregl-ctrl-attrib-button{width:48px;height:48px;background-repeat:no-repeat;background-position:center;background-size:24px 24px}
+      `}</style>
+      <style>{`.report-photo-lightbox{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:24px;background:#06111eee}.report-photo-lightbox img{max-width:100%;max-height:100%;object-fit:contain}.report-photo-lightbox__close{position:fixed;top:max(18px,env(safe-area-inset-top));right:18px;width:48px;height:48px;border:0;border-radius:50%;background:#fff;color:#12343d;font-size:30px;line-height:1;cursor:pointer}.report-photo-lightbox__close:focus-visible{outline:3px solid #f5b840;outline-offset:2px}.report-pin-card__photo-button{display:block;width:100%;padding:0;border:0;background:transparent;text-align:left;cursor:zoom-in}`}</style>
       <View>
       <div style={{ position: "relative" }}>
         <div ref={container} style={{ height, borderRadius: 16, overflow: "hidden" }} aria-label="Community location map" />
-        <View style={{ position: "absolute", left: 10, top: 10, flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 13, padding: 4, backgroundColor: "white", elevation: 3 }}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Map style" accessibilityState={{ expanded: stylePickerOpen }} onPress={() => setStylePickerOpen(!stylePickerOpen)} style={{ minHeight: 40, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, borderRadius: 10, backgroundColor: "#e8f1ee" }}><Ionicons name="layers-outline" size={15} color="#08756b" /><Text style={{ color: "#08756b", fontSize: 11, fontWeight: "800" }}>{baseName}</Text><Ionicons name={stylePickerOpen ? "chevron-up" : "chevron-down"} size={12} color="#08756b" /></Pressable>
-          {stylePickerOpen && (["map", "terrain", "satellite"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); setStylePickerOpen(false); }} style={{ minHeight: 40, paddingHorizontal: 9, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: base === value ? "#e8f1ee" : "white" }}><Text style={{ color: base === value ? "#08756b" : "#526461", fontSize: 10, fontWeight: "700" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text></Pressable>)}
+        <View style={{ position: "absolute", left: 10, top: 10, flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 13, padding: 4, backgroundColor: "white", elevation: 3, zIndex: 4 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Map style" accessibilityState={{ expanded: stylePickerOpen }} onPress={() => setStylePickerOpen(!stylePickerOpen)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, borderRadius: 10, backgroundColor: colors.brandSoft }}><Ionicons name="layers-outline" size={15} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 11, fontWeight: "800" }}>{baseName}</Text><Ionicons name={stylePickerOpen ? "chevron-up" : "chevron-down"} size={12} color={colors.brand} /></Pressable>
+          {stylePickerOpen && <View style={{ position: "absolute", top: 60, left: 0, width: 150, gap: 4, padding: 4, borderWidth: 1, borderColor: "#e0e9e6", borderRadius: 12, backgroundColor: "white", elevation: 3 }}>
+            {(["map", "terrain", "satellite"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} accessibilityLabel={`${value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}${base === value ? ", selected" : ""}`} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); setStylePickerOpen(false); }} style={{ minHeight: 48, paddingHorizontal: 10, borderRadius: 9, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: base === value ? colors.brandSoft : colors.surface }}><Text style={{ color: base === value ? colors.brand : colors.muted, fontSize: 14, fontWeight: "700" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text>{base === value && <Ionicons name="checkmark" size={18} color={colors.brand} />}</Pressable>)}
+          </View>}
         </View>
-        {base !== "map" && <View pointerEvents="none" style={{ position: "absolute", left: 12, bottom: density ? 80 : 12, backgroundColor: "#ffffffeb", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5 }}><Text style={{ color: "#526461", fontSize: 9 }}>{base === "terrain" ? "© OpenStreetMap · SRTM · OpenTopoMap (CC-BY-SA)" : "Source: Esri, Vantor, Earthstar Geographics, GIS User Community"}</Text></View>}
         {density && <View pointerEvents="none" style={{ position: "absolute", left: 10, bottom: 10, width: 194, maxWidth: "calc(100% - 20px)", borderRadius: 12, paddingHorizontal: 9, paddingVertical: 7, backgroundColor: "#ffffffed", boxShadow: "0 3px 12px #173b3a30" } as never}>
           {!points.length ? <Text style={{ color: "#526461", fontSize: 10, fontWeight: "700" }}>No matching reports</Text> : <>
             <Text style={{ color: "#173b3a", fontSize: 10, fontWeight: "800", marginBottom: 4 }}>Reports / 250 m cell</Text>
@@ -490,12 +445,12 @@ export default function LocationMap({
           </>}
         </View>}
         <div style={{ position: "absolute", right: 12, top: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-          {[["Zoom in", "+", () => map.current?.zoomIn({ duration: 180 })], ["Zoom out", "−", () => map.current?.zoomOut({ duration: 180 })]].map(([label, icon, action]) => <button key={label as string} type="button" aria-label={label as string} onClick={action as () => void} style={{ width: 48, height: 48, border: 0, borderRadius: 14, background: "white", color: "#173b3a", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>{icon as string}</button>)}
+          {[["Zoom in", "+", () => map.current?.zoomIn({ duration: 180 })], ["Zoom out", "−", () => map.current?.zoomOut({ duration: 180 })]].map(([label, icon, action]) => <button key={label as string} type="button" aria-label={label as string} onClick={action as () => void} style={{ width: 48, height: 48, border: 0, borderRadius: 14, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>{icon as string}</button>)}
           <button type="button" aria-label={userPoint ? "Recenter on my location" : locating ? "Finding your location" : "Find my location"} disabled={locating} onClick={() => {
             if (userPoint) map.current?.easeTo({ center: [userPoint.longitude, userPoint.latitude], zoom: 13, duration: 250 });
             else onLocate?.();
-          }} style={{ width: 48, height: 48, border: 0, borderRadius: 14, background: "white", color: "#173b3a", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>◎</button>
-          {onExpand && <button type="button" aria-label="Expand map" onClick={onExpand} style={{ width: 44, height: 44, border: 0, borderRadius: 12, background: "white", color: "#173b3a", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer" }}>⛶</button>}
+          }} style={{ width: 48, height: 48, border: 0, borderRadius: 14, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>◎</button>
+          {onExpand && <button type="button" aria-label="Expand map" onClick={onExpand} style={{ width: 48, height: 48, border: 0, borderRadius: 12, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer" }}>⛶</button>}
         </div>
       </div>
       {error && <Text>{error}</Text>}

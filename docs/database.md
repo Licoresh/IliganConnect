@@ -1,5 +1,31 @@
 # Database
 
+## Official severity and urgency — 2026-11-07
+
+Migration `20261106171215_report_severity_urgency` adds nullable integer `reports.urgency` (1–5) and append-only `report_assessments` with report, authenticated staff actor, both ratings, rationale and timestamp. Existing severity is retained; historical urgency stays NULL. Severity describes impact (Minor through Severe); urgency describes time sensitivity (Routine through Immediate review). These are human review ratings, not guaranteed response deadlines. The count/severity/age prioritization formula is unchanged.
+
+Verification through `change_report` requires explicit severity and urgency and atomically saves the status/history/assessment. Its eighth, trailing `p_urgency` parameter defaults to NULL so other status actions retain compatibility. Ratings are rejected on non-verification status calls. `record_report_assessment` records or revises ratings without changing progress, only for `under_review`, `verified`, `assigned` or `in_progress` reports. Both inputs must be integers 1–5 and the rationale must satisfy the existing 5–4,000-character text rules.
+
+Assessment writes require the report's existing review permission, active staff status, jurisdiction/category scope and sample visibility; progress-only staff cannot assess. The public RPC is SECURITY INVOKER with a guarded private function. History SELECT is protected by RLS using active staff, report access and sample visibility; authenticated users have no direct history mutation grants. Resident report INSERT rejects supplied official ratings. Public/linked report projections remain restricted. No historical ratings or new presentation incidents are fabricated. Verified-case fixture preparation requires explicitly supplied urgency before generating new seed SQL.
+
+Tests: `supabase/tests/report_assessments.sql` uses rollback-only fixtures; `npm run test:assessments` performs authenticated REST reads and rejection-only probes and compares reports/history before and after.
+
+## Mandatory report pin — 2026-11-07
+
+Migration `20261106163424_mandatory_report_pin` supersedes the address-only option: every new report must include valid latitude/longitude within the mapped Iligan area, whether submitted through the RPC or direct INSERT. Purok, Zone and additional directions are optional supplements. The existing city-boundary trigger rejects missing, partial, non-finite, out-of-range or outside-city points and coordinate edits that remove a pin. The earlier manual-address-details constraint is removed.
+
+Historical NULL-coordinate records remain readable without fabricated backfills; their status-only workflow updates do not invoke the coordinate-edit trigger. Columns remain nullable for that compatibility, while the trigger enforces all new submissions. The report RPC signature, RLS, private-address projection and legacy coordinate-client calls remain unchanged. Current tests: `supabase/tests/mandatory_pin.sql` and the revised `supabase/tests/detailed_location.sql`.
+
+## Detailed report locations — historical address-only policy, superseded 2026-11-07
+
+Migration `20261106160608_detailed_report_location` adds private `purok` and `zone` fields (80 characters each), detected `location_address` (500 characters), `location_source` (`manual`, `gps`, `pin`, or `coordinates`; legacy rows remain NULL), and nullable device `location_accuracy` in metres. Existing `landmark` remains the resident's additional directions (240 characters). No historical address or GPS precision is invented. Device geocoding does not infer Purok/Zone; residents supply those fields when known.
+
+Latitude and longitude may both be NULL only for a manual location that includes at least one of Purok, Zone or additional directions and a valid barangay. Partial pairs, invalid ranges, oversized/invisible-only text, and non-finite/negative GPS accuracy fail database constraints. GPS accuracy is accepted only for the GPS source. When coordinates exist, the existing mapped-city boundary trigger still checks them. A manual address has a NULL generated geography and no synthetic map pin. Barangay counts retain it; `map_reports` includes it in the authorized report list regardless of viewport, subject to the same category, date, barangay, office and status filters. Distance-based recurrence/duplicate detection cannot locate a report without coordinates.
+
+`submit_report` has one extended signature with five trailing optional arguments: `p_purok`, `p_zone`, `p_location_source`, `p_location_accuracy`, and `p_location_address`. Existing coordinate-based calls remain compatible. The SECURITY INVOKER function retains the existing RLS, resident ownership, rate limiting and idempotent report-ID retry behavior. Existing grants restrict location updates; no new client update or staff-read policy is added.
+
+Public report RPCs retain their explicit privacy projection: rounded coordinates when present, NULL when absent, and no Purok, Zone, landmark, detected address, source or accuracy. Full location details remain accessible only through authorized private-report access. Verification fixtures are in `supabase/tests/detailed_location.sql`, and shared input/map-guard regressions in `tests/detailed-location.test.ts`.
+
 Migrations are the authoritative schema. Reference tables hold barangays, six report categories, organizations, routing rules and configurable analysis weights. Category labels are loaded from PostgreSQL in both apps.
 
 Profiles reference Auth users. Organization memberships use a composite key. Reports reference residents, barangays, categories and an optional office. Geography is generated from constrained latitude/longitude and indexed with GiST. Imported indicative barangay polygons and a private OpenStreetMap city polygon support authenticated location checks; source provenance is recorded in `data/README.md`.

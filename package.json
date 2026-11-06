@@ -15,6 +15,7 @@
     "test:live": "node scripts/acceptance-live.mjs",
     "test:storage": "node scripts/acceptance-live-storage.mjs",
     "test:location": "node scripts/acceptance-location.mjs",
+    "test:assessments": "node scripts/acceptance-assessments.mjs",
     "test:samples": "node scripts/verify-sample-workspace.mjs",
     "test:navigation": "node scripts/acceptance-navigation.mjs --reports",
     "build": "npm run build -w web",

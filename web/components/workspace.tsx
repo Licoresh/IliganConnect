@@ -36,7 +36,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { db, result, configured } from "../lib/client";
-import { Profile, Report, Lookup, label } from "@community/shared";
+import { Profile, Report, Lookup, label, hasReportCoordinates } from "@community/shared";
 import dynamic from "next/dynamic";
 import { Community } from "./community";
 import { Analytics, Charts, AnalyticsData } from "./analytics";
@@ -808,10 +808,12 @@ function Overview({
     : null;
   const barangayArea = barangayBoundary ? barangayAreaKm2(barangayBoundary) : 0;
   const activeDensityReports = data.densityReports?.filter((report) => report.status !== "rejected" && report.status !== "duplicate") ?? [];
+  const coordinateDensityReports = activeDensityReports.filter(hasReportCoordinates);
+  const densityWithoutPins = activeDensityReports.length - coordinateDensityReports.length;
   const mappedDensityReports = barangayBoundary
-    ? activeDensityReports.filter((report) => pointInPolygon([report.longitude, report.latitude], barangayBoundary.geometry))
+    ? coordinateDensityReports.filter((report) => pointInPolygon([report.longitude, report.latitude], barangayBoundary.geometry))
     : [];
-  const densityOutsideCount = Math.max(0, activeDensityReports.length - mappedDensityReports.length);
+  const densityOutsideCount = coordinateDensityReports.length - mappedDensityReports.length;
   const unresolvedDensityCount = mappedDensityReports.filter((report) => report.verified_at && !["resolved", "rejected", "duplicate"].includes(report.status)).length;
   const reportDensity = barangayArea > 0 ? activeDensityReports.length / barangayArea : null;
   const scopeName = access.profile.role === "barangay"
@@ -928,7 +930,8 @@ function Overview({
                   <div><span>Verified unresolved</span><strong>{unresolvedDensityCount.toLocaleString("en-PH")}</strong></div>
                 </div>
                 {densityOutsideCount > 0 ? <div className="overview-density-warning" role="status"><CircleAlert size={17} /><p><strong>{densityOutsideCount} assigned {densityOutsideCount === 1 ? "report is" : "reports are"} outside the mapped boundary.</strong><span>They remain in this barangay’s assigned total but won’t appear on the map until their locations are corrected.</span></p><button className="secondary" onClick={() => onNavigate("Issue reports")}>Review locations <ArrowRight size={14} /></button></div>
-                  : <p className="overview-density-ok"><BadgeCheck size={15} />All mapped report locations are inside {barangayName || "your barangay"}.</p>}
+                  : coordinateDensityReports.length > 0 && <p className="overview-density-ok"><BadgeCheck size={15} />All mapped report locations are inside {barangayName || "your barangay"}.</p>}
+                {densityWithoutPins > 0 && <p className="overview-fine">{densityWithoutPins} {densityWithoutPins === 1 ? "report has a manual address" : "reports have manual addresses"} without map pins. Their Purok, Zone and details are available in the report workspace.</p>}
                 <p className="overview-fine">Rejected and duplicate reports are excluded. This assigned-area ratio shows report volume, not issue severity.</p>
                 {activeDensityReports.length >= 1000 && <p className="overview-density-limit">The report list reached its 1,000-row limit; density may be understated.</p>}
               </>}

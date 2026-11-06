@@ -14,6 +14,6 @@ select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002'
 do $$begin if exists(select 1 from public.reports where id='20000000-0000-4000-8000-000000000001') then raise exception 'TEST FAILED: another resident read private report';end if;end$$;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
 select public.change_report('20000000-0000-4000-8000-000000000001','under_review','Review started by authorized staff');
-select public.change_report('20000000-0000-4000-8000-000000000001','verified','Issue independently assessed',null,2);
+select public.change_report('20000000-0000-4000-8000-000000000001','verified','Issue independently assessed',null,2,p_urgency=>2);
 do $$begin if not exists(select 1 from public.report_status_history where report_id='20000000-0000-4000-8000-000000000001' and new_status='verified') then raise exception 'TEST FAILED: missing immutable history';end if;end$$;
 rollback;

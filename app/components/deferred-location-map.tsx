@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { View, Text } from "react-native";
 import LocationMap, { type MapProps } from "./location-map";
+import { colors } from "./ui";
 
 // Paint the destination page before initializing its native map / WebGL surface.
 // Reserve the exact map height so the surrounding content never jumps.

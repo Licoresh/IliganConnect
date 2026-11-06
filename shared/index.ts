@@ -31,16 +31,48 @@ function textSchema(min: number, max: number) {
     if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
   }).transform((value) => value.trim());
 }
+export const SEVERITY_OPTIONS = [
+  { value: 1, label: "Minor", description: "Small, localized impact." },
+  { value: 2, label: "Low", description: "Limited damage or service disruption." },
+  { value: 3, label: "Moderate", description: "Meaningful damage or disruption affecting several users." },
+  { value: 4, label: "Major", description: "Substantial damage or disruption affecting an area." },
+  { value: 5, label: "Severe", description: "Extensive impact or a substantial safety concern." },
+] as const;
+export const URGENCY_OPTIONS = [
+  { value: 1, label: "Routine", description: "Can enter the normal review queue." },
+  { value: 2, label: "Soon", description: "Needs follow-up beyond routine monitoring." },
+  { value: 3, label: "Prompt", description: "Needs prompt staff follow-up to limit worsening conditions." },
+  { value: 4, label: "Urgent", description: "Needs expedited staff attention and coordination." },
+  { value: 5, label: "Immediate review", description: "Needs immediate staff review and coordination." },
+] as const;
+export const reportAssessmentSchema = z.object({
+  severity: z.number().int().min(1).max(5),
+  urgency: z.number().int().min(1).max(5),
+  note: textSchema(5, 4000),
+});
 export const reportSchema = z.object({
   category_id: z.string().uuid("Choose a report type."),
   barangay_id: z.string().uuid("Choose a barangay."),
   title: textSchema(8, 160),
   description: textSchema(20, 4000),
-  latitude: z.preprocess(parseDecimal, z.number({ invalid_type_error: "Enter a decimal latitude from −90 to 90." }).finite().min(-90).max(90)),
-  longitude: z.preprocess(parseDecimal, z.number({ invalid_type_error: "Enter a decimal longitude from −180 to 180." }).finite().min(-180).max(180)),
+  latitude: z.preprocess((value) => value == null ? null : parseDecimal(value), z.number({ invalid_type_error: "Enter a decimal latitude from −90 to 90." }).finite().min(-90).max(90).nullable()),
+  longitude: z.preprocess((value) => value == null ? null : parseDecimal(value), z.number({ invalid_type_error: "Enter a decimal longitude from −180 to 180." }).finite().min(-180).max(180).nullable()),
   landmark: textSchema(0, 240).default(""),
+  purok: textSchema(0, 80).nullable().optional(),
+  zone: textSchema(0, 80).nullable().optional(),
+  location_address: textSchema(0, 500).nullable().optional(),
+  location_source: z.enum(["manual", "gps", "pin", "coordinates"]).nullable().optional(),
+  location_accuracy: z.number().finite().min(0).max(100000).nullable().optional(),
   problem_type: z.string().nullable().optional(),
   problem_other: textSchema(0, 240).nullable().optional(),
+}).superRefine((report, ctx) => {
+  const hasCoordinates = hasReportCoordinates(report);
+  if (!hasCoordinates) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["latitude"], message: "Place a pin on the map or use your current location before continuing." });
+  }
+  if (report.location_accuracy != null && report.location_source !== "gps") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["location_accuracy"], message: "Location accuracy is only recorded for GPS locations." });
+  }
 });
 export function createReportSchema(categories: Lookup[]) {
   return reportSchema.superRefine((report, ctx) => {
@@ -65,6 +97,7 @@ export interface Report extends ReportInput {
   verified_at: string | null;
   organization_id: string | null;
   severity: number | null;
+  urgency?: number | null;
   is_demo: boolean;
   public_summary: string | null;
 }
@@ -91,6 +124,11 @@ export function consultationPhase(row: { status: string; opens_at: string; close
 }
 
 export type ReportMapPoint = { latitude: number; longitude: number };
+export function hasReportCoordinates<T extends { latitude: number | null | undefined; longitude: number | null | undefined }>(point: T): point is T & ReportMapPoint {
+  return typeof point.latitude === "number" && typeof point.longitude === "number"
+    && Number.isFinite(point.latitude) && Number.isFinite(point.longitude)
+    && Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180;
+}
 export type MapCluster<T extends ReportMapPoint> = { points: T[]; latitude: number; longitude: number };
 export function clusterMapPoints<T extends ReportMapPoint>(points: T[], cellMeters: number): MapCluster<T>[] {
   const size = Math.max(1, cellMeters), latMeters = 111_320, lonMeters = latMeters * Math.cos(8.23 * Math.PI / 180), cells = new Map<string, T[]>();

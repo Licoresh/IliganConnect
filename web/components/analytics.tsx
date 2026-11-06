@@ -86,10 +86,10 @@ export function Charts({ data, variant = "default" }: { data: AnalyticsData; var
               <Line
                 name="Verified"
                 dataKey="verified"
-                stroke="var(--gold)"
+                stroke="var(--chart-verified)"
                 strokeWidth={2.5}
                 strokeDasharray="6 4"
-                dot={{ r: 3, fill: "var(--gold)", strokeWidth: 0 }}
+                dot={{ r: 3, fill: "var(--chart-verified)", strokeWidth: 0 }}
                 activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff" }}
               />
             </LineChart>
@@ -131,7 +131,7 @@ export function Charts({ data, variant = "default" }: { data: AnalyticsData; var
             <YAxis type="category" dataKey="displayName" width={150} tick={{ fontSize: 12 }} />
             <Tooltip contentStyle={{ border: "1px solid #e0eae8", borderRadius: 12, boxShadow: "0 8px 24px #173b3518", fontSize: 12 }} formatter={(value) => countFormatter.format(Number(value))} cursor={{ fill: "#f5f9f8" }} />
             <Bar name="Received" dataKey="received" fill="var(--brand-hover)" radius={[0, 4, 4, 0]} maxBarSize={12} />
-            <Bar name="Verified" dataKey="verified" fill="var(--gold)" radius={[0, 4, 4, 0]} maxBarSize={12} />
+            <Bar name="Verified" dataKey="verified" fill="var(--chart-verified)" radius={[0, 4, 4, 0]} maxBarSize={12} />
           </BarChart>
         </ResponsiveContainer> : <p className="empty">Category data will appear when reports are available.</p>}
         <div className="chart-legend" aria-label="Chart series"><span className="received"><i />Received</span><span className="verified"><i />Verified</span></div>

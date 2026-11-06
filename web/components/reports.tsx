@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, Clock3, ClipboardList, Copy, Download, FileText, History, Image as ImageIcon, ListFilter, LockKeyhole, MapPin, Paperclip, RefreshCw, Save, Search, Send, SlidersHorizontal, Upload, UsersRound } from "lucide-react";
-import { Report, statuses, transitions, label, UUID_PATTERN } from "@community/shared";
+import { Report, statuses, transitions, label, UUID_PATTERN, hasReportCoordinates, reportAssessmentSchema } from "@community/shared";
 import { db, result } from "../lib/client";
 import { DuplicateReview } from "./duplicate-review";
 import { DuplicateMainProgress, LinkedDuplicateReports } from "./linked-duplicates";
@@ -13,6 +13,8 @@ import { Dialog } from "./dialog";
 import { downloadCsv, philippineDateBoundary } from "../lib/export";
 import { useDebouncedValue } from "../lib/use-debounced-value";
 import { reportCategoryPresentation, ReportCategoryLabel } from "./report-category";
+import { reportLocalAddress } from "../lib/report-location";
+import { AssessmentFields, ReportAssessment } from "./report-assessment";
 
 export function Reports({ refs, initialRecordId = "", initialSearch = "", initialBarangay = "", initialQueue = "all", onOpenReport, onCloseReport }: {
   refs: References; initialRecordId?: string; initialSearch?: string; initialBarangay?: string; initialQueue?: string;
@@ -66,7 +68,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
       if (office) query = query.eq("organization_id", office);
       if (since) query = query.gte("created_at", philippineDateBoundary(since)!);
       if (until) query = query.lt("created_at", philippineDateBoundary(until, true)!);
-      if (sort === "severity") query = query.order("severity", { ascending: false, nullsFirst: false });
+      if (sort === "severity" || sort === "urgency") query = query.order(sort, { ascending: false, nullsFirst: false });
       const { data, count, error } = await query.order("created_at", { ascending: sort === "oldest" })
         .order("id").range(page * 20, page * 20 + 19);
       if (error) throw new Error(error.message);
@@ -129,7 +131,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
               onChange={(e) => { setSearch(e.target.value); setPage(0); }} /></label>
           <label className="sort-field"><ListFilter size={16} aria-hidden="true" /><span className="sr-only">Sort reports</span>
             <select value={sort} onChange={(e) => { setSort(e.target.value); setPage(0); }}>
-              <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="severity">Highest assessed severity</option>
+              <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="severity">Highest assessed severity</option><option value="urgency">Highest assessed urgency</option>
             </select></label>
         </div>
         <details className="report-filter-panel">
@@ -156,10 +158,10 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
             <button className="secondary refresh-reports" disabled={q.isFetching || invalidDates} onClick={() => { void q.refetch(); if (duplicateIds.length) void duplicateSummary.refetch(); }}><RefreshCw size={15} aria-hidden="true" /> Refresh</button>
             <button className="secondary" disabled={!q.data?.rows.length || q.isFetching || invalidDates || search.trim() !== term}
               onClick={() => downloadCsv(`iligan-reports-page-${page + 1}.csv`, [
-                ["Report ID", "Title", "Category", "Barangay", "Status", "Assigned office", "Assessed severity", "Submitted (UTC)"],
+                ["Report ID", "Title", "Category", "Barangay", "Status", "Assigned office", "Assessed severity", "Assessed urgency", "Submitted (UTC)"],
                 ...q.data!.rows.map((r) => [r.id, r.title, refs.categories.find((c) => c.id === r.category_id)?.name,
                   refs.barangays.find((b) => b.id === r.barangay_id)?.name, label(r.status),
-                  refs.organizations.find((o) => o.id === r.organization_id)?.name, r.severity, r.created_at]),
+                  refs.organizations.find((o) => o.id === r.organization_id)?.name, r.severity, r.urgency, r.created_at]),
               ])}><Download size={16} /> Export page</button>
           </div>
         </div>
@@ -175,9 +177,10 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
               const category = refs.categories.find((c) => c.id === r.category_id)?.name || "Other";
               return <tr key={r.id}>
               <th scope="row"><button className="report-title" aria-label={`Open report: ${r.title}`} onClick={() => onOpenReport(r.id, queue)}><span>{r.title}</span><ArrowUpRight size={15} aria-hidden="true" /></button>
-                <small className="record-meta">{r.id.slice(0, 8).toUpperCase()}{r.severity && ` · Severity ${r.severity}/5`}</small>
+                <small className="record-meta">{r.id.slice(0, 8).toUpperCase()}{r.severity && ` · Severity ${r.severity}/5`}{r.urgency && ` · Urgency ${r.urgency}/5`}</small>
                 {!duplicateSummary.error && (possibleCounts.get(r.id) ?? 0) > 0 && <button type="button" className="duplicate-queue-indicator" aria-label={`Review ${possibleCounts.get(r.id)} possible duplicates for ${r.title}`} onClick={() => onOpenReport(r.id, queue)}><Copy size={13} aria-hidden="true" /><span>Possible duplicates · {possibleCounts.get(r.id)}</span></button>}</th>
               <td data-label="Location"><span className="report-location"><MapPin size={13} aria-hidden="true" /><strong>{refs.barangays.find((b) => b.id === r.barangay_id)?.name}</strong></span>
+                {reportLocalAddress(r) && <small className="record-meta">{reportLocalAddress(r)}</small>}
                 <ReportCategoryLabel name={category} compact className="report-category" /></td>
               <td data-label="Status"><span className={"badge " + r.status}>{label(r.status)}</span></td>
               <td data-label="Office">{refs.organizations.find((o) => o.id === r.organization_id)?.name || "Awaiting assignment"}</td>
@@ -274,6 +277,7 @@ export function ReportDetail({
   const selectedStatus = nextStatuses.includes(status as typeof r.status) ? status : nextStatuses[0] || "";
   const actionForm = useRef<HTMLFormElement>(null);
   const [canonical, setCanonical] = useState({ id: "", title: "" });
+  const [assessmentErrors, setAssessmentErrors] = useState<Partial<Record<"severity" | "urgency" | "note", string>>>({});
   const isSelfDuplicate = canonical.id.toLowerCase() === r.id;
   useEffect(() => {
     if (!canonical.title || selectedStatus !== "duplicate") return;
@@ -349,10 +353,23 @@ export function ReportDetail({
           <div className="report-workspace-section-heading"><MapPin size={22} /><div><h3>Location and classification</h3><p>Report location, issue type and responsible office.</p></div></div>
           <div className="report-workspace-location-grid">
             <div><span>Problem type</span><strong>{q.data?.problem?.label || (r.problem_type ? label(r.problem_type) : categoryName)}</strong>{r.problem_other && <small>{r.problem_other}</small>}</div>
-            <div><span>Location</span><strong>{refs.barangays.find((b) => b.id === r.barangay_id)?.name || "Barangay not recorded"} · {r.latitude != null && r.longitude != null ? `${r.latitude}, ${r.longitude}` : "Coordinates unavailable"}</strong><small>{r.landmark || "Approximate report location"}</small></div>
+            <div className="report-location-details"><span>Reported location</span>
+              <strong>{refs.barangays.find((b) => b.id === r.barangay_id)?.name || "Barangay not recorded"} · Iligan City</strong>
+              {r.purok && <small><b>Purok:</b> {r.purok}</small>}
+              {r.zone && <small><b>Zone:</b> {r.zone}</small>}
+              {r.landmark && <small><b>Additional details:</b> {r.landmark}</small>}
+              {r.location_address && <small><b>Detected address:</b> {r.location_address}</small>}
+              {hasReportCoordinates(r) ? <>
+                <small><b>Coordinates:</b> {r.latitude.toFixed(6)}, {r.longitude.toFixed(6)}</small>
+                <small>{r.location_source === "gps" ? "Device GPS" : r.location_source === "pin" ? "Map pin" : r.location_source === "coordinates" ? "Entered coordinates" : "Saved coordinates"}{r.location_accuracy != null && Number.isFinite(r.location_accuracy) && ` · accuracy about ±${Math.round(r.location_accuracy)} m`}</small>
+                <a className="report-directions" href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${r.latitude},${r.longitude}`)}`} target="_blank" rel="noopener noreferrer">Get directions <ArrowUpRight size={15} aria-hidden="true" /><span className="sr-only"> in Google Maps (opens a new tab)</span></a>
+              </> : <small>Manual address · no map pin provided. Use the details above to locate the issue.</small>}
+            </div>
             <div><span>{r.status === "duplicate" ? "Progress ownership" : "Assigned office"}</span><strong>{r.status === "duplicate" ? "Managed through the main report" : refs.organizations.find((o) => o.id === r.organization_id)?.name || "Awaiting assignment"}</strong></div>
           </div>
         </section>
+
+        <ReportAssessment key={r.id} reportId={r.id} canReview={!!q.data?.permissions.review} />
 
         <section className="report-workspace-section report-photo-section report-document-section">
           <div className="report-workspace-section-heading"><ImageIcon size={22} /><div><h3>Report photos</h3><p>Review attached photographs and their source details.</p></div></div>
@@ -406,6 +423,18 @@ export function ReportDetail({
           <form ref={actionForm} className="report-action-form" onSubmit={async (event) => {
             event.preventDefault();
             const form = new FormData(event.currentTarget);
+            if (busy) return;
+            if (selectedStatus === "verified") {
+              const assessment = reportAssessmentSchema.safeParse({ severity: Number(form.get("severity")), urgency: Number(form.get("urgency")), note: String(form.get("note") || "") });
+              if (!assessment.success) {
+                const next: Partial<Record<"severity" | "urgency" | "note", string>> = {};
+                for (const issue of assessment.error.issues) { const name = issue.path[0] as keyof typeof next; if (!next[name]) next[name] = issue.message; }
+                setAssessmentErrors(next);
+                (event.currentTarget.elements.namedItem(String(assessment.error.issues[0]?.path[0])) as HTMLElement | null)?.focus();
+                return;
+              }
+            }
+            setAssessmentErrors({});
             if (selectedStatus === "duplicate" && String(form.get("duplicate")).toLowerCase() === r.id) {
               const input = event.currentTarget.elements.namedItem("duplicate") as HTMLInputElement;
               input.focus();
@@ -417,6 +446,7 @@ export function ReportDetail({
                 p_id: r.id, p_status: selectedStatus, p_note: form.get("note"),
                 p_organization: form.get("office") || null,
                 p_severity: form.get("severity") ? Number(form.get("severity")) : null,
+                p_urgency: form.get("urgency") ? Number(form.get("urgency")) : null,
                 p_duplicate: form.get("duplicate") || null,
                 p_public_summary: form.get("summary") || null,
               }));
@@ -424,9 +454,10 @@ export function ReportDetail({
             } catch (cause) { setError((cause as Error).message); }
             finally { setBusy(false); }
           }}>
-            <label className="report-action-status-field"><span>Next status <span className="report-action-required" aria-hidden="true">*</span></span><span className="report-action-status-control"><ActionStatusIcon className="report-action-status-icon" data-status={selectedStatus} size={20} aria-hidden="true" /><select required value={selectedStatus} onChange={(event) => setStatus(event.target.value)}>{nextStatuses.map((next) => <option key={next} value={next}>{label(next)}</option>)}</select></span></label>
-            <label className="report-action-note"><span>{selectedStatus === "duplicate" ? "Reason for linking these reports" : "Public action note / resolution details"} <span className="report-action-required" aria-hidden="true">*</span></span><textarea name="note" required minLength={5} maxLength={4000} aria-describedby="report-action-note-hint" placeholder={selectedStatus === "duplicate" ? "Explain how the location, problem, and evidence describe the same incident…" : "Write the update, actions taken, or resolution details…"} /></label>
+            <label className="report-action-status-field"><span>Next status <span className="report-action-required" aria-hidden="true">*</span></span><span className="report-action-status-control"><ActionStatusIcon className="report-action-status-icon" data-status={selectedStatus} size={20} aria-hidden="true" /><select required value={selectedStatus} onChange={(event) => { setStatus(event.target.value); setAssessmentErrors({}); }}>{nextStatuses.map((next) => <option key={next} value={next}>{label(next)}</option>)}</select></span></label>
+            <label className="report-action-note"><span>{selectedStatus === "duplicate" ? "Reason for linking these reports" : "Public action note / resolution details"} <span className="report-action-required" aria-hidden="true">*</span></span><textarea name="note" required minLength={5} maxLength={4000} aria-invalid={!!assessmentErrors.note || undefined} aria-describedby={`report-action-note-hint${assessmentErrors.note ? " report-action-note-error" : ""}`} placeholder={selectedStatus === "duplicate" ? "Explain how the location, problem, and evidence describe the same incident…" : "Write the update, actions taken, or resolution details…"} /></label>
             <small id="report-action-note-hint" className="report-action-note-hint">5–4,000 characters.</small>
+            {assessmentErrors.note && <p id="report-action-note-error" className="field-validation-message" role="alert">{assessmentErrors.note}</p>}
             {selectedStatus === "assigned" && <>
               {!q.data?.routing.length && <p className="routing-guidance-empty" role="status">No routing guidance is configured for this category and barangay. Choose an eligible office using your approved local responsibilities, then explain the handoff in the public note.</p>}
               {!q.data?.referralOptions.length && <p className="notice route-warning" role="status">No eligible office is configured for this report. An administrator must enable the correct category and barangay access before it can be routed.</p>}
@@ -434,7 +465,7 @@ export function ReportDetail({
               <label>Responsible organization<select name="office" required defaultValue={r.organization_id || ""}><option value="">Select organization</option>{q.data?.referralOptions.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label>
             </>}
             {selectedStatus === "verified" && <>
-              <label>Assessed severity (1–5)<input name="severity" type="number" min="1" max="5" required /></label>
+              <AssessmentFields key={`verify-${r.id}-${r.severity}-${r.urgency}`} idPrefix={`verify-${r.id}`} severity={r.severity} urgency={r.urgency} errors={assessmentErrors} disabled={busy} />
               <label>Moderated public summary (optional)<textarea name="summary" maxLength={160} placeholder="Exclude names and residential details." /></label>
               <p className="report-form-hint">A summary publishes a rounded map location.</p>
             </>}

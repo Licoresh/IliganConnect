@@ -2,9 +2,9 @@ import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import MapView, { Callout, Marker, Polygon, type Region } from "react-native-maps";
 import { Pressable, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { aggregateReportCells, clusterMapPoints, ILIGAN_MAP_BOUNDS } from "@community/shared";
+import { aggregateReportCells, ILIGAN_MAP_BOUNDS } from "@community/shared";
 import { barangayAreaKm2, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
-import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, PhotoViewer } from "./ui";
+import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, PhotoViewer, colors, type PhotoCredit } from "./ui";
 export { ILIGAN_MAP_BOUNDS };
 export type MapStyle = "map" | "terrain" | "satellite";
 export type MapBounds = typeof ILIGAN_MAP_BOUNDS;
@@ -17,6 +17,7 @@ export type Point = {
   subtitle?: string;
   createdAt?: string;
   photoUrl?: string;
+  photoCredit?: PhotoCredit;
   categoryName?: string;
   color?: string;
   statusLabel?: string;
@@ -34,7 +35,6 @@ export type MapProps = {
   userPoint?: Point;
   density?: boolean;
   showPoints?: boolean;
-  showClusterCounts?: boolean;
   selectedPointId?: string;
   height?: number;
   onExpand?: () => void;
@@ -70,7 +70,7 @@ const ReportPin = memo(function ReportPin({ selected, onPointPress, ...p }: Poin
             <Callout tooltip onPress={() => onPointPress?.(p)}>
               <View style={{ width: 276, borderRadius: 18, padding: 12, backgroundColor: "#fff", borderWidth: 1, borderColor: "#e0e9e6", shadowColor: "#173b3a", shadowOpacity: 0.2, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8 }}>
                 <View style={{ flexDirection: "row", gap: 10, alignItems: "stretch" }}>
-                  {p.photoUrl ? <PhotoViewer source={{ uri: p.photoUrl }} label={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community"} report photo`} style={{ width: 76, height: 94, borderRadius: 12, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 76, height: 94, borderRadius: 12, backgroundColor: categoryToneFor(p.categoryName || "").background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(p.categoryName || "")} size={31} color={categoryToneFor(p.categoryName || "").foreground} /></View>}
+                  {p.photoUrl ? <PhotoViewer source={{ uri: p.photoUrl }} label={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community"} report photo`} credit={p.photoCredit} style={{ width: 76, height: 94, borderRadius: 12, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 76, height: 94, borderRadius: 12, backgroundColor: categoryToneFor(p.categoryName || "").background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(p.categoryName || "")} size={31} color={categoryToneFor(p.categoryName || "").foreground} /></View>}
                   <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 }}><Text numberOfLines={1} style={{ flex: 1, color: p.color || "#08756b", fontSize: 10, fontWeight: "800" }}>{p.categoryName ? categoryDisplayName(p.categoryName) : "Community report"}</Text>{!!p.statusLabel && <Text numberOfLines={1} style={{ color: statusToneFor(p.statusLabel).foreground, backgroundColor: statusToneFor(p.statusLabel).background, fontSize: 9, fontWeight: "700", paddingHorizontal: 7, paddingVertical: 4, borderRadius: 12 }}>{p.statusLabel}</Text>}</View>
                     <Text numberOfLines={2} style={{ color: "#173b3a", fontSize: 14, fontWeight: "800", lineHeight: 18 }}>{p.title || "Reported issue"}</Text>
@@ -78,7 +78,7 @@ const ReportPin = memo(function ReportPin({ selected, onPointPress, ...p }: Poin
                     {!!p.createdAt && <Text style={{ color: "#647571", fontSize: 11 }}>{new Date(p.createdAt).toLocaleDateString()}</Text>}
                   </View>
                 </View>
-                <Pressable accessibilityRole="button" onPress={() => onPointPress?.(p)} style={{ minHeight: 38, marginTop: 10, borderRadius: 12, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Text style={{ color: "#08756b", fontSize: 12, fontWeight: "800" }}>View report details  ›</Text></Pressable>
+                <Pressable accessibilityRole="button" onPress={() => onPointPress?.(p)} style={{ minHeight: 48, marginTop: 10, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>View report details  ›</Text></Pressable>
                 <Text style={{ color: "#82908c", fontSize: 10, marginTop: 6, textAlign: "center" }}>Approximate location for privacy</Text>
               </View>
             </Callout>
@@ -97,7 +97,6 @@ export default function LocationMap({
   userPoint,
   density = false,
   showPoints = true,
-  showClusterCounts = true,
   selectedPointId,
   height = 300,
   onExpand,
@@ -115,13 +114,14 @@ export default function LocationMap({
 }: MapProps) {
   const map = useRef<MapView>(null);
   const lastBarangayTap = useRef(0);
-  const [localBase, setLocalBase] = useState<MapStyle>("satellite"), [region, setRegion] = useState<Region>(initialRegion ?? { latitude: 8.228, longitude: 124.2452, latitudeDelta: 0.12, longitudeDelta: 0.12 }), [stylePickerOpen, setStylePickerOpen] = useState(false);
+  const [localBase, setLocalBase] = useState<MapStyle>("satellite"), [stylePickerOpen, setStylePickerOpen] = useState(false);
   const base = mapStyle ?? localBase;
   const nextBase: MapStyle = base === "map" ? "terrain" : base === "terrain" ? "satellite" : "map";
   const baseName = base === "map" ? "Map" : base === "terrain" ? "Terrain" : "Satellite";
   const choosePoint = (next: Point) => onChoose?.(next);
   const pointsKey = useMemo(() => points.map((p) => `${p.id}:${p.latitude}:${p.longitude}`).join("|"), [points]);
-  const reportCells = useMemo(() => aggregateReportCells(points), [points]);
+  const reportPoints = useMemo(() => points.filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180), [points]);
+  const reportCells = useMemo(() => aggregateReportCells(reportPoints), [reportPoints]);
   const maxBarangayDensity = useMemo(() => Math.max(0, ...iliganBarangayBoundaries.map((item) => barangayDensity(barangayCounts[barangayMapKey(item.properties.adm4_en)] ?? 0, barangayAreaKm2(item)))), [barangayCounts]);
   const densityLayer = useMemo(() => density && reportCells.map((cell) => <Polygon
           key={`${cell.center.latitude}:${cell.center.longitude}`}
@@ -146,17 +146,6 @@ export default function LocationMap({
       onPress={() => { lastBarangayTap.current = Date.now(); onBarangayPress?.(name); }}
     />;
   }), [showBarangayBoundaries, barangayCounts, onBarangayPress, selectedBarangayName, barangayMetric, maxBarangayDensity]);
-  const clusterDelta = showClusterCounts ? region.latitudeDelta : 0;
-  const clusters = useMemo(() => showClusterCounts
-    ? clusterMapPoints(points, Math.max(60, clusterDelta * 111_320 / 7))
-    : [{ points, latitude: 0, longitude: 0 }], [points, clusterDelta, showClusterCounts]);
-  const [trackMarkers, setTrackMarkers] = useState(true);
-  useEffect(() => {
-    // Custom marker snapshots need a short layout window, not continuous redraws.
-    setTrackMarkers(true);
-    const timer = setTimeout(() => setTrackMarkers(false), 500);
-    return () => clearTimeout(timer);
-  }, [clusters]);
   const zoom = (direction: 1 | -1) => map.current?.getCamera().then((camera) => {
     map.current?.animateCamera({ ...camera, zoom: Math.max(3, Math.min(20, (camera.zoom ?? 12) + direction)) }, { duration: 180 });
   });
@@ -198,11 +187,7 @@ export default function LocationMap({
         pitchEnabled
         rotateEnabled
         initialRegion={point ? { ...point, latitudeDelta: 0.02, longitudeDelta: 0.02 } : initialRegion ?? { latitude: 8.228, longitude: 124.2452, latitudeDelta: 0.12, longitudeDelta: 0.12 }}
-        onRegionChangeComplete={(next) => {
-          // Panning is handled natively; only zoom changes affect clustering.
-          setRegion((previous) => Math.abs(next.latitudeDelta / previous.latitudeDelta - 1) > 0.02 || Math.abs(next.longitudeDelta / previous.longitudeDelta - 1) > 0.02 ? next : previous);
-          onViewportChange?.(next);
-        }}
+        onRegionChangeComplete={onViewportChange}
         onPress={(e) => {
           if (onChoose) choosePoint(e.nativeEvent.coordinate);
           else if (showBarangayBoundaries && Date.now() - lastBarangayTap.current > 160) onMapBackgroundPress?.();
@@ -215,31 +200,24 @@ export default function LocationMap({
             key={`${point.latitude}:${point.longitude}`}
             draggable={!!onChoose}
             coordinate={point}
-            pinColor="#08756b"
+            pinColor={colors.brand}
             zIndex={1003}
             onDragEnd={(e) => choosePoint(e.nativeEvent.coordinate)}
           />
         )}
         {userPoint && <Marker coordinate={userPoint} title="Your current location" pinColor="#3976d2" zIndex={1004} />}
-        {showPoints && showClusterCounts && clusters.filter((cluster) => cluster.points.length > 1).map((cluster) => <Marker
-          tracksViewChanges={trackMarkers}
-          key={`cluster-${cluster.points[0].id}`}
-          coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
-          onPress={() => region.latitudeDelta < 0.001 ? onPointPress?.(cluster.points[0]) : map.current?.animateToRegion({ latitude: cluster.latitude, longitude: cluster.longitude, latitudeDelta: Math.max(0.0004, region.latitudeDelta / 2), longitudeDelta: Math.max(0.0004, region.longitudeDelta / 2) }, 250)}
-          zIndex={1001}
-        ><View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: "#08756b", borderWidth: 3, borderColor: "white", alignItems: "center", justifyContent: "center", elevation: 5 }}><Text style={{ color: "white", fontSize: 14, fontWeight: "800" }}>{cluster.points.length}</Text></View></Marker>)}
-        {showPoints && clusters.filter((cluster) => !showClusterCounts || cluster.points.length === 1).flatMap((cluster) => cluster.points).map((p, i) => (
+        {showPoints && reportPoints.map((p, i) => (
           <ReportPin key={p.id || i} {...p} selected={p.id === selectedPointId} onPointPress={onPointPress} />
         ))}
       </MapView>
       <View style={{ position: "absolute", left: 10, top: 10, flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 14, padding: 4, backgroundColor: "#ffffffed", elevation: 3 }}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Map style" accessibilityState={{ expanded: stylePickerOpen }} onPress={() => setStylePickerOpen(!stylePickerOpen)} style={{ minHeight: 40, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, borderRadius: 11, backgroundColor: "#e8f1ee" }}>
-          <Ionicons name="layers-outline" size={16} color="#08756b" />
+        <Pressable accessibilityRole="button" accessibilityLabel="Map style" accessibilityState={{ expanded: stylePickerOpen }} onPress={() => setStylePickerOpen(!stylePickerOpen)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, borderRadius: 11, backgroundColor: colors.brandSoft }}>
+          <Ionicons name="layers-outline" size={16} color={colors.brand} />
           <Text style={{ color: "#08756b", fontSize: 12, fontWeight: "800" }}>{baseName}</Text>
-          <Ionicons name={stylePickerOpen ? "chevron-up" : "chevron-down"} size={13} color="#08756b" />
+          <Ionicons name={stylePickerOpen ? "chevron-up" : "chevron-down"} size={13} color={colors.brand} />
         </Pressable>
         {stylePickerOpen && (["map", "terrain", "satellite"] as const).map((value) => (
-          <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); setStylePickerOpen(false); map.current?.animateCamera({ pitch: value === "terrain" ? 40 : 0 }, { duration: 300 }); }} style={{ minHeight: 40, paddingHorizontal: 9, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: base === value ? "#e8f1ee" : "transparent" }}>
+          <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); setStylePickerOpen(false); map.current?.animateCamera({ pitch: value === "terrain" ? 40 : 0 }, { duration: 300 }); }} style={{ minHeight: 48, paddingHorizontal: 9, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: base === value ? colors.brandSoft : "transparent" }}>
             <Text style={{ color: base === value ? "#08756b" : "#34486b", fontSize: 11, fontWeight: base === value ? "800" : "600" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text>
           </Pressable>
         ))}
@@ -253,7 +231,7 @@ export default function LocationMap({
       </View>}
       <View style={{ position: "absolute", right: 12, top: 12, gap: 8 }}>
         {([["add", () => zoom(1), "Zoom in"], ["remove", () => zoom(-1), "Zoom out"], [userPoint ? "locate" : "locate-outline", userPoint ? () => map.current?.animateToRegion({ ...userPoint, latitudeDelta: 0.035, longitudeDelta: 0.035 }, 250) : onLocate ?? center, userPoint ? "Recenter on my location" : "Find my location"], ["layers-outline", () => { setLocalBase(nextBase); onMapStyleChange?.(nextBase); }, `Change map layer to ${nextBase}`], ...(onExpand ? [["expand-outline", onExpand, "Expand map"] as const] : [])] as const).map(([icon, action, label]) => (
-          <Pressable key={label} accessibilityRole="button" accessibilityLabel={label === "Find my location" && locating ? "Finding your location" : label} disabled={label === "Find my location" && locating} onPress={action} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "white", elevation: 3 }}>
+          <Pressable key={label} accessibilityRole="button" accessibilityLabel={label === "Find my location" && locating ? "Finding your location" : label} disabled={label === "Find my location" && locating} onPress={action} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "white", elevation: 3 }}>
             <Ionicons name={icon} size={19} color="#173b3a" />
           </Pressable>
         ))}

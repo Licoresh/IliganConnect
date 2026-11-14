@@ -1,7 +1,7 @@
 {
   "name": "resident-app",
   "private": true,
-  "main": "expo-router/entry",
+  "main": "index.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",

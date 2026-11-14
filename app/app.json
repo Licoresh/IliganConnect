@@ -4,6 +4,7 @@
     "slug": "iligan-connect",
     "scheme": "iliganconnect",
     "version": "1.0.0",
+    "icon": "./assets/iligan-connect-app-icon.png",
     "orientation": "default",
     "userInterfaceStyle": "light",
     "plugins": [
@@ -29,7 +30,11 @@
       "bundleIdentifier": "org.iligan.community"
     },
     "android": {
-      "package": "org.iligan.community"
+      "package": "org.iligan.community",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/iligan-connect-app-icon.png",
+        "backgroundColor": "#025F60"
+      }
     },
     "web": {
       "bundler": "metro",

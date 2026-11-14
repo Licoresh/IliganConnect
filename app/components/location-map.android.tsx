@@ -4,7 +4,7 @@ import WebView, { type WebViewMessageEvent } from "react-native-webview";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { aggregateReportCells, ILIGAN_MAP_BOUNDS } from "@community/shared";
 import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
-import { colors } from "./ui";
+import { categoryDisplayName, categoryIconFor, categoryToneFor, colors } from "./ui";
 import type { MapProps, MapStyle } from "./location-map";
 
 export { ILIGAN_MAP_BOUNDS };
@@ -21,20 +21,31 @@ const credits: Record<MapStyle, string> = {
   satellite: "Tiles © Esri",
 };
 
+const pinGlyphs: Record<string, string> = {
+  "bulb-outline": '<path d="M9 18h6m-5 4h4M9 14c-.3-1.2-.8-1.8-1.7-2.7A6 6 0 1 1 16.7 11c-.9.9-1.4 1.5-1.7 3H9Z"/>',
+  "navigate-outline": '<path d="M12 21v-8M12 6V3M6 6h12l4 3.5L18 13H6L2 9.5 6 6Z"/>',
+  "car-outline": '<path d="M5 10 7 6h10l2 4M4 10h16v8H4zM7 18v2m10-2v2M7 14h.01M17 14h.01"/>',
+  "water-outline": '<path d="M12 2c-2.5 5-7 8-7 13a7 7 0 0 0 14 0c0-5-4.5-8-7-13Z"/>',
+  "trash-outline": '<path d="M4 6h16M9 6V4h6v2m3 0-1 15H7L6 6m4 4v7m4-7v7"/>',
+  "flash-outline": '<path d="M13 2 4 14h7l-1 8 10-12h-7l1-8Z"/>',
+  "alert-circle-outline": '<circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/>',
+};
+const pinCss = ".report-pin{position:relative;width:44px;height:52px;filter:drop-shadow(0 2px 3px #10263f99)} .report-pin__body{position:absolute;left:4px;top:0;width:36px;height:48px} .report-pin__glyph{position:absolute;left:13px;top:10px;width:18px;height:18px;fill:none;stroke:white;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}";
+
 function mapHtml(data: Record<string, unknown>) {
   const payload = JSON.stringify(data).replace(/</g, "\\u003c");
-  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><style>html,body,#map{height:100%;margin:0;background:#e8f1ee} .leaflet-container{font:12px system-ui,sans-serif} .pin{width:25px;height:25px;border:2px solid white;border-radius:50%;box-shadow:0 2px 7px #10263f66;display:grid;place-items:center;color:white;font-weight:800} .count{min-width:28px;height:28px;padding:0 3px;border:2px solid white;border-radius:15px;box-shadow:0 2px 7px #10263f66;display:grid;place-items:center;color:white;font-weight:800} #error{display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:28px;color:#173b3a;background:#e8f1ee;z-index:999}</style></head><body><div id="map"></div><div id="error">Map tiles could not load. Check your connection and try again.</div><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onerror="document.getElementById('error').style.display='flex'"></script><script>
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><style>html,body,#map{height:100%;margin:0;background:#e8f1ee} .leaflet-container{font:12px system-ui,sans-serif} ${pinCss} .count{min-width:28px;height:28px;padding:0 3px;border:2px solid white;border-radius:15px;box-shadow:0 2px 7px #10263f66;display:grid;place-items:center;color:white;font-weight:800} #error{display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:28px;color:#173b3a;background:#e8f1ee;z-index:999}</style></head><body><div id="map"></div><div id="error">Map tiles could not load. Check your connection and try again.</div><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onerror="document.getElementById('error').style.display='flex'"></script><script>
 const d=${payload}; const send=(type,detail={})=>window.ReactNativeWebView.postMessage(JSON.stringify({type,...detail}));
 if(window.L){
 const map=L.map('map',{zoomControl:false,attributionControl:true,maxZoom:19}).setView([d.center.latitude,d.center.longitude],d.zoom);
 L.tileLayer(d.tile,{maxZoom:19,attribution:d.credit}).addTo(map);
 if(d.boundaries){d.boundaries.forEach(b=>{const shape=L.polygon(b.rings,{color:b.selected?'#083f75':b.count?'#fff':'#e2e8f0',weight:b.selected?3:1.5,fillColor:b.fill,fillOpacity:b.count?.65:.2});shape.addTo(map);shape.on('click',e=>{L.DomEvent.stopPropagation(e);send('barangay',{name:b.name})});});}
 if(d.cells){d.cells.forEach(c=>{const shape=L.polygon(c.rings,{color:c.color,weight:1,fillColor:c.color,fillOpacity:.35});shape.addTo(map);shape.on('click',e=>{L.DomEvent.stopPropagation(e);send('cell',{count:c.count})});});}
-const marker=(lat,lng,color,label,kind,id)=>{const html='<div class="'+(kind==='report'?'pin':'count')+'" style="background:'+color+'">'+label+'</div>';const m=L.marker([lat,lng],{icon:L.divIcon({html,className:'',iconSize:[32,32],iconAnchor:[16,16]})}).addTo(map);m.on('click',e=>{L.DomEvent.stopPropagation(e);send(kind,{id})});};
-const draw=()=>{if(window.reportLayer)window.reportLayer.forEach(m=>map.removeLayer(m));window.reportLayer=[];const add=(lat,lng,color,label,kind,id)=>{const html='<div class="'+(kind==='report'?'pin':'count')+'" style="background:'+color+'">'+label+'</div>';const m=L.marker([lat,lng],{icon:L.divIcon({html,className:'',iconSize:[36,36],iconAnchor:[18,18]})}).addTo(map);m.on('click',e=>{L.DomEvent.stopPropagation(e);if(kind==='group')map.setView([lat,lng],Math.min(16,map.getZoom()+2));else send(kind,{id})});window.reportLayer.push(m)};
-if(d.showPoints){if(d.gis&&map.getZoom()<12){d.totals.forEach(t=>add(t.latitude,t.longitude,d.summaryColor,String(t.count),'barangay',t.name));}else if(d.gis&&map.getZoom()<15){d.groups.forEach(g=>add(g.latitude,g.longitude,g.color,String(g.count),'group',g.id));}else{d.points.forEach(p=>add(p.latitude,p.longitude,p.color||'#08756b','•','report',p.id));}}};
+const pinHtml=(color,glyph)=>'<div class="report-pin"><svg class="report-pin__body" viewBox="0 0 36 48" aria-hidden="true"><path d="M18 1.5C8.9 1.5 1.5 8.9 1.5 18c0 12.3 16.5 28.5 16.5 28.5S34.5 30.3 34.5 18C34.5 8.9 27.1 1.5 18 1.5Z" fill="'+(/^#[0-9a-fA-F]{3,8}$/.test(color)?color:'#08756b')+'" stroke="white" stroke-width="2.5"/></svg><svg class="report-pin__glyph" viewBox="0 0 24 24" aria-hidden="true">'+glyph+'</svg></div>';
+const draw=()=>{if(window.reportLayer)window.reportLayer.forEach(m=>map.removeLayer(m));window.reportLayer=[];const add=(lat,lng,color,label,kind,id,glyph,title)=>{const report=kind==='report',html=report?pinHtml(color,glyph):'<div class="count" style="background:'+color+'">'+label+'</div>';const m=L.marker([lat,lng],{title:title||'',icon:L.divIcon({html,className:'',iconSize:report?[44,52]:[36,36],iconAnchor:report?[22,47]:[18,18]})}).addTo(map);m.on('click',e=>{L.DomEvent.stopPropagation(e);if(kind==='group')map.setView([lat,lng],Math.min(16,map.getZoom()+2));else send(kind,{id})});window.reportLayer.push(m)};
+if(d.showPoints){if(d.gis&&map.getZoom()<12){d.totals.forEach(t=>add(t.latitude,t.longitude,d.summaryColor,String(t.count),'barangay',t.name));}else if(d.gis&&map.getZoom()<15){d.groups.forEach(g=>add(g.latitude,g.longitude,g.color,String(g.count),'group',g.id));}else{d.points.forEach(p=>add(p.latitude,p.longitude,p.color,'','report',p.id,p.glyph,p.title));}}};
 draw();map.on('zoomend',draw);
-if(d.point)marker(d.point.latitude,d.point.longitude,'#08756b','●','chosen','');
+if(d.point)L.marker([d.point.latitude,d.point.longitude],{icon:L.divIcon({html:pinHtml('#08756b','<path d="m5 12 4 4L19 6"/>'),className:'',iconSize:[44,52],iconAnchor:[22,47]})}).addTo(map);
 if(d.userPoint)L.circleMarker([d.userPoint.latitude,d.userPoint.longitude],{radius:8,color:'#fff',weight:3,fillColor:'#1687d8',fillOpacity:1}).addTo(map);
 map.on('click',e=>{if(d.canChoose)send('choose',{latitude:e.latlng.lat,longitude:e.latlng.lng});else send('background')});
 map.on('moveend',()=>{const c=map.getCenter(),b=map.getBounds();send('viewport',{latitude:c.lat,longitude:c.lng,latitudeDelta:b.getNorth()-b.getSouth(),longitudeDelta:b.getEast()-b.getWest()})});
@@ -62,7 +73,7 @@ export default function LocationMap({ point, points = [], onChoose, onPointPress
     row.count++; row.latitude += (p.latitude - row.latitude) / row.count; row.longitude += (p.longitude - row.longitude) / row.count; acc[key] = row; return acc;
   }, {}));
   const cells = density && zoomBehavior === "issue-map" ? aggregateReportCells(validPoints).map(cell => ({ count: cell.count, color: cell.color, rings: cell.bounds.map(p => [p.latitude, p.longitude]) })) : [];
-  const data = { center: point || region, zoom: point ? 16 : Math.max(9, Math.min(18, Math.round(Math.log2(360 / Math.max(region.longitudeDelta, .002))))), tile: tiles[base], credit: credits[base], points: validPoints.map(p => ({ id: p.id, latitude: p.latitude, longitude: p.longitude, color: p.color })), point, userPoint, canChoose: !!onChoose, showPoints, gis: zoomBehavior === "barangay-gis", totals, groups, boundaries, cells, summaryColor };
+  const data = { center: point || region, zoom: point ? 16 : Math.max(9, Math.min(18, Math.round(Math.log2(360 / Math.max(region.longitudeDelta, .002))))), tile: tiles[base], credit: credits[base], points: validPoints.map(p => ({ id: p.id, latitude: p.latitude, longitude: p.longitude, color: p.color || categoryToneFor(p.categoryName || "").foreground, glyph: pinGlyphs[categoryIconFor(p.categoryName || "")] || pinGlyphs["alert-circle-outline"], title: `${categoryDisplayName(p.categoryName || "Community report")}: ${p.title || "Reported issue"}` })), point, userPoint, canChoose: !!onChoose, showPoints, gis: zoomBehavior === "barangay-gis", totals, groups, boundaries, cells, summaryColor };
   const html = useMemo(() => mapHtml(data), [JSON.stringify(data)]);
   const send = (action: string, detail?: unknown) => web.current?.injectJavaScript(`window.mapCommand&&window.mapCommand(${JSON.stringify(action)},${JSON.stringify(detail ?? null)});true;`);
   const onMessage = (event: WebViewMessageEvent) => { try { const message = JSON.parse(event.nativeEvent.data); if (message.type === "choose") onChoose?.({ latitude: message.latitude, longitude: message.longitude }); if (message.type === "report") { const p = validPoints.find(x => x.id === message.id); if (p) onPointPress?.(p); } if (message.type === "barangay") onBarangayPress?.(message.name); if (message.type === "background") onMapBackgroundPress?.(); if (message.type === "cell") onDensityCellPress?.(message.count); if (message.type === "viewport") onViewportChange?.(message); } catch { /* Ignore malformed map messages. */ } };

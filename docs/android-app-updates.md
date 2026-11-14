@@ -13,8 +13,8 @@ For each release:
 
    ```json
    {
-     "version": "1.0.2",
-     "downloadUrl": "https://github.com/Licoresh/IliganConnect/releases/download/v1.0.2/Iligan-Connect-Resident.apk"
+     "version": "1.0.3",
+     "downloadUrl": "https://github.com/Licoresh/IliganConnect/releases/download/v1.0.3/Iligan-Connect-Resident.apk"
    }
    ```
 
@@ -31,4 +31,4 @@ Before push works in a standalone APK:
 3. Upload the Firebase Cloud Messaging V1 service-account key in Expo/EAS Android credentials. Keep the service-account JSON private and out of Git.
 4. Build and install a new APK, allow Android notifications, and send a test push to a registered device before publishing the release manifest.
 
-The project ID and Firebase credentials are not present in this workspace. Until they are configured, Profile shows that push delivery is pending; in-app notifications continue to work.
+The project ID and Firebase credentials are not present in this workspace. The Profile phone-alert switch stores the resident's device preference and automatically registers its token when the project is connected. Until Expo and Firebase are configured, that switch cannot produce remote phone pop-ups; in-app notifications continue to work.

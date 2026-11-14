@@ -26,7 +26,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as Crypto from "expo-crypto";
 import * as Notifications from "expo-notifications";
-import { expoProjectId, registerDevicePushToken, removeDevicePushTokens } from "../lib/push-notifications";
+import { getDevicePushPreference, registerDevicePushToken, removeDevicePushTokens, setDevicePushPreference } from "../lib/push-notifications";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, result, configured } from "../lib/client";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryIconFor, categoryToneFor, statusToneFor, categoryDisplayName } from "../components/ui";
@@ -35,11 +35,24 @@ import { ReportForm, ReportTracking, Explore as ExploreScreen } from "../feature
 import { Community as CommunityScreen, Announcements } from "../features/community";
 import { ListSkeleton } from "../components/loading";
 const REPORT_PAGE_SIZE = 5;
+const RESIDENT_TERMS_VERSION = "2026-11-15";
+const RESIDENT_TERMS = [
+  { title: "1. What Iligan Connect is for", body: "Iligan Connect helps residents report local community concerns, follow case updates, and take part in public discussions. It is not an emergency service. For an immediate threat to life or safety, contact emergency services or the appropriate local responders." },
+  { title: "2. Your account", body: "Provide accurate personal details, email, age, and home barangay. Keep your password and verification codes private. Do not impersonate another person, create misleading accounts, or use another person’s account without permission. If you are under 18, ask a parent or guardian to review these terms with you before using the service." },
+  { title: "3. Reports and location", body: "Submit genuine concerns and describe them honestly. A report needs a valid map pin and barangay so staff can route it. GPS is optional; you may place the pin yourself. The exact pin and any Purok, Zone, or address details are available to authorized city, barangay, and assigned office staff for review and response. Public maps may show an approximate location after staff review. Reports do not guarantee a specific response time or outcome." },
+  { title: "4. Photos and other content", body: "Only upload text and photos you have the right to share. Avoid unnecessary faces, private documents, phone numbers, and details that could put someone at risk. Submitted material may be reviewed by authorized personnel and may appear publicly when approved for community display. You keep ownership of your content and allow the service to use it as needed to review, route, respond to, and display the report or discussion." },
+  { title: "5. Community discussions", body: "Keep comments and replies relevant, respectful, and lawful. Do not harass others, post threats, expose private information, or submit spam or knowingly false claims. Residents can report a comment for review. Authorized community staff may review, hide, or restore comments and resolve reports about them." },
+  { title: "6. Following and notifications", body: "Following a report or conversation lets the service send you in-app updates about it. Phone notifications depend on your device permission, internet access, and the notification service being available. You can change notification preferences in your profile; delivery may be delayed or unavailable." },
+  { title: "7. Personal information and privacy rights", body: "The service uses account details, report content, location, photos, comments, and notification preferences to operate the account, assess and route concerns, coordinate public services, and send requested updates. Relevant details are shared with authorized personnel and service providers supporting the service. Precise report locations and contact details are restricted to authorized staff; only approved public information is shown to other users. Information is retained under applicable laws and records requirements. You may exercise applicable rights to be informed, access or correct information, object to processing, or seek other remedies under Philippine privacy law through the city office administering the service. This agreement does not remove those rights." },
+  { title: "8. Misuse and service changes", body: "The city may limit, hide, or suspend access when needed to address abuse, protect users, or comply with law. The service may be updated or temporarily unavailable. Staff review and routing are human decisions; submitting a report does not itself establish that an allegation is verified." },
+  { title: "9. Agreement", body: "By checking the agreement box and creating an account, you confirm that you have read and agree to these Terms of Use. The current version is shown before registration. Your agreement does not replace the service’s duty to provide required privacy information or protect your personal data." },
+];
 const Explore = memo(ExploreScreen);
 const Community = memo(CommunityScreen);
 if (Platform.OS === "web") WebBrowser.maybeCompleteAuthSession();
 function formatAuthError(error: unknown, step: "sign-in" | "verification" | "resend" | "recovery" | "password" = "sign-in") {
   const detail = error instanceof Error ? error.message.toLowerCase() : "";
+  if (detail.includes("terms")) return "New resident accounts must be created with email after accepting the current Terms and Conditions. Existing social accounts can still sign in.";
   if (detail.includes("rate limit") || detail.includes("too many requests")) return "Too many attempts. Wait a few minutes before trying again.";
   if (detail.includes("network") || detail.includes("fetch")) return "We could not reach the sign-in service. Check your connection and retry.";
   if (step === "verification") return "That code is invalid or expired. Check the email or request a new code.";
@@ -99,6 +112,7 @@ export default function Home() {
     [barangayMessage, setBarangayMessage] = useState(""),
     [failedReportPhotos, setFailedReportPhotos] = useState<Record<string, boolean>>({}),
     [refreshing, setRefreshing] = useState(false),
+    [exploreMapGestureActive, setExploreMapGestureActive] = useState(false),
     [notificationReturnTab, setNotificationReturnTab] = useState("Home"),
     [reportReturnTab, setReportReturnTab] = useState("Home"),
     [communityInitialTab, setCommunityInitialTab] = useState<"consultations" | "meetings">("consultations");
@@ -347,6 +361,7 @@ export default function Home() {
         <ScrollView
           style={Platform.select({ web: { flex: 1, scrollPaddingBottom: 124 } })}
           ref={scroll}
+          scrollEnabled={!(tab === "Explore" && !selected && exploreMapGestureActive)}
           onScroll={(event) => { if (tab === "Explore" && !selected) exploreScrollY.current = event.nativeEvent.contentOffset.y; }}
           scrollEventThrottle={16}
           contentContainerStyle={[s.scroll, tab === "Home" && { gap: 9, paddingTop: 12 }]}
@@ -384,6 +399,7 @@ export default function Home() {
                     categories={q.data.categories}
                     barangays={q.data.barangays}
                     onOpenReport={openExploreReport}
+                    onMapGestureActiveChange={setExploreMapGestureActive}
                     suspendExpandedMap={!!selected && reportReturnTab === "Explore"}
                     includeSamples={q.data.includeSamples}
                   />
@@ -657,6 +673,10 @@ function Auth({ initialError }: { initialError: string }) {
     [busy, setBusy] = useState(false),
     [showPassword, setShowPassword] = useState(false);
   const [messageIsError, setMessageIsError] = useState(!!initialError);
+  const [termsOpen, setTermsOpen] = useState(false),
+    [termsReachedEnd, setTermsReachedEnd] = useState(false),
+    [termsRead, setTermsRead] = useState(false),
+    [termsAccepted, setTermsAccepted] = useState(false);
   useEffect(() => {
     if (mode !== "verify" || resendSeconds <= 0) return;
     const timer = setTimeout(() => setResendSeconds((seconds) => Math.max(0, seconds - 1)), 1000);
@@ -690,6 +710,7 @@ function Auth({ initialError }: { initialError: string }) {
       : Linking.createURL("/", { scheme: "iliganconnect", isTripleSlashed: true });
   const changeMode = (next: string) => {
     setBarangayPickerOpen(false);
+    setTermsOpen(false); setTermsReachedEnd(false); setTermsRead(false); setTermsAccepted(false);
     setMobileTouched(false);
     setAgeTouched(false);
     setFirstName(""); setMiddleName(""); setLastName(""); setAge("");
@@ -952,6 +973,21 @@ function Auth({ initialError }: { initialError: string }) {
                     }
                   />
                 )}
+                {mode === "register" && <View style={[s.card, { gap: 10, padding: 13, backgroundColor: "#f8fbfa" }]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="document-text-outline" size={19} color={colors.brand} /></View>
+                    <View style={{ flex: 1, gap: 2 }}><Text style={s.fieldLabel}>Terms and Conditions</Text><Text style={s.small}>Read the terms before creating your account.</Text></View>
+                  </View>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Read Terms and Conditions" onPress={() => { setTermsReachedEnd(false); setTermsOpen(true); }} style={({ pressed }) => [{ minHeight: 46, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: "#cfe4df", backgroundColor: "white", flexDirection: "row", alignItems: "center", justifyContent: "space-between", opacity: pressed ? 0.78 : 1 }]}>
+                    <Text style={{ color: colors.brand, fontSize: 13, fontWeight: "700" }}>{termsRead ? "Terms reviewed" : "Read Terms and Conditions"}</Text>
+                    <Ionicons name={termsRead ? "checkmark-circle" : "open-outline"} size={18} color={colors.brand} />
+                  </Pressable>
+                  <Pressable accessibilityRole="checkbox" accessibilityLabel="I have read and agree to the Terms and Conditions" accessibilityState={{ checked: termsAccepted, disabled: !termsRead }} disabled={!termsRead} onPress={() => setTermsAccepted((value) => !value)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, opacity: !termsRead ? 0.55 : pressed ? 0.78 : 1 }]}>
+                    <View style={{ width: 23, height: 23, borderRadius: 6, borderWidth: 1.5, borderColor: termsAccepted ? colors.brand : "#9aadae", backgroundColor: termsAccepted ? colors.brand : "white", alignItems: "center", justifyContent: "center" }}>{termsAccepted && <Ionicons name="checkmark" size={16} color="white" />}</View>
+                    <Text style={{ flex: 1, color: colors.brandDark, fontSize: 13, lineHeight: 19 }}>I have read and agree to the Terms and Conditions.</Text>
+                  </Pressable>
+                  {!termsRead && <Text style={s.small}>Open the terms and scroll to the end to enable agreement.</Text>}
+                </View>}
                 <Button
                   title={
                     busy
@@ -973,12 +1009,13 @@ function Auth({ initialError }: { initialError: string }) {
                       !!mobileInputError(mobile) ||
                       signupBarangays.isPending ||
                       signupBarangays.isError ||
-                      !signupBarangays.data?.some((item) => item.id === registeredBarangay)
+                      !signupBarangays.data?.some((item) => item.id === registeredBarangay) ||
+                      !termsRead || !termsAccepted
                     ))
                   }
                   loading={busy}
                   onPress={async () => {
-                    const problem = emailInputError(email) || (mode === "register" ? namePartsProblem || ageProblem || mobileInputError(mobile) || (!registeredBarangay || !signupBarangays.data?.some((item) => item.id === registeredBarangay) ? "Choose your registered barangay before creating an account." : "") : "") || (mode !== "reset" ? passwordInputError(password, mode === "register" ? MIN_PASSWORD_LENGTH : 1) : "");
+                    const problem = emailInputError(email) || (mode === "register" ? namePartsProblem || ageProblem || mobileInputError(mobile) || (!registeredBarangay || !signupBarangays.data?.some((item) => item.id === registeredBarangay) ? "Choose your registered barangay before creating an account." : "") || (!termsRead || !termsAccepted ? "Read and agree to the Terms and Conditions before creating an account." : "") : "") || (mode !== "reset" ? passwordInputError(password, mode === "register" ? MIN_PASSWORD_LENGTH : 1) : "");
                     if (problem) { setMessage(problem); setMessageIsError(true); return; }
                     setBusy(true);
                     setMessage("");
@@ -1009,6 +1046,8 @@ function Auth({ initialError }: { initialError: string }) {
                                     display_name: fullName,
                                     phone: normalizePhilippineMobile(mobile) || null,
                                     barangay_id: registeredBarangay,
+                                    terms_version: RESIDENT_TERMS_VERSION,
+                                    terms_accepted_at: new Date().toISOString(),
                                   },
                                   emailRedirectTo: redirect(),
                                 },
@@ -1038,6 +1077,7 @@ function Auth({ initialError }: { initialError: string }) {
                   <View style={{ flexDirection: "row", gap: 9 }}>
                     {([ ["google", "logo-google", "Google", "#4285f4"], ["facebook", "logo-facebook", "Facebook", "#1877f2"] ] as const).filter(([provider]) => providers.data?.[provider]).map(([provider, icon, title, tint]) => <Pressable key={provider} accessibilityRole="button" accessibilityLabel={`Continue with ${title}`} accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={() => void signInSocial(provider)} style={({ pressed }) => [{ flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 13, borderWidth: 1, borderColor: "#dce7ed", backgroundColor: "white", opacity: busy ? 0.55 : pressed ? 0.78 : 1 }]}><Ionicons name={icon} size={18} color={tint} /><Text style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>{title}</Text></Pressable>)}
                   </View>
+                  <Text style={s.small}>New residents should create an account with email and accept the current terms first.</Text>
                 </>}
                 <Pressable
                   accessibilityRole="button"
@@ -1078,6 +1118,31 @@ function Auth({ initialError }: { initialError: string }) {
             value={registeredBarangay}
             onConfirm={setRegisteredBarangay}
           />
+          <Modal visible={termsOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setTermsOpen(false)}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.line, backgroundColor: "white" }}>
+                <View style={{ flex: 1, gap: 3 }}><Text accessibilityRole="header" style={[s.title, { fontSize: 18 }]}>Resident Terms of Use</Text><Text style={s.small}>Iligan Connect · Version {RESIDENT_TERMS_VERSION}</Text></View>
+                <Pressable accessibilityRole="button" accessibilityLabel="Close terms" onPress={() => setTermsOpen(false)} style={{ width: 44, height: 44, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: "white", alignItems: "center", justifyContent: "center" }}><Ionicons name="close" size={21} color={colors.brandDark} /></Pressable>
+              </View>
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ padding: 18, gap: 15, paddingBottom: 24 }}
+                showsVerticalScrollIndicator
+                onScroll={(event) => {
+                  const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                  if (contentOffset.y + layoutMeasurement.height >= contentSize.height - 24) setTermsReachedEnd(true);
+                }}
+                scrollEventThrottle={80}
+              >
+                <Text style={[s.body, { fontSize: 14 }]}>Please read these terms before registering. They explain how to use the reporting and community features responsibly.</Text>
+                {RESIDENT_TERMS.map((section) => <View key={section.title} style={{ gap: 5 }}><Text style={[s.fieldLabel, { fontSize: 14 }]}>{section.title}</Text><Text style={[s.body, { fontSize: 13, lineHeight: 20 }]}>{section.body}</Text></View>)}
+              </ScrollView>
+              <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: "white", gap: 8 }}>
+                {!termsReachedEnd && <Text style={s.small}>Scroll through the terms to continue.</Text>}
+                <Button title={termsRead ? "Done" : "I’ve read the terms"} disabled={!termsReachedEnd} onPress={() => { setTermsRead(true); setTermsOpen(false); }} />
+              </View>
+            </SafeAreaView>
+          </Modal>
           <Text style={[s.small, s.authFoot]}>
             Not an emergency service. Your precise report location and
             photographs are protected.
@@ -1150,6 +1215,7 @@ function ProfileForm({
     [notifications, setNotifications] = useState(p.notifications_enabled),
     [deviceAlertsAllowed, setDeviceAlertsAllowed] = useState<boolean | null>(null),
     [deviceAlertsCanAsk, setDeviceAlertsCanAsk] = useState(true),
+    [phoneAlertsEnabled, setPhoneAlertsEnabled] = useState(false),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [notificationBusy, setNotificationBusy] = useState(false),
@@ -1166,11 +1232,19 @@ function ProfileForm({
   const photoLock = useRef(false);
   useEffect(() => {
     if (Platform.OS === "web") return;
-    const refresh = () => { void Notifications.getPermissionsAsync().then(permission => { setDeviceAlertsAllowed(permission.granted); setDeviceAlertsCanAsk(permission.canAskAgain); }).catch(() => setDeviceAlertsAllowed(false)); };
+    let active = true;
+    const refresh = () => {
+      void Promise.all([Notifications.getPermissionsAsync(), getDevicePushPreference(p.id)]).then(([permission, preference]) => {
+        if (!active) return;
+        setDeviceAlertsAllowed(permission.granted);
+        setDeviceAlertsCanAsk(permission.canAskAgain);
+        setPhoneAlertsEnabled(permission.granted && preference !== false);
+      }).catch(() => { if (active) { setDeviceAlertsAllowed(false); setPhoneAlertsEnabled(false); } });
+    };
     refresh();
     const subscription = AppState.addEventListener("change", state => { if (state === "active") refresh(); });
-    return () => subscription.remove();
-  }, []);
+    return () => { active = false; subscription.remove(); };
+  }, [p.id]);
   const auth = useQuery({
     queryKey: ["profile-auth", p.id],
     queryFn: async () => {
@@ -1203,7 +1277,6 @@ function ProfileForm({
   const fullNameTooLong = residentDisplayName(firstName, middleName, lastName).length > 100;
   const ageProblem = age.trim() ? residentAgeError(age) : "";
   const version = (require("../app.json") as { expo: { version: string } }).expo.version;
-  const pushConfigured = !!expoProjectId();
 
   async function changePhoto(source: "gallery" | "camera") {
     if (photoLock.current) return;
@@ -1301,47 +1374,49 @@ function ProfileForm({
     try {
       await result(db!.from("profiles").update({ notifications_enabled: value }).eq("id", p.id));
       setNotifications(value);
-      let pushStatus: "registered" | "not-configured" | null = null;
-      try {
-        if (!value) await removeDevicePushTokens(p.id);
-        else if (deviceAlertsAllowed) pushStatus = await registerDevicePushToken(p.id) === "registered" ? "registered" : "not-configured";
-      } catch { pushStatus = value ? "not-configured" : null; }
+      if (!value) await removeDevicePushTokens(p.id);
+      else if (deviceAlertsAllowed && phoneAlertsEnabled) void registerDevicePushToken(p.id).catch(() => undefined);
       await qc.invalidateQueries({ queryKey: ["home", p.id] });
-      setMessage(value
-        ? pushStatus === "not-configured"
-          ? "In-app updates are on. Phone pop-up delivery still needs setup for this APK."
-          : "Report and community updates are on."
-        : "Report and community updates are off.");
+      setMessage(value ? "Notifications are on." : "Notifications are off.");
     } catch (error) {
       setMessage((error as Error).message || "Could not update your notification preference.");
     } finally { setNotificationBusy(false); }
   }
 
-  async function allowDeviceAlerts() {
-    if (notificationBusy || deviceAlertsAllowed) return;
+  async function togglePhoneAlerts(value: boolean) {
+    if (notificationBusy || value === phoneAlertsEnabled) return;
     setNotificationBusy(true);
     setMessage("");
     try {
-      if (!deviceAlertsCanAsk) {
+      if (!value) {
+        await setDevicePushPreference(p.id, false);
+        await removeDevicePushTokens(p.id);
+        setPhoneAlertsEnabled(false);
+        return;
+      }
+      let permissionGranted = deviceAlertsAllowed === true;
+      if (!permissionGranted && !deviceAlertsCanAsk) {
+        await setDevicePushPreference(p.id, true);
         await NativeLinking.openSettings();
         return;
       }
-      if (Platform.OS === "android") await Notifications.setNotificationChannelAsync("community-alerts", { name: "Community alerts", importance: Notifications.AndroidImportance.HIGH, sound: "default", vibrationPattern: [0, 250, 250, 250] });
-      const permission = await Notifications.requestPermissionsAsync();
-      setDeviceAlertsAllowed(permission.granted);
-      setDeviceAlertsCanAsk(permission.canAskAgain);
-      if (!permission.granted) setMessage("Phone notifications are off. You can allow them in your phone settings.");
-      else if (!notifications) setMessage("Phone permission is allowed. Turn on report and community updates to receive alerts.");
-      else {
-        const setup = await registerDevicePushToken(p.id);
-        setMessage(setup === "registered"
-          ? "Phone alerts are ready for report and community updates."
-          : setup === "not-configured"
-            ? "Phone permission is allowed, but push delivery still needs setup for this APK."
-            : "Phone permission is allowed. Reopen the app to finish setting up alerts.");
+      if (!permissionGranted) {
+        if (Platform.OS === "android") await Notifications.setNotificationChannelAsync("community-alerts", { name: "Community alerts", importance: Notifications.AndroidImportance.HIGH, sound: "default", vibrationPattern: [0, 250, 250, 250] });
+        const permission = await Notifications.requestPermissionsAsync();
+        permissionGranted = permission.granted;
+        setDeviceAlertsAllowed(permission.granted);
+        setDeviceAlertsCanAsk(permission.canAskAgain);
       }
+      if (!permissionGranted) {
+        setPhoneAlertsEnabled(false);
+        setMessage("Allow notifications in phone settings to turn on phone alerts.");
+        return;
+      }
+      await setDevicePushPreference(p.id, true);
+      setPhoneAlertsEnabled(true);
+      if (notifications) void registerDevicePushToken(p.id).catch(() => undefined);
     } catch {
-      setMessage("Could not open phone notification settings. Please try again.");
+      setMessage("Could not update phone alerts. Please try again.");
     } finally { setNotificationBusy(false); }
   }
 
@@ -1425,12 +1500,11 @@ function ProfileForm({
             <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={s.fieldLabel}>In-app updates</Text><Text style={s.small}>Report, community, meeting and official announcement updates.</Text></View>
             <View pointerEvents="none" aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{Platform.OS === "web" ? <View style={{ width: 40, height: 20, borderRadius: 10, backgroundColor: notifications ? "#08756b" : colors.line, alignItems: notifications ? "flex-end" : "flex-start" }}><View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: notifications ? colors.brand : "#f6fbfa" }} /></View> : <Switch accessible={false} disabled={notificationBusy} value={notifications} trackColor={{ false: colors.line, true: "#08756b" }} thumbColor={notifications ? colors.brand : "#f6fbfa"} />}</View>
           </Pressable>
-          {Platform.OS !== "web" && <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 8, borderTopWidth: 1, borderTopColor: colors.line }}>
+          {Platform.OS !== "web" && <View style={{ minHeight: 58, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: colors.line }}>
             <View style={{ width: 42, height: 42, borderRadius: 15, backgroundColor: "#e1f5f1", alignItems: "center", justifyContent: "center" }}><Ionicons name="phone-portrait-outline" size={20} color={colors.brand} /></View>
-          <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={s.fieldLabel}>Phone alerts</Text><Text style={s.small}>{deviceAlertsAllowed ? pushConfigured ? "Allowed in phone settings" : "Permission allowed · push setup pending for this APK" : "Allow this app to show notifications"}</Text></View>
-            <Pressable accessibilityRole="button" accessibilityLabel={deviceAlertsAllowed ? pushConfigured ? "Phone notifications allowed" : "Phone permission allowed, push setup pending" : deviceAlertsCanAsk ? "Allow phone notifications" : "Open phone notification settings"} disabled={notificationBusy || deviceAlertsAllowed === true} onPress={() => void allowDeviceAlerts()} style={({ pressed }) => ({ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 11, backgroundColor: deviceAlertsAllowed ? colors.brandSoft : colors.brand, opacity: notificationBusy ? .6 : pressed ? .8 : 1 })}><Text style={{ color: deviceAlertsAllowed ? colors.brand : "white", fontSize: 12, fontWeight: "800" }}>{deviceAlertsAllowed ? pushConfigured ? "Allowed" : "Setup needed" : deviceAlertsCanAsk ? "Allow" : "Settings"}</Text></Pressable>
+            <Text style={[s.fieldLabel, { flex: 1 }]}>Phone alerts</Text>
+            <Switch accessibilityRole="switch" accessibilityLabel="Phone alerts" accessibilityState={{ disabled: notificationBusy || deviceAlertsAllowed === null, checked: phoneAlertsEnabled && deviceAlertsAllowed === true }} disabled={notificationBusy || deviceAlertsAllowed === null} value={phoneAlertsEnabled && deviceAlertsAllowed === true} onValueChange={(value) => void togglePhoneAlerts(value)} trackColor={{ false: colors.line, true: "#08756b" }} thumbColor={phoneAlertsEnabled && deviceAlertsAllowed === true ? colors.brand : "#f6fbfa"} />
           </View>}
-          <Text style={[s.small, { paddingHorizontal: 8 }]}>{pushConfigured ? "Phone pop-ups require both this app preference and notification permission in Android settings." : "Phone permission can be allowed now. Push delivery will start after this APK is connected to its notification service."}</Text>
         </View>
       </View>
 

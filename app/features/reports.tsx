@@ -166,7 +166,6 @@ export function ReportForm({
     },
   });
   const [step, setStep] = useState(0),
-    [confirmed, setConfirmed] = useState(false),
     [locationSource, setLocationSource] = useState<"gps" | "pin" | "coordinates" | null>(null),
     [locationAccuracy, setLocationAccuracy] = useState<number | null>(null),
     [detectedBarangayName, setDetectedBarangayName] = useState(""),
@@ -186,7 +185,8 @@ export function ReportForm({
     [categorySheetOpen, setCategorySheetOpen] = useState(false),
     [barangaySelectionSource, setBarangaySelectionSource] = useState<"pin" | "manual" | null>(null),
     [uploaded, setUploaded] = useState(false),
-    [draftKey, setDraftKey] = useState("");
+    [draftKey, setDraftKey] = useState(""),
+    [coordinates, setCoordinates] = useState({ latitude: "", longitude: "" });
   const values = watch();
   function showMessage(text: string, tone: NoticeTone = "info") { setMessage(text); setMessageTone(tone); }
   function clearMessage() { showMessage(""); }
@@ -211,7 +211,6 @@ export function ReportForm({
     const request = activeRequest ?? ++locationRequest.current;
     setLocating(true);
     setLocationError("");
-    setConfirmed(false);
     setCityConfirmed(false);
     setManualBarangayConfirmed(false);
     try {
@@ -263,6 +262,8 @@ export function ReportForm({
   const selectedBarangay = barangays.find((item) => item.id === values.barangay_id);
   const detectedBarangay = barangays.find((item) => item.name === detectedBarangayName);
   const barangayMismatch = !!detectedBarangay && !!selectedBarangay && detectedBarangay.id !== selectedBarangay.id;
+  const coordinatesApplied = coordinates.latitude === String(values.latitude ?? "") && coordinates.longitude === String(values.longitude ?? "");
+  const locationReady = Boolean(locationSource && cityConfirmed && hasReportCoordinates(values) && coordinatesApplied && selectedBarangay && !locating && (!(barangayReviewRequired || barangayMismatch) || manualBarangayConfirmed));
   const selectedCategory = categories.find((item) => item.id === values.category_id);
   const problemOptions = [...(selectedCategory?.problem_types ?? [])].sort((a, b) => a.sort_order - b.sort_order);
   const drainage = selectedCategory?.name.toLowerCase().startsWith("drainage");
@@ -273,14 +274,9 @@ export function ReportForm({
       showMessage(issueDetailsMessage(values), "warning");
       return;
     }
-    if (!confirmed || !locationSource || !hasReportCoordinates(values) || locating || !(await trigger(["latitude", "longitude", "barangay_id", "purok", "zone", "landmark", "location_source", "location_address", "location_accuracy"]))) {
+    if (!locationReady || !(await trigger(["latitude", "longitude", "barangay_id", "purok", "zone", "landmark", "location_source", "location_address", "location_accuracy"]))) {
       setStep(1);
-      showMessage("Choose and confirm the issue location and barangay before reviewing.", "warning");
-      return;
-    }
-    if (!cityConfirmed) {
-      setStep(1);
-      showMessage("Check the pin location before continuing.", "warning");
+      showMessage("Choose a valid pin and barangay before reviewing.", "warning");
       return;
     }
     if (barangayReviewRequired && !manualBarangayConfirmed) {
@@ -296,10 +292,6 @@ export function ReportForm({
     clearMessage();
     setStep(2);
   }
-  const [coordinates, setCoordinates] = useState({
-    latitude: "",
-    longitude: "",
-  });
   useEffect(
     () =>
       setCoordinates({
@@ -368,8 +360,8 @@ export function ReportForm({
   }
   async function submit(v: ReportInput) {
     if (submissionLock.current) return;
-    if (!confirmed || !locationSource || !hasReportCoordinates(v) || !cityConfirmed || locating) {
-      showMessage("Choose and confirm the issue location before submitting.", "warning");
+    if (!locationReady || !locationSource || !hasReportCoordinates(v) || !cityConfirmed || locating) {
+      showMessage("Choose a valid issue location before submitting.", "warning");
       setStep(1);
       return;
     }
@@ -602,7 +594,7 @@ export function ReportForm({
             <>
               <View style={{ gap: 6 }}>
                 <Text style={s.title}>Pinpoint the issue</Text>
-                <Text style={s.small}>Every report needs a confirmed pin. Use your current location to place it automatically, or tap the issue's location on the map.</Text>
+                <Text style={s.small}>Every report needs a valid pin. Use your current location or tap the issue's location on the map.</Text>
               </View>
               <View style={[s.card, { gap: 7, padding: 14, backgroundColor: "#f6fbfa", borderColor: "#dcefeb" }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -613,7 +605,6 @@ export function ReportForm({
                   const request = ++locationRequest.current;
                   setLocating(true);
                   setLocationError("");
-                  setConfirmed(false);
                   try {
                     const loc = await currentDeviceLocation();
                     if (request === locationRequest.current) await chooseLocation(loc, "gps", loc.accuracy, request);
@@ -639,10 +630,10 @@ export function ReportForm({
               </View>
               <View style={[s.card, { gap: 10, padding: 14 }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: confirmed ? colors.brandSoft : "#fff5e7", alignItems: "center", justifyContent: "center" }}><Ionicons name={confirmed ? "checkmark-circle-outline" : "navigate-outline"} size={21} color={confirmed ? colors.brand : "#b7791f"} /></View>
-                  <View style={{ flex: 1, gap: 3 }}><Text style={s.fieldLabel}>{confirmed ? "Location confirmed" : locationSource ? "Location checked" : "Choose a spot on the map"}</Text><Text style={s.small}>{hasReportCoordinates(values) ? `${locationAddress || "Iligan City"} · ${values.latitude.toFixed(5)}, ${values.longitude.toFixed(5)}` : "Your report location stays private from the public."}</Text></View>
+                  <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: locationReady ? colors.brandSoft : "#fff5e7", alignItems: "center", justifyContent: "center" }}><Ionicons name={locationReady ? "checkmark-circle-outline" : "navigate-outline"} size={21} color={locationReady ? colors.brand : "#b7791f"} /></View>
+                  <View style={{ flex: 1, gap: 3 }}><Text style={s.fieldLabel}>{locationReady ? "Location confirmed" : locationSource ? "Location checked" : "Choose a spot on the map"}</Text><Text style={s.small}>{hasReportCoordinates(values) ? `${locationAddress || "Iligan City"} · ${values.latitude.toFixed(5)}, ${values.longitude.toFixed(5)}` : "Your report location stays private from the public."}</Text></View>
                 </View>
-                {locationSource === "gps" && <Text style={[s.small, { paddingLeft: 48 }]}>{locationAccuracy === null ? "GPS accuracy is unavailable. Check the pin before confirming." : `GPS accuracy: about ±${Math.round(locationAccuracy)} m.${locationAccuracy > 100 ? " Move the pin to the issue location." : " Move the pin if the issue is elsewhere."}`}</Text>}
+                {locationSource === "gps" && <Text style={[s.small, { paddingLeft: 48 }]}>{locationAccuracy === null ? "GPS accuracy is unavailable. Check the pin on the map." : `GPS accuracy: about ±${Math.round(locationAccuracy)} m.${locationAccuracy > 100 ? " Move the pin to the issue location." : " Move the pin if the issue is elsewhere."}`}</Text>}
 
               </View>
               {!!errors.latitude && <Text accessibilityRole="alert" style={s.error}>{errors.latitude.message}</Text>}
@@ -657,7 +648,6 @@ export function ReportForm({
                   value={coordinates[name]}
                   onChangeText={(v) => {
                     setCoordinates((current) => ({ ...current, [name]: v }));
-                    setConfirmed(false);
                   }}
                 />
               ))}
@@ -674,9 +664,9 @@ export function ReportForm({
                 }}
               /></>}
               <View style={[s.card, { gap: 8, padding: 14, backgroundColor: "#fbfdfd" }]}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}><Ionicons name="business-outline" size={20} color={colors.brand} /><Text style={s.fieldLabel}>Confirm the barangay</Text></View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}><Ionicons name="business-outline" size={20} color={colors.brand} /><Text style={s.fieldLabel}>Check the barangay</Text></View>
                 <Text style={s.small}>{barangayReviewRequired ? detectedBarangayName ? `Nearest mapped barangay: ${detectedBarangayName}. We couldn’t identify an exact match at this pin. Please check the suggestion and change it below if needed.` : "We couldn’t identify a barangay here. Please choose and confirm the correct barangay below." : barangaySelectionSource === "pin" ? `Boundary data suggests ${detectedBarangayName}. You can change it if needed.` : barangaySelectionSource === "manual" ? `Barangay chosen manually${detectedBarangayName ? ` · Boundary data: ${detectedBarangayName}` : ""}.` : "Choose the barangay where the issue is. Your profile barangay is only a suggestion."}</Text>
-                <Choices title="Choose a barangay" subtitle="Select the barangay where the issue is located." sheetKind="barangay" items={barangays} value={values.barangay_id} onChange={(value) => { setValue("barangay_id", value, { shouldValidate: true, shouldDirty: true }); setBarangaySelectionSource("manual"); setManualBarangayConfirmed(false); setConfirmed(false); }} />
+                <Choices title="Choose a barangay" subtitle="Select the barangay where the issue is located." sheetKind="barangay" items={barangays} value={values.barangay_id} onChange={(value) => { setValue("barangay_id", value, { shouldValidate: true, shouldDirty: true }); setBarangaySelectionSource("manual"); setManualBarangayConfirmed(false); }} />
                 {barangayReviewRequired && <View style={{ gap: 8, padding: 12, borderRadius: 14, backgroundColor: "#effaf7", borderWidth: 1, borderColor: "#cdece5" }}>
                   <Text accessibilityLiveRegion="polite" style={s.small}>{manualBarangayConfirmed ? `Barangay confirmed: ${selectedBarangay?.name}.` : "Review needed · The nearest barangay may not be the correct one for this location."}</Text>
                   <Button secondary={manualBarangayConfirmed} disabled={!selectedBarangay || !cityConfirmed || locating || manualBarangayConfirmed} title={manualBarangayConfirmed ? "Barangay confirmed" : "Confirm barangay"} onPress={() => setManualBarangayConfirmed(true)} />
@@ -695,20 +685,8 @@ export function ReportForm({
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14 }}>
                   {(["purok", "zone"] as const).map((name) => <View key={name} style={{ flex: 1, minWidth: 140 }}><Controller control={control} name={name} render={({ field }) => <Field label={`${label(name)} (optional)`} value={field.value || ""} placeholder={name === "purok" ? "e.g. 3 or Riverside" : "e.g. 2 or Central"} maxLength={80} error={errors[name]?.message} inputRef={field.ref} onBlur={field.onBlur} onChangeText={field.onChange} />} /></View>)}
                 </View>
-                <Controller control={control} name="landmark" render={({ field }) => <Field label="Additional location details (optional)" value={field.value || ""} placeholder="Street name, nearby landmark or house number" maxLength={240} multiline error={errors.landmark?.message} inputRef={field.ref} onBlur={field.onBlur} onChangeText={field.onChange} hint="Help staff find the issue. Only authorized staff can see these details." />} />
-                <Text style={s.small}>The pin and any written address details will be saved together. GPS access is optional.</Text>
+                <Controller control={control} name="landmark" render={({ field }) => <Field label="Additional location details (optional)" value={field.value || ""} placeholder="Street name, nearby landmark or house number" maxLength={240} multiline error={errors.landmark?.message} inputRef={field.ref} onBlur={field.onBlur} onChangeText={field.onChange} />} />
               </View>
-                <Button secondary={confirmed} disabled={!locationSource || !cityConfirmed || !hasReportCoordinates(values) || !selectedBarangay || locating || ((barangayReviewRequired || barangayMismatch) && !manualBarangayConfirmed)} title={confirmed ? "Location confirmed" : "Confirm this location"} onPress={() => {
-                  if (!locationSource || !cityConfirmed || !selectedBarangay || !hasReportCoordinates(values) || locating || ((barangayReviewRequired || barangayMismatch) && !manualBarangayConfirmed)) return;
-                  if (coordinates.latitude !== String(values.latitude) || coordinates.longitude !== String(values.longitude)) {
-                    showMessage("Apply your entered coordinates before confirming the point.", "warning");
-                    return;
-                  }
-                  setLocationError("");
-                  setConfirmed(true);
-                  showMessage("Location confirmed.", "success");
-                }} />
-              {!confirmed && <Text style={s.small}>Choose and confirm a valid pin and barangay to enable Continue.</Text>}
             </>
           )}
           {step === 2 && (
@@ -730,7 +708,7 @@ export function ReportForm({
           {step < 2 ? (
             <Button
               title="Continue"
-              disabled={busy || (step === 1 && (!confirmed || !hasReportCoordinates(values) || !cityConfirmed || locating || ((barangayReviewRequired || barangayMismatch) && !manualBarangayConfirmed)))}
+              disabled={busy || (step === 1 && !locationReady)}
               onPress={async () => {
                 clearMessage();
                 if (step === 1) { await reviewReport(); return; }
@@ -1045,12 +1023,14 @@ export function Explore({
   categories,
   barangays,
   onOpenReport,
+  onMapGestureActiveChange,
   suspendExpandedMap = false,
   includeSamples = false,
 }: {
   categories: Lookup[];
   barangays: Lookup[];
   onOpenReport: (report: Report) => void;
+  onMapGestureActiveChange?: (active: boolean) => void;
   suspendExpandedMap?: boolean;
   includeSamples?: boolean;
 }) {
@@ -1061,6 +1041,7 @@ export function Explore({
     [barangay, setBarangay] = useState(""),
     [search, setSearch] = useState(""),
     [appliedSearch, setAppliedSearch] = useState(""),
+    [filtersOpen, setFiltersOpen] = useState(false),
     [showMap, setShowMap] = useState(true),
     [showBarangayMap, setShowBarangayMap] = useState(false),
     [barangayMetric, setBarangayMetric] = useState<"density" | "count">("density"),
@@ -1267,9 +1248,9 @@ export function Explore({
         </View>
         <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16, paddingHorizontal: 12 }}>Try ‘pothole’, ‘streetlight’, or a barangay</Text>
       </View>
-      <View style={{ flexDirection: windowWidth < 400 ? "column" : "row", alignItems: "stretch", gap: windowWidth < 400 ? 8 : 12 }}>
+      <View style={{ flexDirection: "row", alignItems: "stretch", gap: 8 }}>
         <Choices
-          grow={windowWidth >= 400}
+          grow
           items={[{ id: "", name: "All categories" }, ...categories]}
           value={category}
           compact
@@ -1279,7 +1260,7 @@ export function Explore({
           onChange={(v) => { setCategory(v); setDensityCellCount(null); setPage(0); }}
         />
         <Choices
-          grow={windowWidth >= 400}
+          grow
           items={[{ id: "", name: "All barangays" }, ...barangays]}
           value={barangay}
           leadingIcon="location-outline"
@@ -1288,12 +1269,14 @@ export function Explore({
       </View>
       <View style={[s.card, { gap: 12, borderColor: "#d8f0eb", shadowOpacity: 0.06, shadowRadius: 12 }]}>
         <View style={[s.row, { flexWrap: "nowrap", justifyContent: "space-between", alignItems: "center" }]}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 9, flex: 1, minWidth: 0 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Filter reports" accessibilityHint="Shows or hides report status and date filters" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((value) => !value)} style={{ minHeight: 48, flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 9 }}>
             <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="options" size={18} color={colors.brand} /></View>
             <Text style={[s.title, { fontSize: 16, lineHeight: 20, flexShrink: 1 }]}>Filter reports</Text>
-          </View>
+            <Ionicons name={filtersOpen ? "chevron-up" : "chevron-down"} size={17} color={colors.muted} />
+          </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Clear all report filters" disabled={!hasActiveFilters} onPress={() => { setCategory(""); setBarangay(""); setSearch(""); setAppliedSearch(""); setMapStatus("active"); setRecentOnly(false); setNearbyRadius("0"); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 4, opacity: hasActiveFilters ? 1 : 0.48 }, pressed && hasActiveFilters && { opacity: 0.72 }]}><Ionicons name="refresh" size={17} color={colors.muted} /><Text style={[s.small, { fontSize: 12, fontWeight: "600" }]}>Clear all</Text></Pressable>
         </View>
+        {filtersOpen && <>
           <View style={{ flexDirection: "row", gap: 8 }}>
           {[
             { id: "all", title: "All statuses", count: counts.all_count },
@@ -1311,6 +1294,7 @@ export function Explore({
           <Text style={[s.body, { flex: 1, fontSize: 13, fontWeight: "600" }]}>Reported in last 30 days</Text>
           <View style={{ width: 38, height: 23, borderRadius: 12, padding: 3, backgroundColor: recentOnly ? colors.brand : "#d5e0e8", justifyContent: "center" }}><View style={{ width: 17, height: 17, borderRadius: 9, backgroundColor: "white", alignSelf: recentOnly ? "flex-end" : "flex-start", shadowColor: "#123", shadowOpacity: 0.14, shadowRadius: 3, elevation: 1 }} /></View>
         </Pressable>
+        </>}
       </View>
       {showMap && (
         <>
@@ -1334,6 +1318,7 @@ export function Explore({
             userPoint={currentLocation}
             locating={locating}
             onLocate={locateOnMap}
+            onGestureActiveChange={onMapGestureActiveChange}
             selectedPointId={selectedReportId ?? undefined}
             onPointPress={selectMapPoint}
             onExpand={expandMap}
@@ -1382,35 +1367,14 @@ export function Explore({
             {mapQuery.data?.length === 500 && <Text style={[s.small, { color: colors.muted }]}>Counts use the latest 500 published reports. Narrow the filters for more detail.</Text>}
           </View>}
           {expandedMap && <Modal visible={!suspendExpandedMap} animationType="slide" onRequestClose={() => setExpandedMap(false)}>
-            <View style={{ flex: 1, backgroundColor: colors.paper, paddingTop: 14 }}>
+            <View style={{ flex: 1, backgroundColor: colors.paper, paddingTop: 8, paddingHorizontal: 10, paddingBottom: 10, gap: 8 }}>
               <View style={{ minHeight: 58, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <View><Text style={s.title}>{showBarangayMap ? "Barangay heatmap" : "Explore Iligan"}</Text><Text style={s.small}>{showBarangayMap ? `${mappedBarangayReportCount} mapped reports · tap a barangay` : `${mapPoints.length} map pins · ${mapReports.length - mapPoints.length} manual addresses`}</Text></View>
                 <Pressable accessibilityRole="button" accessibilityLabel="Close expanded map" onPress={() => setExpandedMap(false)} style={{ width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "white" }}><Ionicons name="close" size={23} color={colors.brandDark} /></Pressable>
               </View>
-              <ScrollView contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 24, gap: 12 }}>
-                {!showBarangayMap && showPins && <Text style={s.small}>Report pins stay visible at every zoom; pin colors show the report category.</Text>}
-                <LocationMap points={mapPoints} height={showBarangayMap ? Math.max(310, windowHeight * 0.5) : Math.max(320, windowHeight - 92)} zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"} density={!showBarangayMap && density} showPoints={!showBarangayMap && showPins} onDensityCellPress={setDensityCellCount} selectedCellCount={densityCellCount} userPoint={currentLocation} locating={locating} onLocate={locateOnMap} selectedPointId={selectedReportId ?? undefined} onPointPress={(point) => { selectMapPoint(point); const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }} mapStyle={mapStyle} onMapStyleChange={setMapStyle} initialRegion={mapViewport.current} onViewportChange={setMapViewport} bounds={ILIGAN_MAP_BOUNDS} showBarangayBoundaries={showBarangayMap} barangayCounts={barangayCounts} barangayMetric={barangayMetric} onBarangayPress={selectBarangayOnMap} onMapBackgroundPress={() => setSelectedChoroplethName("")} selectedBarangayName={selectedChoroplethName} summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand} />
-                {showBarangayMap && <View style={[s.card, { gap: 12 }]}>
-                  <View style={[s.row, { flexWrap: "nowrap", justifyContent: "space-between", alignItems: "center" }]}><Text style={[s.title, { fontSize: 15, flex: 1 }]}>{selectedChoroplethName || "Barangay report heat"}</Text><Text style={[s.small, { fontWeight: "700" }]}>{selectedChoroplethName ? `${selectedBarangayReports.length} reports` : `${mappedBarangayReportCount} mapped`}</Text>{!!selectedChoroplethName && <Pressable accessibilityRole="button" accessibilityLabel="Clear barangay selection" onPress={() => setSelectedChoroplethName("")} style={{ minHeight: 48, justifyContent: "center", paddingHorizontal: 8 }}><Text style={{ color: colors.brand, fontSize: 11, fontWeight: "800" }}>Clear</Text></Pressable>}</View>
-                  <Text style={s.small}>{selectedChoroplethName ? "Tap this barangay again, tap outside it on the map, or choose Clear to return to the heat summary." : barangayMetric === "density" ? "Color shows reports per km²; counts below use your current map filters." : "Color shows total matching reports for each barangay."}</Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                    {([["density", "Reports / km²"], ["count", "Total reports"]] as const).map(([value, title]) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: barangayMetric === value }} onPress={() => setBarangayMetric(value)} style={{ minHeight: 48, paddingHorizontal: 11, borderRadius: 11, backgroundColor: barangayMetric === value ? colors.brand : "#f2f7f8", justifyContent: "center" }}><Text style={{ color: barangayMetric === value ? "white" : colors.muted, fontSize: 11, fontWeight: "700" }}>{title}</Text></Pressable>)}
-                  </View>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>{(barangayMetric === "density" ? [["#34d399", "Low"], ["#facc15", "Moderate"], ["#f97316", "High"], ["#ef4444", "Highest"]] : [["#cbd5e1", "0"], ["#38bdf8", "1–2"], ["#14b8a6", "3–5"], ["#f59e0b", "6–10"], ["#ef4444", "11+"]]).map(([color, title]) => <View key={title} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}><View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: color }} /><Text style={[s.small, { fontSize: 10 }]}>{title}</Text></View>)}</View>
-                  <View style={{ height: 1, backgroundColor: colors.line }} />
-                  <Text style={{ color: colors.brandDark, fontSize: 12, fontWeight: "800" }}>{selectedChoroplethName ? `Reports in ${selectedChoroplethName}` : "Busiest barangays"}</Text>
-                  {!selectedChoroplethName && barangayHeatStats.top.map((row) => <Pressable key={row.name} accessibilityRole="button" onPress={() => setSelectedChoroplethName(row.name)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8 }}><View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: barangayDensityColor(row.density, barangayHeatStats.maxDensity) }} /><Text style={{ flex: 1, color: colors.brandDark, fontSize: 12 }}>{row.name}</Text><Text style={s.small}>{row.count} · {row.density.toFixed(1)}/km²</Text></Pressable>)}
-                  {!!selectedChoroplethName && selectedBarangayReports.length === 0 && <Text style={s.small}>No reports in this barangay match the current filters.</Text>}
-                  {selectedBarangayReports.map((report) => {
-                    const name = categoryNames.get(report.category_id) || "Other reports";
-                    const tone = categoryToneFor(name);
-                    return <Pressable key={report.id} accessibilityRole="button" accessibilityLabel={`Open report: ${report.title}`} onPress={() => onOpenReport(report)} style={({ pressed }) => [{ minHeight: 60, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderTopWidth: 1, borderColor: "#e7eff1" }, pressed && { opacity: 0.75 }]}>
-                      {reportPhotos.data?.urls[report.id] && !failedPhotos[report.id] ? <PhotoViewer source={{ uri: reportPhotos.data.urls[report.id] }} label={`${categoryDisplayName(name)} report photo`} onError={() => setFailedPhotos((value) => ({ ...value, [report.id]: true }))} style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background }} /> : <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(name)} size={19} color={tone.foreground} /></View>}
-                      <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>{report.title}</Text><Text numberOfLines={1} style={s.small}>{categoryDisplayName(name)} · {reportStatusLabel(report.status)} · {new Date(report.created_at).toLocaleDateString()}</Text></View><Ionicons name="chevron-forward" size={17} color={colors.muted} />
-                    </Pressable>;
-                  })}
-                </View>}
-              </ScrollView>
+              <View style={{ flex: 1, minHeight: 0 }}>
+                <LocationMap points={mapPoints} height={Math.max(180, windowHeight - 92)} zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"} density={!showBarangayMap && density} showPoints={!showBarangayMap && showPins} onDensityCellPress={setDensityCellCount} selectedCellCount={densityCellCount} userPoint={currentLocation} locating={locating} onLocate={locateOnMap} selectedPointId={selectedReportId ?? undefined} onPointPress={(point) => { selectMapPoint(point); const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }} onGestureActiveChange={onMapGestureActiveChange} mapStyle={mapStyle} onMapStyleChange={setMapStyle} initialRegion={mapViewport.current} onViewportChange={setMapViewport} bounds={ILIGAN_MAP_BOUNDS} showBarangayBoundaries={showBarangayMap} barangayCounts={barangayCounts} barangayMetric={barangayMetric} onBarangayPress={selectBarangayOnMap} onMapBackgroundPress={() => setSelectedChoroplethName("")} selectedBarangayName={selectedChoroplethName} summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand} />
+              </View>
             </View>
           </Modal>}
           {!showBarangayMap && !density && !showPins && <Text style={s.small}>Both layers are off. Turn on Pins or Heat to see reports.</Text>}

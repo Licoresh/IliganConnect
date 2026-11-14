@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
+import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { db, result } from "./client";
 
@@ -10,6 +11,17 @@ export function expoProjectId() {
     ?? Constants.easConfig?.projectId
     ?? process.env.EXPO_PUBLIC_EAS_PROJECT_ID
     ?? "";
+}
+
+const devicePushPreferenceKey = (userId: string) => `phone-alerts:${userId}`;
+
+export async function getDevicePushPreference(userId: string): Promise<boolean | null> {
+  const value = await SecureStore.getItemAsync(devicePushPreferenceKey(userId));
+  return value === null ? null : value === "on";
+}
+
+export async function setDevicePushPreference(userId: string, enabled: boolean) {
+  await SecureStore.setItemAsync(devicePushPreferenceKey(userId), enabled ? "on" : "off");
 }
 
 export async function registerDevicePushToken(userId: string): Promise<PushSetupResult> {

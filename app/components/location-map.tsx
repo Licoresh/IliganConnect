@@ -37,6 +37,7 @@ export type MapProps = {
   selectedPointId?: string;
   height?: number;
   onExpand?: () => void;
+  onGestureActiveChange?: (active: boolean) => void;
   mapStyle?: MapStyle;
   onMapStyleChange?: (style: MapStyle) => void;
   initialRegion?: Region;
@@ -101,6 +102,7 @@ export default function LocationMap({
   selectedPointId,
   height = 300,
   onExpand,
+  onGestureActiveChange,
   mapStyle,
   onMapStyleChange,
   initialRegion,
@@ -203,9 +205,14 @@ export default function LocationMap({
       <MapView
         ref={map}
         style={{ flex: 1 }}
+        scrollEnabled
+        zoomEnabled
+        pitchEnabled={false}
+        rotateEnabled={false}
+        onTouchStart={() => onGestureActiveChange?.(true)}
+        onTouchEnd={() => onGestureActiveChange?.(false)}
+        onTouchCancel={() => onGestureActiveChange?.(false)}
         mapType={base === "terrain" ? "terrain" : base === "satellite" ? "satellite" : "standard"}
-        pitchEnabled
-        rotateEnabled
         initialRegion={point ? { ...point, latitudeDelta: 0.02, longitudeDelta: 0.02 } : currentRegion.current}
         onRegionChangeComplete={(region) => { currentRegion.current = region; setZoomLevel(mapZoomFromLongitudeDelta(region.longitudeDelta)); onViewportChange?.(region); }}
         onPress={(e) => {

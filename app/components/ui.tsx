@@ -425,9 +425,9 @@ export function Choices({
   if (compact || items.length > 10)
     return (
       <>
-        <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityHint="Opens a searchable selection" onPress={() => setOpen(true)} style={({ pressed }) => [{ flex: grow ? 1 : undefined, minWidth: 0, minHeight: 58, borderRadius: 18, borderWidth: 1, borderColor: "#e3edf0", backgroundColor: "white", paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 9, shadowColor: colors.brandDark, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 }, pressed && { opacity: 0.78 }]}>
-          {leadingIcon && <Ionicons name={leadingIcon} size={19} color={colors.brand} />}
-          <Text numberOfLines={1} style={{ flex: 1, color: colors.brandDark, fontSize: 14, fontWeight: "700" }}>{selectedName ? (shortCategoryNames ? categoryDisplayName(selectedName) : selectedName) : placeholder || title}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityHint="Opens a searchable selection" onPress={() => setOpen(true)} style={({ pressed }) => [{ flex: grow ? 1 : undefined, minWidth: 0, minHeight: grow ? 54 : 58, borderRadius: 16, borderWidth: 1, borderColor: "#e3edf0", backgroundColor: "white", paddingHorizontal: grow ? 9 : 13, flexDirection: "row", alignItems: "center", gap: grow ? 6 : 9, shadowColor: colors.brandDark, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 }, pressed && { opacity: 0.78 }]}>
+          {leadingIcon && <Ionicons name={leadingIcon} size={grow ? 16 : 19} color={colors.brand} />}
+          <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: colors.brandDark, fontSize: grow ? 12 : 14, fontWeight: "700" }}>{selectedName ? (shortCategoryNames ? categoryDisplayName(selectedName) : selectedName) : placeholder || title}</Text>
           <Ionicons name="chevron-down" size={16} color={colors.muted} />
         </Pressable>
         <SelectionSheet

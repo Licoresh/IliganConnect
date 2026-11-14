@@ -6,7 +6,7 @@ import { AppState, Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import { db } from "../lib/client";
 import AppUpdateNotice from "../components/app-update";
-import { registerDevicePushToken, removeDevicePushTokens } from "../lib/push-notifications";
+import { getDevicePushPreference, registerDevicePushToken, removeDevicePushTokens } from "../lib/push-notifications";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -34,6 +34,10 @@ function ResidentPushRegistration() {
           .maybeSingle();
         if (error || !data) return;
         if (!data.notifications_enabled || data.role !== "resident" || data.account_status !== "active") {
+          await removeDevicePushTokens(userId);
+          return;
+        }
+        if (await getDevicePushPreference(userId) === false) {
           await removeDevicePushTokens(userId);
           return;
         }

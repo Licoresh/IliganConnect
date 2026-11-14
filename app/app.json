@@ -3,7 +3,7 @@
     "name": "Iligan Connect",
     "slug": "iligan-connect",
     "scheme": "iliganconnect",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "icon": "./assets/iligan-connect-app-icon.png",
     "orientation": "default",
     "userInterfaceStyle": "light",
@@ -11,6 +11,7 @@
       "expo-router",
       "expo-secure-store",
       "expo-web-browser",
+      "expo-notifications",
       [
         "expo-location",
         {
@@ -31,6 +32,7 @@
     },
     "android": {
       "package": "org.iligan.community",
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/iligan-connect-app-icon.png",
         "backgroundColor": "#025F60"

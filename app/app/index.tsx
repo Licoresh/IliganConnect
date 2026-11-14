@@ -26,6 +26,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as Crypto from "expo-crypto";
 import * as Notifications from "expo-notifications";
+import { expoProjectId, registerDevicePushToken, removeDevicePushTokens } from "../lib/push-notifications";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, result, configured } from "../lib/client";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryIconFor, categoryToneFor, statusToneFor, categoryDisplayName } from "../components/ui";
@@ -1202,6 +1203,7 @@ function ProfileForm({
   const fullNameTooLong = residentDisplayName(firstName, middleName, lastName).length > 100;
   const ageProblem = age.trim() ? residentAgeError(age) : "";
   const version = (require("../app.json") as { expo: { version: string } }).expo.version;
+  const pushConfigured = !!expoProjectId();
 
   async function changePhoto(source: "gallery" | "camera") {
     if (photoLock.current) return;
@@ -1299,8 +1301,17 @@ function ProfileForm({
     try {
       await result(db!.from("profiles").update({ notifications_enabled: value }).eq("id", p.id));
       setNotifications(value);
+      let pushStatus: "registered" | "not-configured" | null = null;
+      try {
+        if (!value) await removeDevicePushTokens(p.id);
+        else if (deviceAlertsAllowed) pushStatus = await registerDevicePushToken(p.id) === "registered" ? "registered" : "not-configured";
+      } catch { pushStatus = value ? "not-configured" : null; }
       await qc.invalidateQueries({ queryKey: ["home", p.id] });
-      setMessage(value ? "In-app updates are on." : "In-app updates are off.");
+      setMessage(value
+        ? pushStatus === "not-configured"
+          ? "In-app updates are on. Phone pop-up delivery still needs setup for this APK."
+          : "Report and community updates are on."
+        : "Report and community updates are off.");
     } catch (error) {
       setMessage((error as Error).message || "Could not update your notification preference.");
     } finally { setNotificationBusy(false); }
@@ -1315,11 +1326,20 @@ function ProfileForm({
         await NativeLinking.openSettings();
         return;
       }
-      if (Platform.OS === "android") await Notifications.setNotificationChannelAsync("community-updates", { name: "Community updates", importance: Notifications.AndroidImportance.DEFAULT });
+      if (Platform.OS === "android") await Notifications.setNotificationChannelAsync("community-alerts", { name: "Community alerts", importance: Notifications.AndroidImportance.HIGH, sound: "default", vibrationPattern: [0, 250, 250, 250] });
       const permission = await Notifications.requestPermissionsAsync();
       setDeviceAlertsAllowed(permission.granted);
       setDeviceAlertsCanAsk(permission.canAskAgain);
-      setMessage(permission.granted ? "Phone notification permission allowed." : "Phone notifications are off. You can allow them in your phone settings.");
+      if (!permission.granted) setMessage("Phone notifications are off. You can allow them in your phone settings.");
+      else if (!notifications) setMessage("Phone permission is allowed. Turn on report and community updates to receive alerts.");
+      else {
+        const setup = await registerDevicePushToken(p.id);
+        setMessage(setup === "registered"
+          ? "Phone alerts are ready for report and community updates."
+          : setup === "not-configured"
+            ? "Phone permission is allowed, but push delivery still needs setup for this APK."
+            : "Phone permission is allowed. Reopen the app to finish setting up alerts.");
+      }
     } catch {
       setMessage("Could not open phone notification settings. Please try again.");
     } finally { setNotificationBusy(false); }
@@ -1329,6 +1349,7 @@ function ProfileForm({
     if (signOutBusy) return;
     setSignOutBusy(true);
     try {
+      await removeDevicePushTokens(p.id).catch(() => undefined);
       const { error } = await db!.auth.signOut();
       if (error) throw error;
       setSignOutConfirm(false);
@@ -1406,10 +1427,10 @@ function ProfileForm({
           </Pressable>
           {Platform.OS !== "web" && <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 8, borderTopWidth: 1, borderTopColor: colors.line }}>
             <View style={{ width: 42, height: 42, borderRadius: 15, backgroundColor: "#e1f5f1", alignItems: "center", justifyContent: "center" }}><Ionicons name="phone-portrait-outline" size={20} color={colors.brand} /></View>
-            <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={s.fieldLabel}>Phone alerts</Text><Text style={s.small}>{deviceAlertsAllowed ? "Allowed in your phone settings" : "Allow this app to show notifications"}</Text></View>
-            <Pressable accessibilityRole="button" accessibilityLabel={deviceAlertsAllowed ? "Phone notifications allowed" : deviceAlertsCanAsk ? "Allow phone notifications" : "Open phone notification settings"} disabled={notificationBusy || deviceAlertsAllowed === true} onPress={() => void allowDeviceAlerts()} style={({ pressed }) => ({ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 11, backgroundColor: deviceAlertsAllowed ? colors.brandSoft : colors.brand, opacity: notificationBusy ? .6 : pressed ? .8 : 1 })}><Text style={{ color: deviceAlertsAllowed ? colors.brand : "white", fontSize: 12, fontWeight: "800" }}>{deviceAlertsAllowed ? "Allowed" : deviceAlertsCanAsk ? "Allow" : "Settings"}</Text></Pressable>
+          <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={s.fieldLabel}>Phone alerts</Text><Text style={s.small}>{deviceAlertsAllowed ? pushConfigured ? "Allowed in phone settings" : "Permission allowed · push setup pending for this APK" : "Allow this app to show notifications"}</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel={deviceAlertsAllowed ? pushConfigured ? "Phone notifications allowed" : "Phone permission allowed, push setup pending" : deviceAlertsCanAsk ? "Allow phone notifications" : "Open phone notification settings"} disabled={notificationBusy || deviceAlertsAllowed === true} onPress={() => void allowDeviceAlerts()} style={({ pressed }) => ({ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 11, backgroundColor: deviceAlertsAllowed ? colors.brandSoft : colors.brand, opacity: notificationBusy ? .6 : pressed ? .8 : 1 })}><Text style={{ color: deviceAlertsAllowed ? colors.brand : "white", fontSize: 12, fontWeight: "800" }}>{deviceAlertsAllowed ? pushConfigured ? "Allowed" : "Setup needed" : deviceAlertsCanAsk ? "Allow" : "Settings"}</Text></Pressable>
           </View>}
-          <Text style={[s.small, { paddingHorizontal: 8 }]}>In-app updates work now. Phone alert delivery will be available after setup is complete.</Text>
+          <Text style={[s.small, { paddingHorizontal: 8 }]}>{pushConfigured ? "Phone pop-ups require both this app preference and notification permission in Android settings." : "Phone permission can be allowed now. Push delivery will start after this APK is connected to its notification service."}</Text>
         </View>
       </View>
 

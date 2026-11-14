@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { openReportFromRow } from "../lib/report-row";
 import Image from "next/image";
+import appConfig from "../../app/app.json";
 import {
   Activity,
   Search,
@@ -55,7 +57,7 @@ import { NotificationCenter } from "./notification-center";
 import { readWorkspaceLocation, shouldResetWorkspace, workspaceLocationUrl, type WorkspaceLocation } from "../lib/workspace-location";
 import { barangayAreaKm2, barangayMapKey, iliganBarangayBoundaries } from "../../app/lib/barangay-map";
 import { pointInPolygon } from "../lib/map-geometry";
-import { reportCategoryPresentation, ReportCategoryLabel } from "./report-category";
+import { ReportCategoryLabel } from "./report-category";
 const IssueMap = dynamic(() => import("./issue-map"), {
   ssr: false,
   loading: () => <p className="empty">Loading geographic workspace…</p>,
@@ -85,6 +87,7 @@ const nav = [
   ["Administration", Settings],
   ["Settings", Settings],
 ] as const;
+const appVersion = appConfig.expo.version;
 function writeWorkspaceLocation(location: WorkspaceLocation, replace = false) {
   window.history[replace ? "replaceState" : "pushState"](
     null,
@@ -288,7 +291,7 @@ export default function Workspace() {
     staleTime: 60_000,
     refetchInterval: 60_000,
     queryFn: async () => {
-      const [categories, barangays, organizations, settings] = await Promise.all([
+      const [categories, barangays, organizations, settings, problemTypes] = await Promise.all([
       result<Lookup[]>(
         db!.from("report_categories").select("*").order("name"),
       ),
@@ -299,8 +302,16 @@ export default function Workspace() {
         db!.from("organizations").select("*").order("name"),
       ),
       result<{ include_samples: boolean }>(db!.from("analytics_settings").select("include_samples").single()),
+      result<{ category_id: string; code: string; label: string; sort_order: number }[]>(
+        db!.from("report_problem_types").select("category_id,code,label,sort_order").order("sort_order"),
+      ),
       ]);
-      return { categories, barangays, organizations, includeSamples: settings.include_samples };
+      const categoriesWithProblems = categories.map((category) => ({
+        ...category,
+        problem_types: problemTypes.filter((item) => item.category_id === category.id)
+          .map(({ code, label, sort_order }) => ({ code, label, sort_order })),
+      }));
+      return { categories: categoriesWithProblems, barangays, organizations, includeSamples: settings.include_samples };
     },
   });
   const coordinate = (next: string, id: string) => {
@@ -566,6 +577,7 @@ export default function Workspace() {
               <LogOut size={18} />
             </button>
           </div>
+          <small className="sidebar-version">v{appVersion}</small>
         </aside>
         {drawer && (
           <button
@@ -695,6 +707,7 @@ export default function Workspace() {
                     : "")
                 }
                 onCoordinate={coordinate}
+                onOpenReport={(reportId) => navigate("Issue reports", reportId)}
               />
             ) : availableSection(section) && section === "Administration" ? (
               <Administration
@@ -725,7 +738,8 @@ export default function Workspace() {
             )}
           </main>
           <footer>
-            ILIGAN CONNECT <span>Human assessment informs every action.</span>
+            <span className="workspace-footer-brand">ILIGAN CONNECT</span>
+            <span>Human assessment informs every action.</span>
           </footer>
         </div>
       </div>
@@ -759,7 +773,7 @@ function Overview({
         ),
         (async () => {
           const { data, count, error } = await db!.from("reports").select("*", { count: "exact" })
-            .in("status", ["assigned", "in_progress"]).order("created_at").limit(5);
+            .in("status", ["assigned", "scheduled", "in_progress"]).order("created_at").limit(5);
           if (error) throw new Error(error.message);
           return { rows: data as Report[], count: count ?? 0 };
         })(),
@@ -834,8 +848,6 @@ function Overview({
   const topBarangays = [...data.analytics.barangays].filter((item) => item.unresolved > 0)
     .sort((a, b) => b.unresolved - a.unresolved).slice(0, 10);
   const attentionMax = Math.max(1, ...topBarangays.map((item) => item.unresolved));
-  const focusCategories = data.analytics.categories.filter((item) => item.received > 0).sort((a, b) => b.received - a.received);
-  const focusCategoryMax = Math.max(1, ...focusCategories.map((item) => item.received));
 
   return (
     <div className="overview">
@@ -882,16 +894,6 @@ function Overview({
           <button className="overview-step" onClick={() => onNavigate("Geographic analytics")}>
             <span className="overview-step-icon violet"><MapPinned size={18} /></span><span><strong>{canPrioritize(access) ? "Review barangay priorities" : "Review geographic patterns"}</strong><small>{canPrioritize(access) ? "Compare report counts and advisory scores" : "Explore patterns in your permitted area"}</small></span><ArrowRight size={15} />
           </button>
-          <section className="overview-category-focus" aria-label="Reports by category">
-            <div className="overview-category-focus-heading"><div><p className="eyebrow">ISSUE MIX</p><h3>Reports by category</h3></div><span>{focusCategories.reduce((total, item) => total + item.received, 0)} total</span></div>
-            {focusCategories.length ? <ul className="overview-category-focus-list">{focusCategories.map((item) => (
-              <li className="overview-category-focus-row" key={item.name}>
-                <div className="overview-category-focus-copy"><ReportCategoryLabel name={item.name} compact /><strong>{item.received}</strong><small>{item.verified} verified</small></div>
-                <div className="overview-category-focus-track" aria-hidden="true"><span style={{ width: `${(item.received / focusCategoryMax) * 100}%`, backgroundColor: reportCategoryPresentation(item.name).foreground }} /></div>
-              </li>
-            ))}</ul> : <p className="overview-category-focus-empty">No report categories are available for this area.</p>}
-            <button className="text-button overview-category-focus-link" onClick={() => onNavigate("Geographic analytics")}>View geographic analytics <ArrowUpRight size={14} /></button>
-          </section>
           <div className="assessment-note"><Activity size={17} /><p>Report frequency reflects participation, not confirmed problem prevalence. Human review informs every priority.</p></div>
         </aside>
       </div>
@@ -905,7 +907,7 @@ function Overview({
             <tbody>{data.recent.map((report) => {
               const category = refs.categories.find((item) => item.id === report.category_id)?.name || "Other";
               const barangay = refs.barangays.find((item) => item.id === report.barangay_id)?.name || "Iligan City";
-              return <tr key={report.id}>
+              return <tr key={report.id} className="report-row-clickable" onClick={(event) => openReportFromRow(event, () => onNavigate("Issue reports", report.id))}>
                 <td data-label="#"><span className="overview-report-id">#{report.id.slice(0, 4).toUpperCase()}</span></td>
                 <td data-label="Title"><div className="overview-report-title-cell"><span className="overview-report-file"><FileText size={15} aria-hidden="true" /></span><span className="overview-report-copy"><button className="overview-report-link" title={report.title} onClick={() => onNavigate("Issue reports", report.id)}>{report.title}</button><small>{barangay} · {formatDate(report.created_at)}</small></span></div></td>
                 <td data-label="Category"><ReportCategoryLabel name={category} compact className="overview-category" /></td>
@@ -952,7 +954,7 @@ function Overview({
 
         <section className="panel overview-panel overview-assigned">
           <div className="panel-heading overview-panel-heading"><div className="overview-panel-title"><span className="overview-section-icon blue"><Users size={17} /></span><div><h2>Assigned work</h2><p className="overview-panel-subtitle">Oldest reports needing follow-through</p></div></div><button className="text-button" onClick={() => onNavigate("Issue reports", "", "active")}>View all ({data.taskCount}) <ArrowUpRight size={15} /></button></div>
-          {data.tasks.length ? <div className="overview-assigned-list" aria-label={`Oldest ${data.tasks.length} of ${data.taskCount} assigned and in-progress reports`}>{data.tasks.map((report) => {
+          {data.tasks.length ? <div className="overview-assigned-list" aria-label={`Oldest ${data.tasks.length} of ${data.taskCount} assigned, scheduled, and in-progress reports`}>{data.tasks.map((report) => {
             const barangay = refs.barangays.find((item) => item.id === report.barangay_id)?.name || "Iligan City";
             const organization = refs.organizations.find((org) => org.id === report.organization_id)?.name || "Assigned office";
             const assignedDate = data.assignedAt[report.id] ? formatDate(data.assignedAt[report.id]) : "Assignment date not recorded";
@@ -961,7 +963,7 @@ function Overview({
               <span className="overview-assigned-copy"><strong title={report.title}>{report.title}</strong><small>{barangay} · {organization} · {assignedDate}</small></span>
               <span className={`badge ${report.status}`}>{label(report.status)}</span><ChevronRight size={15} aria-hidden="true" />
             </button>;
-          })}</div> : <div className="overview-empty compact"><ClipboardList size={19} /><strong>No assigned work</strong><span>No assigned or in-progress reports are available in your authorized scope.</span></div>}
+          })}</div> : <div className="overview-empty compact"><ClipboardList size={19} /><strong>No assigned work</strong><span>No assigned, scheduled, or in-progress reports are available in your authorized scope.</span></div>}
         </section>
 
       <Charts data={data.analytics} />

@@ -3,8 +3,8 @@ import { Pressable, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { MapProps, MapStyle } from "./location-map";
 import * as maplibre from "maplibre-gl";
-import { aggregateReportCells } from "@community/shared";
-import { barangayAreaKm2, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
+import { aggregateReportCells, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
+import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
 import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, colors } from "./ui";
 import "maplibre-gl/dist/maplibre-gl.css";
 const EMPTY_POINTS: NonNullable<MapProps["points"]> = [];
@@ -27,12 +27,14 @@ export default function LocationMap({
   initialRegion,
   onViewportChange,
   bounds,
+  zoomBehavior = "barangay-gis",
   showBarangayBoundaries = false,
   barangayCounts = {},
   onBarangayPress,
   onMapBackgroundPress,
   selectedBarangayName,
   barangayMetric = "density",
+  summaryColor = colors.brand,
 }: MapProps) {
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibre.Map | null>(null),
@@ -43,7 +45,8 @@ export default function LocationMap({
     backgroundPress = useRef(onMapBackgroundPress),
     barangayView = useRef(showBarangayBoundaries),
     viewportChange = useRef(onViewportChange),
-    markers = useRef<maplibre.Marker[]>([]);
+    markers = useRef<maplibre.Marker[]>([]),
+    aggregateMarkers = useRef<maplibre.Marker[]>([]);
   choose.current = onChoose;
   pointPress.current = onPointPress;
   densityCellPress.current = onDensityCellPress;
@@ -51,15 +54,18 @@ export default function LocationMap({
   backgroundPress.current = onMapBackgroundPress;
   barangayView.current = showBarangayBoundaries;
   viewportChange.current = onViewportChange;
+  const [ready, setReady] = useState(false),
+    [error, setError] = useState(""),
+    [zoomLevel, setZoomLevel] = useState(() => initialRegion ? mapZoomFromLongitudeDelta(initialRegion.longitudeDelta) : 11.2),
+    [localBase, setLocalBase] = useState<MapStyle>("satellite"),
+    [stylePickerOpen, setStylePickerOpen] = useState(false);
   const pointsKey = useMemo(() => points.map((p) => `${p.id}:${p.latitude}:${p.longitude}`).join("|"), [points]);
   const reportPoints = useMemo(() => points.filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180), [points]);
+  const categoryClusters = useMemo(() => zoomBehavior === "barangay-gis" ? clusterReportsByCategory(reportPoints, zoomLevel) : [], [reportPoints, zoomLevel, zoomBehavior]);
+  const showBarangayTotals = zoomBehavior === "barangay-gis" && showPoints && !showBarangayBoundaries && zoomLevel <= BARANGAY_TOTAL_ZOOM;
   const reportCells = useMemo(() => aggregateReportCells(reportPoints), [reportPoints]);
   const barangayCountsKey = useMemo(() => JSON.stringify([barangayCounts, selectedBarangayName, barangayMetric]), [barangayCounts, selectedBarangayName, barangayMetric]);
   const maxBarangayDensity = useMemo(() => Math.max(0, ...iliganBarangayBoundaries.map((item) => barangayDensity(barangayCounts[barangayMapKey(item.properties.adm4_en)] ?? 0, barangayAreaKm2(item)))), [barangayCounts]);
-  const [ready, setReady] = useState(false),
-    [error, setError] = useState(""),
-    [localBase, setLocalBase] = useState<MapStyle>("satellite"),
-    [stylePickerOpen, setStylePickerOpen] = useState(false);
   const base = mapStyle ?? localBase;
   const baseName = base === "map" ? "Map" : base === "terrain" ? "Terrain" : "Satellite";
   const chooseMapPoint = (latitude: number, longitude: number) => choose.current?.({ latitude, longitude });
@@ -121,10 +127,12 @@ export default function LocationMap({
       });
     });
     resize.observe(container.current);
+    m.on("zoomend", () => setZoomLevel(m.getZoom()));
     m.on("load", () => {
       const attribution = m.getContainer().querySelector("details.maplibregl-ctrl-attrib");
       attribution?.classList.remove("maplibregl-compact-show");
       attribution?.removeAttribute("open");
+      setZoomLevel(m.getZoom());
       setReady(true);
     });
     m.on("click", (e) => {
@@ -154,6 +162,8 @@ export default function LocationMap({
       cancelAnimationFrame(resizeFrame);
       markers.current.forEach((marker) => marker.remove());
       markers.current = [];
+      aggregateMarkers.current.forEach((marker) => marker.remove());
+      aggregateMarkers.current = [];
       m.remove();
       map.current = null;
     };
@@ -208,10 +218,10 @@ export default function LocationMap({
   useEffect(() => {
     if (!ready || !map.current) return;
     const previous = new Map(markers.current.map((marker) => [marker.getElement().dataset.markerKey, marker]));
-    markers.current = [...(point ? [point] : []), ...(userPoint ? [userPoint] : []), ...(showPoints && !showBarangayBoundaries ? reportPoints : [])].map((p, index) => {
+    markers.current = [...(point ? [point] : []), ...(userPoint ? [userPoint] : []), ...(showPoints && !showBarangayBoundaries && (zoomBehavior === "issue-map" || zoomLevel >= INDIVIDUAL_REPORT_PIN_ZOOM) ? reportPoints : [])].map((p, index) => {
       const isUser = p === userPoint;
       const markerKey = isUser ? "user" : p === point ? "chosen" : p.id ?? `${p.latitude}:${p.longitude}:${index}`;
-      const signature = JSON.stringify([p.latitude, p.longitude, p.title, p.subtitle, p.categoryName, p.color, p.createdAt, p.photoUrl, p.photoCredit, p.statusLabel, p.barangayName, !!onChoose]);
+      const signature = JSON.stringify([p.latitude, p.longitude, p.title, p.subtitle, p.categoryName, p.color, p.createdAt, p.photoUrl, p.statusLabel, p.barangayName, !!onChoose]);
       const existing = previous.get(markerKey);
       previous.delete(markerKey);
       if (existing?.getElement().dataset.signature === signature) return existing;
@@ -332,19 +342,6 @@ export default function LocationMap({
             viewer.addEventListener("click", (e) => { if (e.target === viewer) dismiss(); });
             viewer.addEventListener("keydown", (e) => { if (e.key === "Escape") dismiss(); });
             viewer.append(fullImage, close);
-            if (p.photoCredit?.attribution) {
-              const credit = document.createElement("aside");
-              credit.style.cssText = "position:absolute;bottom:20px;left:20px;right:20px;max-height:180px;overflow:auto;padding:12px;border-radius:12px;background:#06111eee;color:#e3efed;font:12px/17px system-ui,sans-serif";
-              credit.textContent = p.photoCredit.attribution;
-              if (p.photoCredit.source_url?.startsWith("https://")) {
-                const source = document.createElement("a");
-                source.href = p.photoCredit.source_url; source.target = "_blank"; source.rel = "noopener noreferrer";
-                source.textContent = "Original source and license ↗";
-                source.style.cssText = "display:block;min-height:44px;padding-top:8px;color:#8ce0d0";
-                credit.append(source);
-              }
-              viewer.append(credit);
-            }
             document.body.append(viewer);
             close.focus();
           });
@@ -394,7 +391,39 @@ export default function LocationMap({
       return marker;
     });
     previous.forEach((marker) => marker.remove());
-  }, [point?.latitude, point?.longitude, ready, userPoint?.latitude, userPoint?.longitude, !!onChoose, reportPoints, showPoints, showBarangayBoundaries]);
+  }, [point?.latitude, point?.longitude, ready, userPoint?.latitude, userPoint?.longitude, !!onChoose, reportPoints, showPoints, showBarangayBoundaries, zoomLevel, zoomBehavior]);
+  useEffect(() => {
+    aggregateMarkers.current.forEach((marker) => marker.remove());
+    aggregateMarkers.current = [];
+    const current = map.current;
+    if (!ready || !current || !showPoints || showBarangayBoundaries || zoomBehavior === "issue-map") return;
+    const addCountMarker = (latitude: number, longitude: number, centerLatitude: number, centerLongitude: number, count: number, color: string, label: string, onPress?: () => void) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "report-map-count";
+      button.style.cssText = `--count-color:${color};min-width:40px;height:40px;padding:0 7px;border:3px solid #fff;border-radius:22px;background:${color};color:#fff;box-shadow:0 2px 9px #173b3a55;font:800 ${count > 99 ? 10 : 12}px/1 system-ui,sans-serif;cursor:pointer;`;
+      button.textContent = count.toLocaleString("en-PH");
+      button.setAttribute("aria-label", label);
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        onPress?.();
+        const zoom = current.getZoom();
+        current.easeTo({ center: [centerLongitude, centerLatitude], zoom: Math.min(INDIVIDUAL_REPORT_PIN_ZOOM, zoom + (showBarangayTotals ? 1.5 : 2)), duration: 350 });
+      });
+      aggregateMarkers.current.push(new maplibre.Marker({ element: button, anchor: "center" }).setLngLat([longitude, latitude]).addTo(current));
+    };
+    if (showBarangayTotals) {
+      for (const feature of iliganBarangayBoundaries) {
+        const name = feature.properties.adm4_en;
+        const count = barangayCounts[barangayMapKey(name)] ?? 0;
+        const center = count ? barangayCenter(feature) : null;
+        if (count && center) addCountMarker(center.latitude, center.longitude, center.latitude, center.longitude, count, summaryColor, `${count} reports assigned to ${name}`, () => barangayPress.current?.(name));
+      }
+    } else if (zoomLevel < INDIVIDUAL_REPORT_PIN_ZOOM) {
+      for (const cluster of categoryClusters) addCountMarker(cluster.latitude, cluster.longitude, cluster.centerLatitude, cluster.centerLongitude, cluster.count, cluster.color, `${cluster.count} ${categoryDisplayName(cluster.categoryName)} reports clustered`);
+    }
+    return () => { aggregateMarkers.current.forEach((marker) => marker.remove()); aggregateMarkers.current = []; };
+  }, [ready, showPoints, showBarangayBoundaries, showBarangayTotals, summaryColor, barangayCountsKey, zoomLevel, categoryClusters, zoomBehavior]);
   useEffect(() => {
     markers.current.forEach((marker) => {
       const element = marker.getElement();

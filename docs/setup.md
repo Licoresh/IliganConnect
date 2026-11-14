@@ -6,7 +6,7 @@ Use Node.js 20.19+ and npm. From the root, run `npm ci`; its `postinstall` prepa
 
 ## Authentication
 
-For another environment, configure Supabase Auth email/password, confirmation mail and SMTP delivery. Add allowed redirect URLs for the exact administrative host, the resident browser host, and `iliganconnect://**` for the development/standalone app. Expo Go uses its current development URL; configure that URL when testing email links. Production URLs should be explicit and HTTPS. Authenticated sessions receive recovery links and display a password-change form.
+For another environment, configure Supabase Auth email/password, confirmation mail and SMTP delivery. Add allowed redirect URLs for the exact administrative host, the resident browser host, and the exact native resident callback `iliganconnect:///`. Native resident signup confirmation, resend, social sign-in and password-recovery callbacks use the installed app's registered scheme and root route; web clients keep their own browser origin. Keep the global Site URL for the web default and allow the native URI explicitly so email links do not fall back to localhost. The local Supabase config includes the native URI. Test native auth callbacks with an installed standalone or development build that registers the `iliganconnect` scheme; Expo Go does not register this production scheme. Production web URLs should be explicit and HTTPS. Authenticated sessions receive recovery links and display a password-change form.
 
 Temporary development accounts have random credentials in ignored `.env.demo.json` and `.env.rbac-demo.json` files and synthetic email addresses. They are unsuitable for email-delivery testing. Use a real deliverable account to test confirmation/recovery. Admin role changes use protected RPCs; a new environment's first real admin can be promoted using the SQL in README. Account and office placeholders are not proof of institutional approval.
 
@@ -23,6 +23,8 @@ For hosted deployment, preserve the workspace layout and shared package. Run the
 `npm run dev:app` starts Expo. Use an SDK 54-compatible Expo Go client or development build. `npm run preview:app` runs the same resident application in a browser; native maps use react-native-maps and the browser adapter uses MapLibre. Native session storage uses SecureStore; browser sessions use the browser's local storage.
 
 `npm run export:app` bundles Android/iOS JavaScript and the browser preview. This does not create an APK. Standalone Android requires a restricted `GOOGLE_MAPS_ANDROID_API_KEY`; `app/app.config.ts` reads it. An Expo/EAS account and project link are needed to run the supplied APK preview profile. iOS distribution needs Apple signing credentials; local iOS simulation requires macOS. Physical devices must reach Metro over the local network.
+
+For a local Windows Android debug build, use JDK 21 and a short ASCII project path such as `C:\Users\User\ilcqa`. Install dependencies in that folder so React Native code generation and CMake use the same path. Run `npm exec -w app -- expo prebuild --platform android --no-install`, then run `gradlew.bat :app:assembleDebug` from `app/android`. The generated native project is ignored by Git. Keep the release Maps key in the build environment and restrict it to the Android package and signing certificate.
 
 ### Free location and barangay checks
 

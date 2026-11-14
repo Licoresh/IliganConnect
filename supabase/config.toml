@@ -1,7 +1,17 @@
 project_id = "kbihklfbqhmtowcqojir"
 
+[auth]
+additional_redirect_urls = ["iliganconnect:///"]
+
+[auth.email.template.confirmation]
+subject = "Your Iligan Connect email verification code"
+content_path = "./supabase/templates/confirm-sign-up.html"
+
 [functions.reverse-geocode]
 verify_jwt = true
 
 [functions.create-staff-account]
 verify_jwt = true
+
+[functions.email-dispatch]
+verify_jwt = false

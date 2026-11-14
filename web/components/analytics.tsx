@@ -16,6 +16,7 @@ import dynamic from "next/dynamic";
 import { Activity, ArrowLeft, ArrowUpRight, BadgeCheck, CalendarDays, ChartNoAxesCombined, CheckCircle2, CircleAlert, Clock3, Download, FileText, MapPin, MapPinned, Printer, Search, UsersRound, type LucideIcon } from "lucide-react";
 import { downloadCsv, philippineDateBoundary } from "../lib/export";
 import { db, result } from "../lib/client";
+import { openReportFromRow } from "../lib/report-row";
 import { label, statuses, Report } from "@community/shared";
 import type { References } from "./workspace";
 import { useAccess } from "./access-context";
@@ -148,10 +149,12 @@ export function Analytics({
   refs,
   initialBarangay = "",
   onCoordinate,
+  onOpenReport,
 }: {
   refs: References;
   initialBarangay?: string;
   onCoordinate: (section: string, barangay: string) => void;
+  onOpenReport: (reportId: string) => void;
 }) {
   const access = useAccess();
   const showPriority = canPrioritize(access);
@@ -215,7 +218,7 @@ export function Analytics({
       [], ["Category", "Received", "Verified"], ...[...q.data.categories].sort((a, b) => b.received - a.received || reportCategoryPresentation(a.name).label.localeCompare(reportCategoryPresentation(b.name).label)).map((row) => [row.name, row.received, row.verified]),
     ]);
   };
-  if (detailId) return <BarangayDetail key={detailId} id={detailId} refs={refs} onBack={() => setDetailId("")} onCoordinate={onCoordinate} />;
+  if (detailId) return <BarangayDetail key={detailId} id={detailId} refs={refs} onBack={() => setDetailId("")} onCoordinate={onCoordinate} onOpenReport={onOpenReport} />;
   return <div className="analytics-page">
     <section className="analytics-filter-card" aria-label="Geographic analysis filters">
       <label>Barangay<select value={barangay} onChange={(event) => setBarangay(event.target.value)}><option value="">All permitted</option>{refs.barangays.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -283,11 +286,13 @@ function BarangayDetail({
   refs,
   onBack,
   onCoordinate,
+  onOpenReport,
 }: {
   id: string;
   refs: References;
   onBack: () => void;
   onCoordinate: (section: string, barangay: string) => void;
+  onOpenReport: (reportId: string) => void;
 }) {
   const access = useAccess();
   const canAssess = access.profile.role === "admin" ||
@@ -356,8 +361,8 @@ function BarangayDetail({
       </aside>
     </div>
     <div className="analytics-detail-workspace">
-      <section className="panel analytics-active-reports"><div className="analytics-section-heading"><div><h2>Active reports &amp; assigned offices</h2><p className="overview-panel-subtitle">Up to 20 latest reports that need action or are currently in progress.</p></div><button type="button" className="analytics-text-action" onClick={() => onCoordinate("Issue reports", id)}>View all reports <ArrowUpRight size={14} /></button></div>
-        {q.isPending ? <div className="analytics-detail-skeleton" aria-label="Loading active reports"><i /><i /><i /></div> : <div className="table-scroll"><table className="analytics-table analytics-active-table"><thead><tr><th scope="col">Report</th><th scope="col">Category</th><th scope="col">Assigned office</th><th scope="col">Status</th><th scope="col">Date reported</th></tr></thead><tbody>{activeReports.map((report) => <tr key={report.id}><th scope="row"><strong>{report.title}</strong><small>#{report.id.slice(0, 8).toUpperCase()}</small></th><td data-label="Category"><ReportCategoryLabel name={refs.categories.find((item) => item.id === report.category_id)?.name || ""} compact /></td><td data-label="Assigned office">{refs.organizations.find((item) => item.id === report.organization_id)?.name || "Awaiting assignment"}</td><td data-label="Status"><span className={`analytics-status status-${report.status}`}>{label(report.status)}</span></td><td data-label="Date reported"><time dateTime={report.created_at}>{fmtDate(report.created_at)}</time></td></tr>)}</tbody></table>{!activeReports.length && !q.error && <p className="empty">No active reports need action in {barangay}.</p>}</div>}
+      <section className="panel analytics-active-reports"><div className="analytics-section-heading"><div><h2>Active reports &amp; assigned offices</h2><p className="overview-panel-subtitle">Up to 20 latest reports awaiting action, scheduled, or in progress.</p></div><button type="button" className="analytics-text-action" onClick={() => onCoordinate("Issue reports", id)}>View all reports <ArrowUpRight size={14} /></button></div>
+        {q.isPending ? <div className="analytics-detail-skeleton" aria-label="Loading active reports"><i /><i /><i /></div> : <div className="table-scroll"><table className="analytics-table analytics-active-table"><thead><tr><th scope="col">Report</th><th scope="col">Category</th><th scope="col">Assigned office</th><th scope="col">Status</th><th scope="col">Date reported</th></tr></thead><tbody>{activeReports.map((report) => <tr key={report.id} className="report-row-clickable" onClick={(event) => openReportFromRow(event, () => onOpenReport(report.id))}><th scope="row"><button type="button" className="analytics-report-open" aria-label={`Open report: ${report.title}`} onClick={() => onOpenReport(report.id)}>{report.title}</button><small>#{report.id.slice(0, 8).toUpperCase()}</small></th><td data-label="Category"><ReportCategoryLabel name={refs.categories.find((item) => item.id === report.category_id)?.name || ""} compact /></td><td data-label="Assigned office">{refs.organizations.find((item) => item.id === report.organization_id)?.name || "Awaiting assignment"}</td><td data-label="Status"><span className={`analytics-status status-${report.status}`}>{label(report.status)}</span></td><td data-label="Date reported"><time dateTime={report.created_at}>{fmtDate(report.created_at)}</time></td></tr>)}</tbody></table>{!activeReports.length && !q.error && <p className="empty">No active reports need action in {barangay}.</p>}</div>}
       </section>
       <section className="panel analytics-assessment"><h2>Human assessment</h2><p className="overview-panel-subtitle">Record the evidence, interpretation, and suggested next step.</p>
         {canAssess ? <form className="analytics-assessment-form" onSubmit={addAssessment}><label htmlFor="analytics-assessment-note">Assessment</label><textarea id="analytics-assessment-note" required minLength={5} maxLength={4000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Describe what you observed, who is affected, and what should happen next." /><small className="analytics-character-count">{note.length}/4000</small><div className="analytics-quick-prompts"><span>Quick prompts</span>{quickPrompts.map((prompt) => <button type="button" key={prompt} onClick={() => setNote((current) => current ? `${current.trim()}\n${prompt} ` : `${prompt} `)}>{prompt}</button>)}</div><button type="submit" disabled={busy || note.trim().length < 5}>{busy ? "Recording…" : "Record assessment"}</button><p role="status" className={message.includes("recorded") ? "success" : "analytics-form-message"}>{message}</p></form> : <p className="fine">Assessments are available to authorized barangay personnel and system administrators.</p>}

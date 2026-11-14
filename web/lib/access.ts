@@ -98,7 +98,7 @@ export function canCreate(
 export function reportAction(status: Status): "review" | "refer" | "update" {
   return status === "assigned"
     ? "refer"
-    : ["in_progress", "resolved"].includes(status)
+    : ["scheduled", "in_progress", "resolved"].includes(status)
       ? "update"
       : "review";
 }
@@ -110,7 +110,8 @@ export function canAccessReport(
   if (!access.authorized) return false;
   if (access.profile.role === "admin") return true;
   if (access.profile.role === "barangay")
-    return access.profile.barangay_id === report.barangay_id;
+    return access.profile.barangay_id === report.barangay_id &&
+      (action === "read" || report.organization_id === null);
   return (
     access.profile.role === "office" &&
     access.rules.some(

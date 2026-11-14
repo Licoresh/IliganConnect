@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1660" viewBox="0 0 2400 1660">
+<defs>
+  <style>
+    text{font-family:Arial,Helvetica,sans-serif;fill:#1c2d40}
+    .title{font-size:36px;font-weight:700;letter-spacing:.4px}
+    .sub{font-size:19px;fill:#5a6c7d}
+    .section{font-size:19px;font-weight:700;fill:#087e8b}
+    .card{fill:#fff;stroke:#8294a6;stroke-width:2}
+    .head{fill:#e8f1f5}
+    .entity{font-size:20px;font-weight:700}
+    .fields{font-size:15px;fill:#425467}
+    .edge{fill:none;stroke:#7890a3;stroke-width:2.4}
+    .rel{font-size:14px;font-weight:700;fill:#52697b}
+    .note{font-size:15px;fill:#586a7c}
+    .key{font-size:14px;font-weight:700;fill:#087e8b}
+  </style>
+</defs>
+<rect width="2400" height="1660" fill="#f4f7f9"/>
+<rect x="28" y="24" width="2344" height="1612" rx="20" fill="#fff" stroke="#cbd6df" stroke-width="2"/>
+<text class="title" x="1200" y="82" text-anchor="middle">ILIGAN CONNECT BUSINESS DATA MODEL</text>
+<text class="sub" x="1200" y="116" text-anchor="middle">Logical view of reporting, routing, access control, and progress records</text>
+<text class="section" x="90" y="175">REFERENCE AND ACCESS DATA</text>
+<text class="section" x="90" y="536">COMMUNITY REPORT</text>
+<text class="section" x="90" y="1045">WORKFLOW AND ACCOUNTABILITY RECORDS</text>
+
+<!-- Relationships, behind entities. Labels show cardinality from parent to child. -->
+
+
+
+<!-- Top reference and access entities -->
+<g>
+  <rect class="card" x="90" y="220" width="420" height="168" rx="12"/><path class="head" d="M102 220H498Q510 220 510 232V265H90V232Q90 220 102 220Z"/>
+  <text class="entity" x="112" y="249">PROFILES</text><text class="fields" x="112" y="292">PK id → Auth user</text><text class="fields" x="112" y="318">role · account status · display name</text><text class="fields" x="112" y="344">barangay · notification preference</text><text class="fields" x="112" y="370">Resident, staff, or administrator account</text>
+
+  <rect class="card" x="610" y="220" width="420" height="168" rx="12"/><path class="head" d="M622 220H1018Q1030 220 1030 232V265H610V232Q610 220 622 220Z"/>
+  <text class="entity" x="632" y="249">BARANGAYS</text><text class="fields" x="632" y="292">PK id</text><text class="fields" x="632" y="318">name · indicative boundary geometry</text><text class="fields" x="632" y="344">boundary source reference</text><text class="fields" x="632" y="370">Report and jurisdiction reference</text>
+
+  <rect class="card" x="1130" y="220" width="420" height="168" rx="12"/><path class="head" d="M1142 220H1538Q1550 220 1550 232V265H1130V232Q1130 220 1142 220Z"/>
+  <text class="entity" x="1152" y="249">REPORT CATEGORIES</text><text class="fields" x="1152" y="292">PK id</text><text class="fields" x="1152" y="318">name · active flag</text><text class="fields" x="1152" y="344">Six configured concern categories</text><text class="fields" x="1152" y="370">Category reference for reports and rules</text>
+
+  <rect class="card" x="1650" y="220" width="420" height="168" rx="12"/><path class="head" d="M1662 220H2058Q2070 220 2070 232V265H1650V232Q1650 220 1662 220Z"/>
+  <text class="entity" x="1672" y="249">ORGANIZATIONS</text><text class="fields" x="1672" y="292">PK id</text><text class="fields" x="1672" y="318">name · active flag · responsibility</text><text class="fields" x="1672" y="344">Potential routing destinations</text><text class="fields" x="1672" y="370">Names alone do not grant access</text>
+</g>
+
+<g>
+  <rect class="card" x="90" y="635" width="420" height="178" rx="12"/><path class="head" d="M102 635H498Q510 635 510 647V680H90V647Q90 635 102 635Z"/>
+  <text class="entity" x="112" y="664">ORGANIZATION MEMBERSHIPS</text><text class="fields" x="112" y="707">PK/FK user_id → Profiles</text><text class="fields" x="112" y="733">PK/FK organization_id → Organizations</text><text class="fields" x="112" y="759">Many-to-many staff membership</text><text class="fields" x="112" y="785">Membership alone grants no report scope</text>
+
+  <rect class="card" x="560" y="400" width="465" height="224" rx="12"/><path class="head" d="M572 400H1013Q1025 400 1025 412V445H560V412Q560 400 572 400Z"/>
+  <text class="entity" x="582" y="429">ORGANIZATION ACCESS RULES</text><text class="fields" x="582" y="472">PK id · FK organization · category</text><text class="fields" x="582" y="498">Optional barangay · enabled</text><text class="fields" x="582" y="524">assignment_only · can_review</text><text class="fields" x="582" y="550">can_update · can_refer · notes</text><text class="fields" x="582" y="592">Defines permitted scope and actions</text>
+
+  <rect class="card" x="815" y="682" width="585" height="254" rx="14" stroke="#087e8b" stroke-width="3"/><path fill="#dff2f0" d="M829 682H1386Q1400 682 1400 696V733H815V696Q815 682 829 682Z"/>
+  <text class="entity" x="840" y="713">REPORTS</text><text class="fields" x="840" y="760">PK id · FK resident · category · barangay</text><text class="fields" x="840" y="788">Optional current organization</text><text class="fields" x="840" y="816">title · description · status · created_at</text><text class="fields" x="840" y="844">latitude · longitude · location source · accuracy</text><text class="fields" x="840" y="872">Confirmed pin and barangay required for new reports</text><text class="fields" x="840" y="910">Central record for a submitted community concern</text>
+
+  <rect class="card" x="1730" y="635" width="420" height="220" rx="12"/><path class="head" d="M1742 635H2138Q2150 635 2150 647V680H1730V647Q1730 635 1742 635Z"/>
+  <text class="entity" x="1752" y="664">REPORT ASSIGNMENTS</text><text class="fields" x="1752" y="707">PK id · FK report · organization</text><text class="fields" x="1752" y="733">actor profile · reason · created_at</text><text class="fields" x="1752" y="759">Records referrals and reassignment events</text><text class="fields" x="1752" y="785">One report may have multiple events</text><text class="fields" x="1752" y="829">Destination must be allowed by active rules</text>
+</g>
+
+<!-- Workflow records -->
+<g>
+  <rect class="card" x="90" y="1110" width="430" height="245" rx="12"/><path class="head" d="M102 1110H508Q520 1110 520 1122V1155H90V1122Q90 1110 102 1110Z"/>
+  <text class="entity" x="112" y="1139">REPORT ATTACHMENTS</text><text class="fields" x="112" y="1182">PK id · FK report</text><text class="fields" x="112" y="1208">private storage path · owner profile</text><text class="fields" x="112" y="1234">created_at · optional evidence photo</text><text class="fields" x="112" y="1290">The file is held in private storage;</text><text class="fields" x="112" y="1316">the database keeps its protected reference.</text>
+
+  <rect class="card" x="590" y="1110" width="430" height="245" rx="12"/><path class="head" d="M602 1110H1008Q1020 1110 1020 1122V1155H590V1122Q590 1110 602 1110Z"/>
+  <text class="entity" x="612" y="1139">REPORT STATUS HISTORY</text><text class="fields" x="612" y="1182">PK id · FK report · actor profile</text><text class="fields" x="612" y="1208">old status · new status · public note</text><text class="fields" x="612" y="1234">created_at</text><text class="fields" x="612" y="1290">Append-only workflow events supply</text><text class="fields" x="612" y="1316">the resident-visible progress timeline.</text>
+
+  <rect class="card" x="1090" y="1110" width="430" height="245" rx="12"/><path class="head" d="M1102 1110H1508Q1520 1110 1520 1122V1155H1090V1122Q1090 1110 1102 1110Z"/>
+  <text class="entity" x="1112" y="1139">NOTIFICATIONS</text><text class="fields" x="1112" y="1182">PK id · FK user · optional report</text><text class="fields" x="1112" y="1208">title · read_at · created_at</text><text class="fields" x="1112" y="1264">Private in-app notification record</text><text class="fields" x="1112" y="1290">Remote push delivery is not included</text><text class="fields" x="1112" y="1316">in the current implementation.</text>
+
+  <rect class="card" x="1590" y="1110" width="560" height="245" rx="12"/><path class="head" d="M1602 1110H2138Q2150 1110 2150 1122V1155H1590V1122Q1590 1110 1602 1110Z"/>
+  <text class="entity" x="1612" y="1139">AUDIT LOGS</text><text class="fields" x="1612" y="1182">PK id · actor profile · entity · record id</text><text class="fields" x="1612" y="1208">action · old/new values · created_at</text><text class="fields" x="1612" y="1264">System-written record of significant actions.</text><text class="fields" x="1612" y="1290">Permitted administrators may review it;</text><text class="fields" x="1612" y="1316">ordinary client access cannot edit entries.</text>
+</g>
+<rect x="90" y="1430" width="2060" height="128" rx="14" fill="#f1f5f8" stroke="#d8e1e8"/>
+<text class="key" x="120" y="1471">KEY</text><text class="note" x="180" y="1471">PK = primary key · FK = foreign key · Relationships are summarized below; foreign-key fields are marked in entity cards.</text>
+<text class="note" x="120" y="1510">Key relations: Profile to reports/history/assignments/attachments; Category and Barangay to reports; Organization to memberships/access rules/assignments; Report to assignment events, status history, and attachments.</text>
+<text class="note" x="120" y="1540">Private access is enforced by backend permissions. Optional consultations, meetings, and announcements are not shown in this core reporting model.</text>
+<text class="sub" x="1200" y="1600" text-anchor="middle">Figure 7a-1. Iligan Connect Business Data Model</text>
+</svg>

@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1760" viewBox="0 0 2400 1760">
+<defs><style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#1c2d40}
+.title{font-size:36px;font-weight:700;letter-spacing:.4px}
+.sub{font-size:18px;fill:#5a6c7d}
+.head{font-size:17px;font-weight:700;fill:#fff}
+.entity{font-size:17px;font-weight:700;fill:#17324d}
+.field{font-family:Consolas,Menlo,monospace;font-size:14px;fill:#244c61}
+.meaning{font-size:15px;fill:#425467}
+.note{font-size:14px;fill:#586a7c}
+.tablehead{fill:#173d5d}
+.rowA{fill:#f6f9fb}.rowB{fill:#fff}
+.line{stroke:#d7e1e8;stroke-width:1.2}
+</style></defs>
+<rect width="2400" height="1760" fill="#f4f7f9"/>
+<rect x="28" y="24" width="2344" height="1712" rx="20" fill="#fff" stroke="#cbd6df" stroke-width="2"/>
+<text class="title" x="1200" y="78" text-anchor="middle">ILIGAN CONNECT CORE BUSINESS DATA DICTIONARY</text>
+<text class="sub" x="1200" y="112" text-anchor="middle">Selected entities and fields for the Section 7 reporting model</text>
+<text class="sub" x="1200" y="143" text-anchor="middle">Types follow the current PostgreSQL schema where shown; this is a business-level reference, not a full column-by-column schema export.</text>
+<rect class="tablehead" x="80" y="178" width="2240" height="58" rx="8"/>
+<text class="head" x="105" y="214">ENTITY</text>
+<text class="head" x="445" y="214">KEY FIELDS AND DATA TYPES</text>
+<text class="head" x="1470" y="214">BUSINESS MEANING</text>
+<!-- Column boundaries -->
+<g class="line"><line x1="420" y1="178" x2="420" y2="1538"/><line x1="1445" y1="178" x2="1445" y2="1538"/></g>
+
+<!-- Rows, each 108 px -->
+<g>
+  <rect class="rowA" x="80" y="236" width="2240" height="108"/>
+  <text class="entity" x="105" y="272">Profile</text><text class="meaning" x="105" y="299">User account</text>
+  <text class="field" x="445" y="267">id UUID (PK / Auth user) · role TEXT</text><text class="field" x="445" y="291">account_status TEXT · barangay_id UUID (FK, optional)</text><text class="field" x="445" y="315">display_name TEXT · notifications_enabled BOOLEAN</text>
+  <text class="meaning" x="1470" y="273">Represents a resident, barangay staff member, office staff member, or</text><text class="meaning" x="1470" y="297">administrator. Account status and approved scope control system access.</text>
+
+  <rect class="rowB" x="80" y="344" width="2240" height="108"/>
+  <text class="entity" x="105" y="380">Report</text><text class="meaning" x="105" y="407">Community concern</text>
+  <text class="field" x="445" y="375">id UUID (PK) · resident_id UUID (FK) · category_id UUID (FK)</text><text class="field" x="445" y="399">barangay_id UUID (FK) · organization_id UUID (FK, optional)</text><text class="field" x="445" y="423">status ENUM · title TEXT · description TEXT · created_at TIMESTAMPTZ</text>
+  <text class="meaning" x="1470" y="381">Main record for a concern. A new report requires a confirmed pin and</text><text class="meaning" x="1470" y="405">barangay; precise location details remain access-controlled.</text>
+
+  <rect class="rowA" x="80" y="452" width="2240" height="108"/>
+  <text class="entity" x="105" y="488">Report location</text><text class="meaning" x="105" y="515">Stored on report</text>
+  <text class="field" x="445" y="483">latitude / longitude DOUBLE PRECISION</text><text class="field" x="445" y="507">location GEOGRAPHY(Point, 4326) · source TEXT</text><text class="field" x="445" y="531">accuracy DOUBLE PRECISION · address TEXT</text>
+  <text class="meaning" x="1470" y="489">Confirmed point used for mapping and barangay checks. GPS, map pin, or</text><text class="meaning" x="1470" y="513">manual coordinates may be used. Historical rows can lack coordinates.</text>
+
+  <rect class="rowB" x="80" y="560" width="2240" height="108"/>
+  <text class="entity" x="105" y="596">Report category</text><text class="meaning" x="105" y="623">Controlled list</text>
+  <text class="field" x="445" y="591">id UUID (PK) · name TEXT (unique)</text><text class="field" x="445" y="615">active BOOLEAN</text>
+  <text class="meaning" x="1470" y="597">Approved classification for the report, such as drainage, garbage,</text><text class="meaning" x="1470" y="621">roads, streetlights, wires, or road signs.</text>
+
+  <rect class="rowA" x="80" y="668" width="2240" height="108"/>
+  <text class="entity" x="105" y="704">Barangay</text><text class="meaning" x="105" y="731">Jurisdiction</text>
+  <text class="field" x="445" y="699">id UUID (PK) · name TEXT (unique)</text><text class="field" x="445" y="723">boundary GEOMETRY(MultiPolygon, 4326) · source_url TEXT</text>
+  <text class="meaning" x="1470" y="705">Barangay reference and jurisdiction for reports and staff scope.</text><text class="meaning" x="1470" y="729">Imported boundaries are indicative unless otherwise validated.</text>
+
+  <rect class="rowB" x="80" y="776" width="2240" height="108"/>
+  <text class="entity" x="105" y="812">Organization</text><text class="meaning" x="105" y="839">Routing destination</text>
+  <text class="field" x="445" y="807">id UUID (PK) · name TEXT (unique) · active BOOLEAN</text><text class="field" x="445" y="831">responsibility TEXT (where configured)</text>
+  <text class="meaning" x="1470" y="813">Potential office or service-provider destination. An organization name</text><text class="meaning" x="1470" y="837">does not by itself grant permission or indicate official participation.</text>
+
+  <rect class="rowA" x="80" y="884" width="2240" height="108"/>
+  <text class="entity" x="105" y="920">Organization membership</text><text class="meaning" x="105" y="947">User ↔ organization</text>
+  <text class="field" x="445" y="915">user_id UUID (PK/FK to Profile)</text><text class="field" x="445" y="939">organization_id UUID (PK/FK to Organization)</text>
+  <text class="meaning" x="1470" y="921">Associates an approved office staff account with an organization.</text><text class="meaning" x="1470" y="945">Membership is separate from category and jurisdiction permissions.</text>
+
+  <rect class="rowB" x="80" y="992" width="2240" height="108"/>
+  <text class="entity" x="105" y="1028">Organization access rule</text><text class="meaning" x="105" y="1055">Scope and actions</text>
+  <text class="field" x="445" y="1023">organization_id UUID · category_id UUID · barangay_id UUID?</text><text class="field" x="445" y="1047">assignment_only · can_review · can_update · can_refer BOOLEAN</text>
+  <text class="meaning" x="1470" y="1029">Configures which matching reports an office may access and which</text><text class="meaning" x="1470" y="1053">review, update, or referral actions its staff may perform.</text>
+
+  <rect class="rowA" x="80" y="1100" width="2240" height="108"/>
+  <text class="entity" x="105" y="1136">Report assignment</text><text class="meaning" x="105" y="1163">Referral event</text>
+  <text class="field" x="445" y="1131">id BIGINT (PK) · report_id UUID (FK) · organization_id UUID (FK)</text><text class="field" x="445" y="1155">actor_id UUID (FK) · reason TEXT · created_at TIMESTAMPTZ</text>
+  <text class="meaning" x="1470" y="1137">Records the destination, staff member, reason, and time for an</text><text class="meaning" x="1470" y="1161">assignment or referral. A report can have multiple assignment events.</text>
+
+  <rect class="rowB" x="80" y="1208" width="2240" height="108"/>
+  <text class="entity" x="105" y="1244">Report status history</text><text class="meaning" x="105" y="1271">Progress event</text>
+  <text class="field" x="445" y="1239">id BIGINT (PK) · report_id UUID (FK) · actor_id UUID (FK)</text><text class="field" x="445" y="1263">old_status · new_status ENUM · public_note TEXT · created_at TIMESTAMPTZ</text>
+  <text class="meaning" x="1470" y="1245">Records each staff-entered status change and resident-visible note.</text><text class="meaning" x="1470" y="1269">It provides the progress timeline; it does not prove field work occurred.</text>
+
+  <rect class="rowA" x="80" y="1316" width="2240" height="108"/>
+  <text class="entity" x="105" y="1352">Report attachment</text><text class="meaning" x="105" y="1379">Private evidence</text>
+  <text class="field" x="445" y="1347">id UUID (PK) · report_id UUID (FK)</text><text class="field" x="445" y="1371">path TEXT · owner_id UUID (FK) · created_at TIMESTAMPTZ</text>
+  <text class="meaning" x="1470" y="1353">References an image held in private object storage. The storage path</text><text class="meaning" x="1470" y="1377">does not make the image public; authorized access is checked separately.</text>
+
+  <rect class="rowB" x="80" y="1424" width="2240" height="108"/>
+  <text class="entity" x="105" y="1460">Audit log</text><text class="meaning" x="105" y="1487">Accountability event</text>
+  <text class="field" x="445" y="1455">id BIGINT (PK) · actor_id UUID (FK, optional)</text><text class="field" x="445" y="1479">entity · record_id · action · old_value/new_value JSONB · created_at</text>
+  <text class="meaning" x="1470" y="1461">System-written record of significant actions, with prior and new</text><text class="meaning" x="1470" y="1485">values where applicable. Permitted administrators can review the log.</text>
+</g>
+<g class="line">
+  <line x1="80" y1="344" x2="2320" y2="344"/><line x1="80" y1="452" x2="2320" y2="452"/>
+  <line x1="80" y1="560" x2="2320" y2="560"/><line x1="80" y1="668" x2="2320" y2="668"/>
+  <line x1="80" y1="776" x2="2320" y2="776"/><line x1="80" y1="884" x2="2320" y2="884"/>
+  <line x1="80" y1="992" x2="2320" y2="992"/><line x1="80" y1="1100" x2="2320" y2="1100"/>
+  <line x1="80" y1="1208" x2="2320" y2="1208"/><line x1="80" y1="1316" x2="2320" y2="1316"/>
+  <line x1="80" y1="1424" x2="2320" y2="1424"/><line x1="80" y1="1532" x2="2320" y2="1532"/>
+</g>
+<rect x="80" y="1560" width="2240" height="110" rx="12" fill="#edf4f7"/>
+<text class="note" x="108" y="1597">Key: PK = primary key · FK = foreign key · ? = nullable/optional. Timestamps are stored as timestamptz. Enum indicates the controlled report_status values.</text>
+<text class="note" x="108" y="1626">This visual lists core reporting entities and selected business fields. It omits optional engagement tables and does not replace the full SQL schema.</text>
+<text class="sub" x="1200" y="1712" text-anchor="middle">Figure 7b-1. Iligan Connect Core Business Data Dictionary</text>
+</svg>

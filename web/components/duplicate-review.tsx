@@ -1,5 +1,6 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Check, ChevronDown, Copy, MapPin, RefreshCw } from "lucide-react";
 import { label, type Report, type Status } from "@community/shared";
 import { db, result } from "../lib/client";
@@ -10,18 +11,23 @@ type Candidate = {
   text_similarity: number; match_strength: "strong" | "possible";
   problem_label: string | null; barangay_name: string;
 };
+export type DuplicateCandidateOption = Pick<Candidate, "id" | "title">;
 const date = (value: string) => new Date(value).toLocaleString("en-PH", {
   month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila",
 });
 
-export function DuplicateReview({ report, canChoose, selectedId, onChoose }: {
+export function DuplicateReview({ report, canChoose, selectedId, onChoose, onCandidatesChange }: {
   report: Report; canChoose: boolean; selectedId: string;
   onChoose: (candidate: Pick<Candidate, "id" | "title">) => void;
+  onCandidatesChange: (candidates: DuplicateCandidateOption[]) => void;
 }) {
   const q = useQuery({
     queryKey: ["duplicate-candidates", report.id], staleTime: 30_000,
     queryFn: ({ signal }) => result<Candidate[]>(db!.rpc("report_duplicate_candidates", { p_id: report.id }).abortSignal(signal)),
   });
+  useEffect(() => {
+    onCandidatesChange(q.data?.map(({ id, title }) => ({ id, title })) ?? []);
+  }, [q.data, onCandidatesChange]);
   return <section className="report-workspace-section duplicate-review" aria-labelledby="duplicate-review-title">
     <div className="report-workspace-section-heading">
       <Copy size={22} aria-hidden="true" />

@@ -11,3 +11,10 @@ graphify-out/
 
 web/public/maplibre/
 app/public/maplibre/
+app/android/
+
+# Local agent and Supabase CLI state
+/AGENTS.md
+/.agents/
+skills-lock.json
+/supabase/.temp/

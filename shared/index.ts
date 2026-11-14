@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { parseDecimal, textInputError } from "./validation";
-export { parseDecimal, textInputError, emailInputError, passwordInputError, imageHeaderError, UUID_PATTERN, SHORT_REASON_LIMIT, characterLimitHint } from "./validation";
+export { BARANGAY_GIS_CATEGORY_ZOOM, BARANGAY_TOTAL_ZOOM, INDIVIDUAL_REPORT_PIN_ZOOM, clusterReportsByCategory, mapZoomFromLongitudeDelta, offsetMapCoordinate, separateNearbyMapPoints } from "./map-clusters";
+export type { CategoryReportCluster, ClusterableReportPoint, PositionedMapPoint } from "./map-clusters";
+export { parseDecimal, textInputError, residentNamePartsError, residentDisplayName, residentAgeError, emailInputError, mobileInputError, normalizePhilippineMobile, passwordInputError, imageHeaderError, UUID_PATTERN, SHORT_REASON_LIMIT, MIN_PASSWORD_LENGTH, EMAIL_OTP_LENGTH, EMAIL_OTP_EXPIRY_SECONDS, EMAIL_RESEND_INTERVAL_SECONDS, characterLimitHint } from "./validation";
 export { ILIGAN_MAP_BOUNDS } from "./iligan";
+export { googleCalendarDraftUrl, meetingDateTimeInput, normalizeGoogleMeetUrl, parseManilaDateTimeInput } from "./meeting-links";
 export { resolveGoogleLocation } from "./google-geocoding";
 export type { GoogleGeocodeResult, BarangayMatch, CityCheck } from "./google-geocoding";
 export const statuses = [
@@ -9,6 +12,7 @@ export const statuses = [
   "under_review",
   "verified",
   "assigned",
+  "scheduled",
   "in_progress",
   "resolved",
   "rejected",
@@ -16,10 +20,11 @@ export const statuses = [
 ] as const;
 export type Status = (typeof statuses)[number];
 export const transitions: Record<Status, readonly Status[]> = {
-  submitted: ["under_review", "rejected", "duplicate"],
-  under_review: ["verified", "rejected", "duplicate"],
-  verified: ["assigned", "duplicate"],
-  assigned: ["in_progress", "duplicate"],
+  submitted: ["verified", "assigned", "rejected", "duplicate"],
+  under_review: ["verified", "assigned", "rejected", "duplicate"],
+  verified: ["assigned", "scheduled", "duplicate"],
+  assigned: ["scheduled", "duplicate"],
+  scheduled: ["in_progress", "resolved", "duplicate"],
   in_progress: ["resolved", "assigned"],
   resolved: ["under_review"],
   rejected: ["under_review"],
@@ -91,12 +96,17 @@ export function createReportSchema(categories: Lookup[]) {
 export type ReportInput = z.infer<typeof reportSchema>;
 export interface Report extends ReportInput {
   id: string;
-  resident_id: string;
+  resident_id: string | null;
+  submission_source?: "resident" | "walk_in";
+  created_by?: string;
   status: Status;
   created_at: string;
   verified_at: string | null;
+  scheduled_at?: string | null;
   organization_id: string | null;
   severity: number | null;
+  resident_barangay_id?: string | null;
+  assigned_to?: string | null;
   urgency?: number | null;
   is_demo: boolean;
   public_summary: string | null;
@@ -109,13 +119,71 @@ export interface Lookup {
 export interface Profile {
   id: string;
   display_name: string;
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
+  age?: number | null;
   role: "resident" | "barangay" | "office" | "admin";
   barangay_id: string | null;
+  phone?: string | null;
   notifications_enabled: boolean;
   avatar_path?: string | null;
 }
 export const label = (s: string) =>
   s.replaceAll("_", " ").replace(/^./, (s) => s.toUpperCase());
+
+export function reportStatusLabel(status: string) {
+  return ({
+    submitted: "Received",
+    under_review: "Under review",
+    verified: "Verified",
+    assigned: "Forwarded to office",
+    scheduled: "Scheduled",
+    in_progress: "Ongoing",
+    resolved: "Resolved",
+    rejected: "Rejected",
+    duplicate: "Linked to main report",
+  } as Record<string, string>)[status] || label(status);
+}
+
+export function reportStatusDescription(status: string) {
+  return ({
+    submitted: "Your report has been received. The barangay responsible for its location will check the details and pin.",
+    under_review: "Barangay staff are checking the details and location. If verified, they will schedule local work or forward it to the responsible office.",
+    verified: "Your report is verified. The barangay will schedule the work or send it to an office that can handle it. You do not need to take another step.",
+    assigned: "The report was forwarded to the responsible office. That team will share its schedule or next update here.",
+    scheduled: "Work is scheduled for the Philippine date and time shown. On that day, the handling team can begin or reschedule if needed. Schedule and status changes will appear here.",
+    in_progress: "Work has started. The handling team will post progress and mark the report resolved when the work is complete.",
+    resolved: "The handling team recorded that the issue has been addressed. Read the resolution below.",
+    rejected: "The report was not accepted. Read the official explanation in the timeline.",
+    duplicate: "Progress follows the linked main report. Your original submission is retained.",
+  } as Record<string, string>)[status] || "";
+}
+
+export function reportScheduleLabel(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-PH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Manila",
+  }).format(date);
+}
+
+export function reportScheduleDayReached(value: string | null | undefined, now = new Date()) {
+  if (!value) return false;
+  const scheduled = new Date(value);
+  if (!Number.isFinite(scheduled.getTime()) || !Number.isFinite(now.getTime())) return false;
+  const dayKey = (date: Date) => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(date);
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value || "";
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  };
+  return dayKey(scheduled) <= dayKey(now);
+}
 
 export function consultationPhase(row: { status: string; opens_at: string; closes_at: string }, now = Date.now()) {
   const opens = Date.parse(row.opens_at), closes = Date.parse(row.closes_at);

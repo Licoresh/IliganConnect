@@ -3,8 +3,6 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  Linking,
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -20,16 +18,6 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { emailInputError, textInputError, characterLimitHint } from "@community/shared";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
-
-export type PhotoCredit = { source_url: string | null; attribution: string | null; is_illustrative: boolean };
-
-export function PhotoAttribution({ credit, dark = false }: { credit?: PhotoCredit; dark?: boolean }) {
-  if (!credit?.attribution) return null;
-  return <View style={{ gap: 4 }}>
-    <Text style={{ color: dark ? "#e3efed" : colors.muted, fontSize: 12, lineHeight: 17 }}>{credit.attribution}</Text>
-    {credit.source_url?.startsWith("https://") && <Pressable accessibilityRole="link" accessibilityLabel="View original photograph source and license" onPress={() => { void Linking.openURL(credit.source_url!).catch(() => Alert.alert("Could not open the source", "Please try again when your browser is available.")); }} style={{ minHeight: 48, justifyContent: "center" }}><Text style={{ color: dark ? "#8ce0d0" : colors.brand, fontSize: 12, fontWeight: "700", textDecorationLine: "underline" }}>Original source and license ↗</Text></Pressable>}
-  </View>;
-}
 
 export function AppBackNavigation({ label, onBack, actions }: { label: string; onBack: () => void; actions?: ReactNode }) {
   return <View style={{ minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
@@ -47,14 +35,12 @@ export function PhotoViewer({
   style,
   resizeMode = "cover",
   onError,
-  credit,
 }: {
   source: ImageSourcePropType;
   label: string;
   style?: ImageProps["style"];
   resizeMode?: ImageProps["resizeMode"];
   onError?: ImageProps["onError"];
-  credit?: PhotoCredit;
 }) {
   const [visible, setVisible] = useState(false);
   return <>
@@ -68,7 +54,6 @@ export function PhotoViewer({
         <Pressable accessibilityRole="button" accessibilityLabel="Close photo" onPress={() => setVisible(false)} style={{ position: "absolute", top: 48, right: 18, width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: "#ffffffed" }}>
           <Ionicons name="close" size={25} color={colors.brandDark} />
         </Pressable>
-        {credit?.attribution ? <View style={{ position: "absolute", bottom: 28, left: 18, right: 18, padding: 12, borderRadius: 13, backgroundColor: "#06111eee" }}><PhotoAttribution credit={credit} dark /></View> : <Text pointerEvents="none" style={{ position: "absolute", bottom: 28, color: "white", fontSize: 12, fontWeight: "600" }}>Tap close to return</Text>}
       </View>
     </Modal>}
   </>;

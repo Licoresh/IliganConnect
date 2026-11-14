@@ -5,10 +5,12 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, ArrowUpRight, BadgeCheck, BarChart3, CheckCircle2, CircleAlert, Cog, FileText, Flame, Layers3, List, MapPin, MapPinned, RefreshCw, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { db, result } from "../lib/client";
-import { Report, statuses, label, hasReportCoordinates } from "@community/shared";
+import { openReportFromRow } from "../lib/report-row";
+import { BARANGAY_GIS_CATEGORY_ZOOM, BARANGAY_TOTAL_ZOOM, INDIVIDUAL_REPORT_PIN_ZOOM, offsetMapCoordinate, separateNearbyMapPoints, Report, statuses, label, hasReportCoordinates } from "@community/shared";
 import { ILIGAN_MAP_BOUNDS } from "../../shared/iligan";
 import {
   barangayAreaKm2,
+  barangayCenter,
   barangayDensity,
   barangayDensityColor,
   barangayHeatColor,
@@ -27,6 +29,7 @@ import { reportLocalAddress } from "../lib/report-location";
 
 const categoryKeys: CategoryKey[] = ["streetlights", "roads", "drainage", "garbage", "wires", "signs", "other"];
 const markerKinds = Object.fromEntries(categoryKeys.map((key) => [key, reportCategoryPresentationForKey(key)])) as Record<CategoryKey, ReturnType<typeof reportCategoryPresentationForKey>>;
+type BarangayCategoryCount = { barangay_id: string; barangay_name: string; category_id: string; category_name: string; report_count: number | string };
 
 function markerKindFor(name: string) {
   return reportCategoryPresentation(name).key;
@@ -72,6 +75,8 @@ export default function IssueMap({
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null),
     barangayPopup = useRef<maplibregl.Popup | null>(null),
+    mapPickedBarangay = useRef(false),
+    preserveBarangaySelectionForList = useRef(false),
     reportListHeading = useRef<HTMLHeadingElement>(null),
     hoveredFeatureId = useRef<string | number | undefined>(undefined);
   const [ready, setReady] = useState(false),
@@ -105,27 +110,61 @@ export default function IssueMap({
     [reportPage, setReportPage] = useState(0),
     [manualRefreshing, setManualRefreshing] = useState(false),
     [error, setError] = useState(""),
+    [mapZoom, setMapZoom] = useState(11.2),
     [selectedId, setSelectedId] = useState("");
   const baseRef = useRef(base);
   baseRef.current = base;
   const mode = overview || !hideReportList ? overviewMode : "map";
   const modeRef = useRef(mode);
   modeRef.current = mode;
-  const setMode = setOverviewMode;
-  useEffect(() => { barangayPopup.current?.remove(); }, [mode]);
   const invalidDates = !!(since && until && since > until);
   useEffect(() => setReportPage(0), [category, barangay, state, since, until, mode]);
   const canChangeBarangay = access.profile.role !== "barangay" && !hideReportList;
   const mapScopeId = access.profile.role === "barangay" ? access.profile.barangay_id : barangay;
+  const selectedBarangayGis = mode === "barangays" && !!mapScopeId;
+  const mapFitMaxZoom = mode === "barangays" && access.profile.role === "barangay"
+    ? BARANGAY_GIS_CATEGORY_ZOOM
+    : 14;
+  const clearMapPickedBarangay = () => {
+    mapPickedBarangay.current = false;
+    setBarangay("");
+    setBounds([ILIGAN_MAP_BOUNDS.southWest.longitude, ILIGAN_MAP_BOUNDS.southWest.latitude, ILIGAN_MAP_BOUNDS.northEast.longitude, ILIGAN_MAP_BOUNDS.northEast.latitude]);
+    requestAnimationFrame(() => map.current?.fitBounds([
+      [ILIGAN_MAP_BOUNDS.southWest.longitude, ILIGAN_MAP_BOUNDS.southWest.latitude],
+      [ILIGAN_MAP_BOUNDS.northEast.longitude, ILIGAN_MAP_BOUNDS.northEast.latitude],
+    ], { padding: modeRef.current === "barangays" ? 28 : compact ? 32 : 52, maxZoom: 11.2, duration: 360 }));
+  };
+  const setMode = (next: "map" | "barangays" | "list") => {
+    const current = modeRef.current;
+    if (canChangeBarangay && mapPickedBarangay.current && !preserveBarangaySelectionForList.current && (current === "barangays" && next !== "barangays" || current !== "barangays" && next === "barangays")) clearMapPickedBarangay();
+    setOverviewMode(next);
+  };
+  useEffect(() => {
+    if (barangayPopup.current) {
+      barangayPopup.current.remove();
+      barangayPopup.current = null;
+    }
+  }, [mode]);
+  const showBarangayCategoryBreakdown = mode === "barangays" && !category && mapZoom > BARANGAY_GIS_CATEGORY_ZOOM && !(selectedBarangayGis && mapZoom >= INDIVIDUAL_REPORT_PIN_ZOOM);
   useEffect(() => setShowSavedLocations(false), [mapScopeId]);
   const selectedBarangayName = refs.barangays.find((item) => item.id === mapScopeId)?.name ?? "";
-  const selectBarangay = (id: string) => {
+  const selectBarangay = (id: string, source: "map" | "control" = "control") => {
     if (!canChangeBarangay && id !== mapScopeId) return false;
+    mapPickedBarangay.current = false;
     barangayPopup.current?.remove();
+    barangayPopup.current = null;
+    preserveBarangaySelectionForList.current = false;
     setError("");
     setBarangay(id);
-    if (!id) setBounds([ILIGAN_MAP_BOUNDS.southWest.longitude, ILIGAN_MAP_BOUNDS.southWest.latitude, ILIGAN_MAP_BOUNDS.northEast.longitude, ILIGAN_MAP_BOUNDS.northEast.latitude]);
-    else if (id === mapScopeId && mapScopeFeature) map.current?.fitBounds(boundsForBoundary(mapScopeFeature), { padding: mode === "barangays" ? 28 : compact ? 32 : 52, maxZoom: 14, duration: 360 });
+    mapPickedBarangay.current = source === "map" && !!id;
+    if (!id) {
+      setBounds([ILIGAN_MAP_BOUNDS.southWest.longitude, ILIGAN_MAP_BOUNDS.southWest.latitude, ILIGAN_MAP_BOUNDS.northEast.longitude, ILIGAN_MAP_BOUNDS.northEast.latitude]);
+      map.current?.fitBounds([
+        [ILIGAN_MAP_BOUNDS.southWest.longitude, ILIGAN_MAP_BOUNDS.southWest.latitude],
+        [ILIGAN_MAP_BOUNDS.northEast.longitude, ILIGAN_MAP_BOUNDS.northEast.latitude],
+      ], { padding: mode === "barangays" ? 28 : compact ? 32 : 52, maxZoom: 11.2, duration: 360 });
+    }
+    else if (id === mapScopeId && mapScopeFeature) map.current?.fitBounds(boundsForBoundary(mapScopeFeature), { padding: mode === "barangays" ? 28 : compact ? 32 : 52, maxZoom: mapFitMaxZoom, duration: 360 });
     return true;
   };
   const selectBarangayRef = useRef(selectBarangay);
@@ -183,10 +222,10 @@ export default function IssueMap({
   const selectedReport = selectedMapReport || linkedReport.data;
   const gis = useQuery({
     enabled: mode === "barangays" && !invalidDates,
-    queryKey: ["map-barangay-counts", category, state, since, until, permissionFingerprint(access)],
+    queryKey: ["map-barangay-counts", category, mapScopeId, state, since, until, permissionFingerprint(access)],
     queryFn: ({ signal }) => result<{ barangay_id: string; barangay_name: string; report_count: number }[]>(db!.rpc("map_barangay_counts", {
       p_category: category || null,
-      p_barangay: null,
+      p_barangay: mapScopeId || null,
       p_report_state: state || null,
       p_since: philippineDateBoundary(since),
       p_until: philippineDateBoundary(until, true),
@@ -196,6 +235,20 @@ export default function IssueMap({
       p_recurring_only: false,
     }).abortSignal(signal)),
   });
+  const gisCategoryCounts = useQuery<BarangayCategoryCount[]>({
+    enabled: showBarangayCategoryBreakdown && !invalidDates,
+    queryKey: ["map-barangay-category-counts", mapScopeId, state, since, until, permissionFingerprint(access)],
+    queryFn: ({ signal }) => result<BarangayCategoryCount[]>(db!.rpc("map_barangay_category_counts", {
+      p_barangay: mapScopeId || null,
+      p_report_state: state || null,
+      p_since: philippineDateBoundary(since),
+      p_until: philippineDateBoundary(until, true),
+    }).abortSignal(signal)),
+  });
+  const showCategoryBreakdown = showBarangayCategoryBreakdown && !!gisCategoryCounts.data;
+  const showGisTotals = mode === "barangays" && !showCategoryBreakdown && !!gis.data &&
+    (!selectedBarangayGis || !!category || mapZoom <= BARANGAY_GIS_CATEGORY_ZOOM);
+  const showIndividualBarangayPins = selectedBarangayGis && mapZoom >= INDIVIDUAL_REPORT_PIN_ZOOM;
   const refreshGeographicData = async () => {
     if (manualRefreshing || invalidDates) return;
     setManualRefreshing(true);
@@ -203,6 +256,7 @@ export default function IssueMap({
       await Promise.all([
         q.refetch({ cancelRefetch: false }),
         ...(mode === "barangays" ? [gis.refetch({ cancelRefetch: false })] : []),
+        ...(showBarangayCategoryBreakdown ? [gisCategoryCounts.refetch({ cancelRefetch: false })] : []),
       ]);
     } finally {
       setManualRefreshing(false);
@@ -244,6 +298,9 @@ export default function IssueMap({
       return counts;
     }, {});
   }, [gis.data, invalidDates]);
+  const activeCategoryKey = category ? markerKindFor(refs.categories.find((item) => item.id === category)?.name || "Other") : null;
+  const countBadgeForeground = "#ffffff";
+  const countBadgeBackground = activeCategoryKey ? markerKinds[activeCategoryKey].foreground : "#0b8279";
   const barangayGeoJson = useMemo<GeoJSON.FeatureCollection<GeoJSON.Polygon>>(() => {
     const countFor = (feature: (typeof iliganBarangayBoundaries)[number]) =>
       reportCountsByBarangay[barangayMapKey(feature.properties.adm4_en)] ?? 0;
@@ -270,6 +327,118 @@ export default function IssueMap({
       }),
     };
   }, [reportCountsByBarangay, barangayMetric, selectedBarangayName]);
+  const barangayGisTotalMapData = useMemo(() => {
+    const points = iliganBarangayBoundaries.flatMap((feature) => {
+      const count = reportCountsByBarangay[barangayMapKey(feature.properties.adm4_en)] ?? 0;
+      const center = count > 0 ? barangayCenter(feature) : null;
+      return center ? [{ id: String(feature.properties.adm4_psgc), name: feature.properties.adm4_en, count, ...center }] : [];
+    });
+    const positions = separateNearbyMapPoints(points, mapZoom, mapZoom <= BARANGAY_TOTAL_ZOOM ? 48 : 58, mapZoom <= BARANGAY_TOTAL_ZOOM ? 28 : 34);
+    const positioned = new Map(positions.map((point) => [point.id, point]));
+    const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
+    const leaders: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+    for (const point of points) {
+      const position = positioned.get(point.id);
+      if (!position) continue;
+      const badgeColor = countBadgeForeground;
+      const badgeIcon = `barangay-count-${activeCategoryKey || "all"}-${point.count}`;
+      features.push({
+        type: "Feature",
+        id: point.id,
+        geometry: { type: "Point", coordinates: [position.longitude, position.latitude] },
+        properties: { name: point.name, count: point.count, badge_color: badgeColor, badge_background: countBadgeBackground, badge_icon: badgeIcon },
+      });
+      if (Math.hypot(position.offsetX, position.offsetY) > 10) leaders.push({
+        type: "Feature",
+        id: `total-leader-${point.id}`,
+        geometry: { type: "LineString", coordinates: [[point.longitude, point.latitude], [position.longitude, position.latitude]] },
+        properties: {},
+      });
+    }
+    return {
+      counts: { type: "FeatureCollection", features } as GeoJSON.FeatureCollection<GeoJSON.Point>,
+      leaders: { type: "FeatureCollection", features: leaders } as GeoJSON.FeatureCollection<GeoJSON.LineString>,
+    };
+  }, [reportCountsByBarangay, countBadgeForeground, countBadgeBackground, activeCategoryKey, mapZoom]);
+  const barangayCategoryMapData = useMemo(() => {
+    type CategoryTotal = { key: CategoryKey; name: string; color: string; count: number };
+    const areas = new Map<string, { id: string; name: string; categories: Map<CategoryKey, CategoryTotal> }>();
+    for (const row of gisCategoryCounts.data ?? []) {
+      const count = Number(row.report_count);
+      if (!Number.isFinite(count) || count <= 0) continue;
+      const area = areas.get(row.barangay_id) ?? { id: row.barangay_id, name: row.barangay_name, categories: new Map<CategoryKey, CategoryTotal>() };
+      const key = markerKindFor(row.category_name || "Other");
+      const marker = markerKinds[key];
+      const category = area.categories.get(key) ?? { key, name: marker.label, color: marker.foreground, count: 0 };
+      category.count += count;
+      area.categories.set(key, category);
+      areas.set(row.barangay_id, area);
+    }
+    const labels: Array<{ id: string; areaName: string; center: { longitude: number; latitude: number }; category: CategoryTotal; position: { longitude: number; latitude: number } }> = [];
+    for (const area of areas.values()) {
+      const boundary = iliganBarangayBoundaries.find((feature) => barangayMapKey(feature.properties.adm4_en) === barangayMapKey(area.name));
+      const center = boundary && barangayCenter(boundary);
+      if (!center) continue;
+      const categories = [...area.categories.values()].sort((a, b) => a.name.localeCompare(b.name));
+      const columns = Math.min(3, categories.length);
+      const rows = Math.ceil(categories.length / columns);
+      categories.forEach((category, index) => {
+        const rowIndex = Math.floor(index / columns);
+        const column = index % columns;
+        const itemsInRow = Math.min(columns, categories.length - rowIndex * columns);
+        const position = offsetMapCoordinate(
+          center.longitude,
+          center.latitude,
+          (column - (itemsInRow - 1) / 2) * 58,
+          (rowIndex - (rows - 1) / 2) * 38,
+          mapZoom,
+        );
+        labels.push({ id: `${area.id}-${category.key}`, areaName: area.name, center, category, position });
+      });
+    }
+    const positions = separateNearbyMapPoints(labels.map((label) => ({ id: label.id, ...label.position })), mapZoom, 60, 36);
+    const positioned = new Map(positions.map((point) => [point.id, point]));
+    const features: GeoJSON.Feature<GeoJSON.Point>[] = [];
+    const leaders: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+    for (const label of labels) {
+      const position = positioned.get(label.id);
+      if (!position) continue;
+      features.push({
+        type: "Feature",
+        id: label.id,
+        geometry: { type: "Point", coordinates: [position.longitude, position.latitude] },
+        properties: {
+          barangay_name: label.areaName,
+          category_key: label.category.key,
+          category_name: label.category.name,
+          count: label.category.count,
+          badge_color: "#ffffff",
+          badge_background: label.category.color,
+          badge_icon: `barangay-count-${label.category.key}-${label.category.count}`,
+        },
+      });
+      if (Math.hypot(position.offsetX, position.offsetY) > 10) leaders.push({
+        type: "Feature",
+        id: `category-leader-${label.id}`,
+        geometry: { type: "LineString", coordinates: [[label.center.longitude, label.center.latitude], [position.longitude, position.latitude]] },
+        properties: {},
+      });
+    }
+    return {
+      counts: { type: "FeatureCollection", features } as GeoJSON.FeatureCollection<GeoJSON.Point>,
+      leaders: { type: "FeatureCollection", features: leaders } as GeoJSON.FeatureCollection<GeoJSON.LineString>,
+    };
+  }, [gisCategoryCounts.data, mapZoom]);
+  const barangayCategoryGeoJson = barangayCategoryMapData.counts;
+  const gisCategoryLegend = useMemo(() => {
+    const byCategory = new Map<CategoryKey, { key: CategoryKey; label: string; color: string }>();
+    for (const row of gisCategoryCounts.data ?? []) {
+      const key = markerKindFor(row.category_name || "Other");
+      const marker = markerKinds[key];
+      byCategory.set(key, { key, label: marker.label, color: marker.foreground });
+    }
+    return [...byCategory.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [gisCategoryCounts.data]);
   const barangaySummaryRows = useMemo(() => {
     const ids = new Map(refs.barangays.map((item) => [barangayMapKey(item.name), item.id]));
     const rows = iliganBarangayBoundaries.map((feature) => {
@@ -345,6 +514,7 @@ export default function IssueMap({
     m.addControl(new maplibregl.NavigationControl());
     m.addControl(new maplibregl.FullscreenControl({ container: container.current.parentElement || container.current }));
     let timer: ReturnType<typeof setTimeout>, initialMapLoaded = false;
+    m.on("zoomend", () => setMapZoom(m.getZoom()));
     m.on("moveend", () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
@@ -367,6 +537,7 @@ export default function IssueMap({
       }
     });
     m.on("load", async () => {
+      setMapZoom(m.getZoom());
       initialMapLoaded = true;
       setTileError(false);
       let markersReady = true;
@@ -386,6 +557,22 @@ export default function IssueMap({
         data: { type: "FeatureCollection", features: [] },
       });
       m.addSource("barangays", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      m.addSource("barangay-category-counts", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      m.addSource("barangay-gis-counts", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      m.addSource("barangay-gis-count-leaders", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      m.addSource("barangay-category-count-leaders", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       });
@@ -414,14 +601,42 @@ export default function IssueMap({
         },
       });
       m.addLayer({
-        id: "barangay-counts",
+        id: "barangay-gis-count-leaders",
+        type: "line",
+        source: "barangay-gis-count-leaders",
+        layout: { visibility: "none" },
+        paint: { "line-color": "#123e50", "line-width": 1.5, "line-opacity": 0.74 },
+      });
+      m.addLayer({
+        id: "barangay-category-count-leaders",
+        type: "line",
+        source: "barangay-category-count-leaders",
+        layout: { visibility: "none" },
+        paint: { "line-color": "#123e50", "line-width": 1.5, "line-opacity": 0.74 },
+      });
+      m.addLayer({
+        id: "barangay-category-counts",
         type: "symbol",
-        source: "barangays",
-        filter: [">", ["get", "count"], 0],
+        source: "barangay-category-counts",
         layout: {
           visibility: "none",
-          "icon-image": ["concat", "barangay-count-", ["to-string", ["get", "count"]]],
-          "icon-padding": 4,
+          "icon-image": ["get", "badge_icon"],
+          "icon-padding": 2,
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+      });
+      m.addLayer({
+        id: "barangay-gis-counts",
+        type: "symbol",
+        source: "barangay-gis-counts",
+        layout: {
+          visibility: "none",
+          "icon-image": ["get", "badge_icon"],
+          "icon-padding": 2,
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 8, 0.62, 10.5, 0.72, 13, 0.82, 16, 0.9],
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
         },
       });
       m.on("click", "barangay-fill", (event) => {
@@ -434,7 +649,7 @@ export default function IssueMap({
           setError("We couldn’t match this mapped boundary to a barangay record.");
           return;
         }
-        if (!selectBarangayRef.current(selected.id)) return;
+        if (!selectBarangayRef.current(selected.id, "map")) return;
 
         const count = Number(feature?.properties?.count ?? 0);
         const density = Number(feature?.properties?.density ?? 0);
@@ -454,17 +669,29 @@ export default function IssueMap({
         button.type = "button";
         button.textContent = "View barangay reports";
         button.addEventListener("click", () => {
-          if (overview) setMode("list");
+          if (overview) {
+            preserveBarangaySelectionForList.current = true;
+            setMode("list");
+          }
           requestAnimationFrame(() => {
             reportListHeading.current?.scrollIntoView({ block: "start" });
             reportListHeading.current?.focus({ preventScroll: true });
           });
         });
         card.append(eyebrow, title, note, button);
-        barangayPopup.current = new maplibregl.Popup({ closeButton: true, offset: 12, maxWidth: "300px", className: "map-data-popup" })
+        const popup = new maplibregl.Popup({ closeButton: true, offset: 12, maxWidth: "300px", className: "map-data-popup" })
           .setLngLat(event.lngLat)
           .setDOMContent(card)
           .addTo(m);
+        barangayPopup.current = popup;
+        popup.on("close", () => {
+          if (barangayPopup.current === popup) barangayPopup.current = null;
+          if (preserveBarangaySelectionForList.current) {
+            preserveBarangaySelectionForList.current = false;
+            return;
+          }
+          if (canChangeBarangay && mapPickedBarangay.current && modeRef.current === "barangays") clearMapPickedBarangay();
+        });
       });
       m.on("mouseenter", "barangay-fill", () => { m.getCanvas().style.cursor = "pointer"; });
       m.on("mouseleave", "barangay-fill", () => { m.getCanvas().style.cursor = ""; });
@@ -576,10 +803,10 @@ export default function IssueMap({
       ? boundsForBoundary(mapScopeFeature)
       : [[ILIGAN_MAP_BOUNDS.southWest.longitude, ILIGAN_MAP_BOUNDS.southWest.latitude], [ILIGAN_MAP_BOUNDS.northEast.longitude, ILIGAN_MAP_BOUNDS.northEast.latitude]], {
       padding: mode === "barangays" || !mapScopeFeature ? 28 : compact ? 32 : 52,
-      maxZoom: 14,
+      maxZoom: mapFitMaxZoom,
       duration: 360,
     });
-  }, [compact, mapScopeFeature, mode, ready]);
+  }, [compact, mapFitMaxZoom, mapScopeFeature, mode, ready]);
   useEffect(() => {
     if (!ready || !map.current) return;
     const data: GeoJSON.FeatureCollection = {
@@ -590,7 +817,7 @@ export default function IssueMap({
           type: "Feature" as const,
           id: r.id,
           geometry: { type: "Point" as const, coordinates: [r.longitude, r.latitude] },
-          properties: { id: r.id, title: r.title, status: r.status, is_demo: r.is_demo, category: r.category_id, category_name: refs.categories.find((item) => item.id === r.category_id)?.name || "Other", marker_icon: `report-${categoryKey}`, category_color: markerKinds[categoryKey].foreground },
+          properties: { id: r.id, title: r.title, status: r.status, is_demo: r.is_demo, category: r.category_id, category_key: categoryKey, category_name: refs.categories.find((item) => item.id === r.category_id)?.name || "Other", marker_icon: `report-${categoryKey}`, category_color: markerKinds[categoryKey].foreground },
         };
       }),
     };
@@ -606,29 +833,37 @@ export default function IssueMap({
   }, [mode, ready]);
   useEffect(() => {
     if (!ready || !map.current) return;
-    map.current.setLayoutProperty("points", "visibility", mode === "map" && showMarkers ? "visible" : "none");
+    const showReportLayers = mode === "map" || showIndividualBarangayPins;
+    map.current.setLayoutProperty("points", "visibility", showReportLayers && showMarkers ? "visible" : "none");
     map.current.setLayoutProperty("heat", "visibility", mode === "map" && showHeat ? "visible" : "none");
-    map.current.setLayoutProperty("barangay-fill", "visibility", mode === "barangays" && !!gis.data ? "visible" : "none");
-    map.current.setLayoutProperty("barangay-counts", "visibility", mode === "barangays" && !!gis.data ? "visible" : "none");
+    map.current.setLayoutProperty("barangay-fill", "visibility", mode === "barangays" && !!gis.data && (!selectedBarangayGis || showHeat) ? "visible" : "none");
+    map.current.setFilter("barangay-fill", selectedBarangayGis ? ["==", ["get", "selected"], true] : null);
+    map.current.setLayoutProperty("barangay-category-counts", "visibility", showCategoryBreakdown ? "visible" : "none");
+    map.current.setLayoutProperty("barangay-gis-counts", "visibility", showGisTotals ? "visible" : "none");
+    map.current.setLayoutProperty("barangay-gis-count-leaders", "visibility", showGisTotals ? "visible" : "none");
+    map.current.setLayoutProperty("barangay-category-count-leaders", "visibility", showCategoryBreakdown ? "visible" : "none");
     map.current.setLayoutProperty("barangay-outline", "visibility", mode === "barangays" || showBoundary ? "visible" : "none");
-  }, [ready, mode, showMarkers, showHeat, showBoundary, gis.data]);
+    map.current.setFilter("barangay-outline", selectedBarangayGis ? ["==", ["get", "selected"], true] : null);
+  }, [ready, mode, mapScopeId, selectedBarangayGis, showIndividualBarangayPins, showMarkers, showHeat, showBoundary, gis.data, showGisTotals, showCategoryBreakdown]);
   useEffect(() => {
     if (!ready || !map.current) return;
     // Local count badges avoid another font/tile service and reuse each distinct total.
-    for (const feature of barangayGeoJson.features) {
+    for (const feature of [...barangayGisTotalMapData.counts.features, ...barangayCategoryGeoJson.features]) {
       const count = Number(feature.properties?.count ?? 0);
-      const imageId = `barangay-count-${count}`;
+      const imageId = String(feature.properties?.badge_icon || "");
+      const badgeColor = String(feature.properties?.badge_color || "#0b8279");
+      const badgeBackground = String(feature.properties?.badge_background || "#0b8279");
       if (!count || map.current.hasImage(imageId)) continue;
       const canvas = document.createElement("canvas");
       canvas.width = 112; canvas.height = 64;
       const context = canvas.getContext("2d");
       if (!context) continue;
       context.scale(2, 2);
-      context.fillStyle = "#ffffff";
-      context.strokeStyle = "#31556b";
+      context.fillStyle = badgeBackground;
+      context.strokeStyle = badgeColor;
       context.lineWidth = 1.5;
       context.beginPath(); context.roundRect(2, 2, 52, 28, 9); context.fill(); context.stroke();
-      context.fillStyle = "#102b47";
+      context.fillStyle = badgeColor;
       context.font = "600 14px system-ui";
       context.textAlign = "center"; context.textBaseline = "middle";
       context.fillText(count.toLocaleString("en-PH"), 28, 16, 46);
@@ -636,7 +871,15 @@ export default function IssueMap({
     }
     const source = map.current.getSource("barangays") as maplibregl.GeoJSONSource | undefined;
     source?.setData(barangayGeoJson);
-  }, [barangayGeoJson, ready]);
+    const categorySource = map.current.getSource("barangay-category-counts") as maplibregl.GeoJSONSource | undefined;
+    categorySource?.setData(barangayCategoryGeoJson);
+    const gisTotalSource = map.current.getSource("barangay-gis-counts") as maplibregl.GeoJSONSource | undefined;
+    gisTotalSource?.setData(barangayGisTotalMapData.counts);
+    const gisLeaderSource = map.current.getSource("barangay-gis-count-leaders") as maplibregl.GeoJSONSource | undefined;
+    gisLeaderSource?.setData(barangayGisTotalMapData.leaders);
+    const categoryLeaderSource = map.current.getSource("barangay-category-count-leaders") as maplibregl.GeoJSONSource | undefined;
+    categoryLeaderSource?.setData(barangayCategoryMapData.leaders);
+  }, [barangayGeoJson, barangayGisTotalMapData, barangayCategoryGeoJson, barangayCategoryMapData, ready]);
   useEffect(() => {
     if (!ready || !map.current) return;
     const active = base === "map" ? "base" : base === "terrain" ? "topo-base" : "imagery-base";
@@ -684,10 +927,35 @@ export default function IssueMap({
     : access.profile.role === "admin"
       ? "Iligan City · all barangays"
       : access.organizations.length ? `${organizationScope} · authorized areas` : "Authorized areas";
+  const selectedCategoryName = refs.categories.find((item) => item.id === category)?.name;
+  const selectedBarangayCount = reportCountsByBarangay[barangayMapKey(selectedBarangayName)] ?? 0;
+  const gisMapCaption = selectedBarangayGis
+    ? category
+      ? gis.isPending ? "Loading category total…" : `${selectedBarangayName} · ${selectedBarangayCount} ${reportCategoryPresentation(selectedCategoryName || "Other").label} reports`
+      : showBarangayCategoryBreakdown
+        ? gisCategoryCounts.isPending ? "Loading category totals…" : gisCategoryCounts.error ? "Category totals unavailable" : "Zoomed in · totals by report category"
+        : showIndividualBarangayPins ? `${selectedBarangayName} · individual report pins` : `${selectedBarangayName} · ${selectedBarangayCount} total reports`
+    : category
+      ? `${reportCategoryPresentation(selectedCategoryName || "Other").label} · one total per barangay at every zoom`
+      : showBarangayCategoryBreakdown
+        ? gisCategoryCounts.isPending ? "Loading category totals…" : gisCategoryCounts.error ? "Category totals unavailable" : "Zoomed in · totals by report category"
+        : "Zoom out · total reports per barangay";
   const backgroundControls = <div className={`overview-map-base segmented${mode === "barangays" ? " gis-map-background" : ""}`} role="group" aria-label="Map background">
     {(["map", "terrain", "satellite"] as const).map((value) => <button type="button" key={value} aria-pressed={base === value} className={base === value ? "active" : ""} onClick={() => setBase(value)}>{value[0].toUpperCase() + value.slice(1)}</button>)}
   </div>;
-  const gisMapControls = <div className="gis-background-picker">{backgroundControls}<div className="map-gis-caption" role="status">{gis.isPending ? "Loading barangay counts…" : gis.error ? "Barangay counts unavailable" : "Colors and labels: report totals"}</div></div>;
+  const gisMapControls = <div className="gis-background-picker">{backgroundControls}<div className="map-gis-caption" role="status">{selectedBarangayGis ? gisMapCaption : gis.isPending ? "Loading barangay counts…" : gis.error ? "Barangay counts unavailable" : gisMapCaption}</div></div>;
+  const selectedBarangayLayerControls = selectedBarangayGis && <div className="overview-map-layer-switches gis-selected-layers" aria-label="Selected barangay map layers">
+    {[{ label: "Report pins", value: showMarkers, change: () => setShowMarkers((current) => !current) }, { label: "Heatmap", value: showHeat, change: () => setShowHeat((current) => !current) }].map((toggle) => <button type="button" key={toggle.label} aria-pressed={toggle.value} onClick={toggle.change}><span className={`overview-switch${toggle.value ? " on" : ""}`} aria-hidden="true"><i /></span>{toggle.label}</button>)}
+  </div>;
+  const selectedBarangayHeatLegend = selectedBarangayGis && showHeat && <div className="overview-map-density" aria-label={barangayMetric === "density" ? "Barangay report density shading" : "Report count shading by whole barangay"}>
+    <strong>{barangayMetric === "density" ? "Reports per km²" : "Reports per barangay"}</strong><div>{(barangayMetric === "density"
+      ? [["#cbd5e1", "0"], ["#34d399", "Lower"], ["#facc15", "Moderate"], ["#f97316", "High"], ["#ef4444", "Highest"]]
+      : [["#cbd5e1", "0"], ["#38bdf8", "1–2"], ["#14b8a6", "3–5"], ["#f59e0b", "6–10"], ["#ef4444", "11+"]]).map(([color, range]) => <span key={range}><i style={{ background: color }} />{range}</span>)}</div>
+  </div>;
+  const selectedBarangayLegendItems = showCategoryBreakdown ? gisCategoryLegend.map((item) => ({ id: item.key, name: item.label })) : frequentCategories;
+  const selectedBarangayCategoryLegend = selectedBarangayGis && (showCategoryBreakdown || showIndividualBarangayPins && showMarkers) && <div className={overview ? "overview-map-category-legend" : "map-legend map-marker-legend"} aria-label={showCategoryBreakdown ? "Category total colors" : "Report pin colors by category"}>
+    <strong>{showCategoryBreakdown ? "Category total colors:" : "Report pin colors:"}</strong>{selectedBarangayLegendItems.length ? selectedBarangayLegendItems.map((item) => <ReportCategoryLabel key={item.id} name={item.name} compact className="map-report-category" />) : <span>No mapped reports in this area.</span>}
+  </div>;
   return (
     <div className={`issue-map${compact ? " compact" : ""}${overview ? " overview-map" : ""}`}>
       {!overview && <div className="dashboard-brief overview-scope map-authorized-area">
@@ -738,7 +1006,7 @@ export default function IssueMap({
           {(["map", "barangays"] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value} className={mode === value ? "active" : ""} onClick={() => setMode(value)}>{value === "map" ? "Issue map" : "Barangay GIS"}</button>)}
         </div>}
         <span className="map-page-result-count" role="status">
-          {invalidDates ? "Check the date range" : mode === "barangays" ? gis.isPending ? "Loading barangay counts…" : `${Object.values(reportCountsByBarangay).reduce((sum, count) => sum + count, 0)} permitted reports · totals by assigned barangay` : q.isFetching ? "Loading reports…" : `${mapReports.length} ${showSavedLocations ? "saved locations" : "mapped reports"}${outOfScopeMapReports ? ` · ${outOfScopeMapReports} need location review` : ""}`}
+          {invalidDates ? "Check the date range" : mode === "barangays" ? selectedBarangayGis ? q.isFetching ? `Loading ${selectedBarangayName} reports…` : `${selectedBarangayCount} matching reports · ${mapReports.length} mapped reports · ${selectedBarangayName}` : gis.isPending ? "Loading barangay totals…" : gis.error ? "Barangay totals unavailable" : `${Object.values(reportCountsByBarangay).reduce((sum, count) => sum + count, 0)} permitted reports · totals by assigned barangay` : q.isFetching ? "Loading reports…" : `${mapReports.length} ${showSavedLocations ? "saved locations" : "mapped reports"}${outOfScopeMapReports ? ` · ${outOfScopeMapReports} need location review` : ""}`}
         </span>
         <div className="map-page-actions">
           <button type="button" className="secondary" onClick={() => {
@@ -747,7 +1015,7 @@ export default function IssueMap({
             mapScopeFeature
               ? boundsForBoundary(mapScopeFeature)
               : [[ILIGAN_MAP_BOUNDS.southWest.longitude, ILIGAN_MAP_BOUNDS.southWest.latitude], [ILIGAN_MAP_BOUNDS.northEast.longitude, ILIGAN_MAP_BOUNDS.northEast.latitude]],
-            { padding: mapScopeFeature ? (compact ? 32 : 52) : 28, maxZoom: mapScopeFeature ? 14 : undefined, duration: 360 },
+             { padding: mapScopeFeature ? (compact ? 32 : 52) : 28, maxZoom: mapScopeFeature ? mapFitMaxZoom : undefined, duration: 360 },
           ); }}>Reset map</button>
           {mode === "map" && <button type="button" className="secondary" disabled={!mapReports.length} onClick={() => {
             const resultBounds = new maplibregl.LngLatBounds();
@@ -767,8 +1035,10 @@ export default function IssueMap({
       {mode !== "barangays" && reportsWithoutPins > 0 && <p className="notice" role="status">{reportsWithoutPins} {reportsWithoutPins === 1 ? "report uses a manual address" : "reports use manual addresses"} without map pins. {hideReportList ? "Their Purok, Zone and location details are available in Issue reports." : "Open the report list to review their Purok, Zone and location details."}{overview && mode !== "list" && <button type="button" className="secondary" onClick={() => setMode("list")}>Open report list</button>}</p>}
       {q.data?.length === 1000 && <p className="notice" role="status">Pins and the report list are limited to 1,000 matching reports. Narrow the filters for detail. Barangay GIS totals count all permitted matches.</p>}
       {overview ? <div className="overview-map-stage">
-        <div ref={container} className={`map${mode === "list" || (mode === "map" && tileError) ? " hidden" : ""}`} aria-label={mode === "barangays" ? "Barangay report count map" : "Iligan issue map"} />
+        <div ref={container} className={`map${mode === "list" || (mode === "map" && tileError) ? " hidden" : ""}`} aria-label={mode === "barangays" ? selectedBarangayGis ? `${selectedBarangayName} report pins and whole-barangay shading` : "Barangay report count map" : "Iligan issue map"} />
         {mode === "barangays" && gisMapControls}
+        {mode === "barangays" && selectedBarangayLayerControls}
+        {mode === "barangays" && selectedBarangayHeatLegend}
         {mode === "map" && tileError && <section className="overview-map-failure" role="alert" aria-live="polite">
           <div className="overview-map-failure-copy"><span className="overview-map-failure-icon"><AlertTriangle size={20} aria-hidden="true" /></span><div><strong>Map tiles could not load</strong><p>Check your connection, retry the map, or open the matching reports as a list.</p><div className="overview-map-failure-actions"><button type="button" onClick={() => { setReady(false); setError(""); setTileError(false); setRetryKey((key) => key + 1); }}><RefreshCw size={14} aria-hidden="true" />Retry loading map</button><button type="button" className="secondary" onClick={() => setMode("list")}><List size={14} aria-hidden="true" />Open report list</button></div></div></div>
           <div className="overview-map-failure-art" aria-hidden="true"><MapPin size={26} /><span><i /><i /><i /></span><CircleAlert size={20} /></div>
@@ -785,8 +1055,10 @@ export default function IssueMap({
       </div> : <div className={`map-page-layout${mode === "map" ? " has-side" : ""}`}>
         <div className="map-page-main">
           <div className="overview-map-stage map-page-stage">
-            <div ref={container} className={`map${mode === "list" ? " hidden" : ""}`} aria-label={mode === "barangays" ? "Barangay report count map" : "Iligan issue map"} />
+            <div ref={container} className={`map${mode === "list" ? " hidden" : ""}`} aria-label={mode === "barangays" ? selectedBarangayGis ? `${selectedBarangayName} report pins and whole-barangay shading` : "Barangay report count map" : "Iligan issue map"} />
             {mode === "barangays" && gisMapControls}
+            {mode === "barangays" && selectedBarangayLayerControls}
+            {mode === "barangays" && selectedBarangayHeatLegend}
             {mode === "map" && <>
               {backgroundControls}
               {showHeat && <div className="overview-map-density" aria-label="Matching reports per 250 meter grid cell">
@@ -827,18 +1099,28 @@ export default function IssueMap({
       </div>}
       {overview && scopeWarning}
       {overview && <div className="overview-map-result-count" role="status">{mode === "barangays"
-        ? gis.isFetching ? "Updating barangay counts…" : `${selectedBarangayName || "Authorized area"} · ${selectedBarangayName ? reportCountsByBarangay[barangayMapKey(selectedBarangayName)] ?? 0 : Object.values(reportCountsByBarangay).reduce((sum, count) => sum + count, 0)} assigned reports`
+        ? selectedBarangayGis
+          ? q.isFetching ? "Updating selected barangay reports…" : `${selectedBarangayName} · ${selectedBarangayCount} matching reports · ${mapReports.length} mapped reports`
+          : gis.isFetching ? "Updating barangay counts…" : `${selectedBarangayName || "Authorized area"} · ${selectedBarangayName ? reportCountsByBarangay[barangayMapKey(selectedBarangayName)] ?? 0 : Object.values(reportCountsByBarangay).reduce((sum, count) => sum + count, 0)} assigned reports`
         : q.isFetching ? "Updating reports…" : mode === "list" ? `${q.data?.length ?? 0} matching reports` : `${mapReports.length} ${showSavedLocations ? "saved locations" : "mapped reports"}${outOfScopeMapReports ? ` · ${outOfScopeMapReports} need location review` : ""}`}</div>}
       {mode === "barangays" && (
         <section className="panel barangay-gis-panel">
           <div className="panel-heading">
-            <div><p className="eyebrow">CURRENT MAP VIEW · CITY BOUNDARIES</p><h2>Reports by barangay</h2></div>
+            <div><p className="eyebrow">{selectedBarangayGis ? `CURRENT MAP VIEW · ${selectedBarangayName.toUpperCase()}` : "CURRENT MAP VIEW · CITY BOUNDARIES"}</p><h2>{selectedBarangayGis ? `${selectedBarangayName} report summary` : "Reports by barangay"}</h2></div>
             <div className="segmented" aria-label="Barangay heat metric">
               <button className={barangayMetric === "count" ? "" : "secondary"} aria-pressed={barangayMetric === "count"} onClick={() => setBarangayMetric("count")}>Report count</button>
               <button className={barangayMetric === "density" ? "" : "secondary"} aria-pressed={barangayMetric === "density"} onClick={() => setBarangayMetric("density")}>Per km²</button>
             </div>
           </div>
-          <p className="muted barangay-gis-copy">Colors and totals follow assigned barangays and current filters, independent of zoom. Select an area to see its reports below. Only reports you have permission to view are counted; gray means no matching accessible reports.</p>
+          <p className="muted barangay-gis-copy">{selectedBarangayGis
+            ? canChangeBarangay
+              ? `This view shades the full ${selectedBarangayName} boundary by its matching report total and keeps category-colored report pins visible. Clear the selection to compare barangay totals across your authorized area.`
+              : `This map stays within ${selectedBarangayName}. Zoom out for its combined total, zoom in for category totals, then zoom closer for individual pins. Heat shading covers the whole barangay boundary.`
+            : "At city scale, each badge shows the total matching reports for a barangay. Zoom in to split the totals by category and color. Selecting one category keeps a single category total per barangay at every zoom. Only reports you can access are counted; gray means none match."}</p>
+          {showCategoryBreakdown && gisCategoryLegend.length > 0 && <div className="barangay-category-legend" role="list" aria-label="Category total colors">
+            <strong>Category total colors</strong>
+            {gisCategoryLegend.map((item) => <span className="barangay-category-chip" key={item.key} role="listitem"><i style={{ background: item.color }} aria-hidden="true" />{item.label}</span>)}
+          </div>}
           {mapScopeId && <div className="barangay-gis-selection"><span>{canChangeBarangay ? "Selected" : "Assigned"}: <strong>{selectedBarangayName}</strong></span>{canChangeBarangay && <button type="button" className="secondary" onClick={() => selectBarangay("")}>Clear selection</button>}</div>}
           {gis.isPending ? <p className="empty">Loading barangay counts…</p> : gis.error ? <p className="empty">Counts could not load. Try refreshing geographic data.</p> : barangaySummaryRows.length ? <div className="barangay-list">{barangaySummaryRows.map((row) => <button className="bar-row barangay-heat-row" key={row.barangay_id || row.barangay_name} aria-pressed={row.barangay_id === mapScopeId} disabled={!row.barangay_id || (!canChangeBarangay && row.barangay_id !== mapScopeId)} aria-label={`${row.barangay_name}: ${barangayMetric === "density" ? `${row.density.toFixed(1)} reports per square kilometer` : `${row.report_count} reports`}`} onClick={() => { if (row.barangay_id) selectBarangay(row.barangay_id); }}>
               <span className="barangay-heat-name">{row.barangay_name}</span>
@@ -866,7 +1148,7 @@ export default function IssueMap({
               const categoryName = refs.categories.find((item) => item.id === r.category_id)?.name || "Other";
               const locationName = refs.barangays.find((item) => item.id === r.barangay_id)?.name || "Location pending";
               const officeName = refs.organizations.find((item) => item.id === r.organization_id)?.name || "Awaiting assignment";
-              return <tr key={r.id}>
+              return <tr key={r.id} className="report-row-clickable" onClick={(event) => openReportFromRow(event, () => setSelectedId(r.id))}>
                 <th scope="row"><button className="report-title" aria-label={`Open report: ${r.title}`} onClick={() => setSelectedId(r.id)}><span>{r.title}</span><ArrowUpRight size={15} aria-hidden="true" /></button>
                   <small className="record-meta">{r.id.slice(0, 8).toUpperCase()}{r.severity && ` · Severity ${r.severity}/5`}</small></th>
                 <td data-label="Location"><span className="report-location"><MapPin size={13} aria-hidden="true" /><strong>{locationName}</strong></span>
@@ -903,11 +1185,13 @@ export default function IssueMap({
       {overview && mode === "map" && !tileError && <div className="overview-map-category-legend" aria-label="Report types legend">
         <strong>Report types (legend)</strong>{refs.categories.map((item) => <ReportCategoryLabel key={item.id} name={item.name} compact className="map-report-category" />)}
       </div>}
-      {overview && mode === "map" && !tileError && <p className="overview-map-note">Markers show reports in your authorized area. Heat cells count matching reports in 250 m grid cells; they show reporting activity, not severity.</p>}
+      {selectedBarangayCategoryLegend}
+      {overview && mode === "map" && !tileError && <p className="overview-map-note">Each pin represents one report at every zoom level. Heat cells show reporting activity, not severity.</p>}
       {overview && mode === "map" && !tileError && <p className="overview-map-attribution">{base === "map" ? "Map data © OpenStreetMap contributors" : base === "terrain" ? "Map data © OpenStreetMap contributors, SRTM · Map style © OpenTopoMap (CC-BY-SA)" : "Satellite imagery © Esri, Vantor, Earthstar Geographics, and the GIS User Community"}</p>}
       {!overview && mode === "map" && showMarkers && <div className="map-legend map-marker-legend" aria-label="Report marker colors by category">
         <strong>Report types:</strong>
         {refs.categories.map((item) => <ReportCategoryLabel key={item.id} name={item.name} compact className="map-report-category map-legend-bin" />)}
+        <span className="map-zoom-guide">Each pin represents one report at every zoom level.</span>
       </div>}
       {!overview && mode === "map" && showHeat && <div className="map-legend" aria-label="Reports per 250 meter grid cell">
         <strong>Matching reports in each 250 m cell:</strong>

@@ -11,6 +11,7 @@ begin
     where c.active and p.code<>'other' order by c.name,p.sort_order limit 1;
   assert area is not null and category is not null,'Pin test reference data missing';
   insert into auth.users(id,email) values(resident,resident::text||'@example.invalid');
+  update public.profiles set barangay_id=area where id=resident;
   perform set_config('request.jwt.claim.sub',resident::text,true);
   set local role authenticated;
   perform public.submit_report(pin_id,category,area,'Rollback required pin','A transaction-only report with a map pin and optional blank address fields.',

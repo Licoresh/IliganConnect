@@ -1,10 +1,16 @@
 # Administrative access — 2026-10-24
 
+## Walk-in report scope — 2026-11-14
+
+Walk-in intake is available to active `barangay` profiles with an assigned barangay. The staff member cannot choose another jurisdiction. Direct report inserts remain restricted to active resident-owned submissions; walk-ins are created only through `submit_walk_in_report`, which validates the category and pin against the assigned barangay boundary. Reporter name/contact are stored in a private table and returned through `report_residents` only after current report-scope authorization; optional walk-in contact requires barangay, administrator, or assigned-office update/review access. No resident account or automatic email is created for the reporter.
+
+`update_walk_in_report_location` is limited to active staff of that report's barangay and walk-in-origin reports. It rejects pins outside the same boundary and appends an actor-attributed location event to the report timeline. Office users and staff from other barangays cannot use it. Resident-submitted report pins are unchanged by this feature.
+
 One Next.js application, one Supabase login, one reusable heatmap. The resident application was not rebuilt for this milestone.
 
 ## Authentication and authorization
 
-`staff_context()` retrieves the signed-in user's profile, account status, active organizations and enabled access rules. It accepts no user identifier or client-selected role. The web app derives its dashboard title, organization identity, navigation and available actions from that result. Supabase validates the bearer token on database requests. User-editable Auth metadata does not control authorization.
+`staff_context()` retrieves the signed-in user's profile, account status, active organizations and enabled access rules. It accepts no user identifier or client-selected role. The web app derives its dashboard title, organization identity, navigation and available actions from that result. Supabase validates the bearer token on database requests. User-editable Auth metadata does not control authorization; resident signup metadata is validated and used only for profile name, mobile and barangay fields. Role and account status remain database controlled.
 
 Existing role identifiers are preserved for compatibility:
 
@@ -15,13 +21,19 @@ Existing role identifiers are preserved for compatibility:
 | `office` | Office staff | Union of enabled category/jurisdiction rules for active memberships |
 | `resident` | Resident | Resident workflows; administrative workspace denied |
 
-`account_status` is `pending`, `active` or `disabled`. Existing accounts retain their previous active access. A changed staff role becomes pending and requires a separate administrator approval. Barangay approval requires a jurisdiction; office approval requires an active organization membership. An approved office without any enabled rules may enter the workspace and heatmap but receives no private report records. The last active administrator cannot be disabled or demoted.
+`account_status` is `pending`, `active` or `disabled`. Existing accounts retain their previous active access. A changed staff role becomes pending and requires separate administrator approval. Barangay activation requires a jurisdiction; office activation requires an active organization membership. An approved office without any enabled rules may enter the workspace and heatmap but receives no private report records. The last active administrator cannot be disabled or demoted.
 
-System administrators can invite a new stakeholder by email. The invite flow supports barangay staff (one required barangay assignment) and office/service-provider staff (one required active organization membership). New staff remain pending until an administrator approves them. City Engineer, CENRO, CDRRMO, DPWH, utility providers and City Traffic are organization memberships under the existing `office` role, not separate authorization roles. Membership identifies the stakeholder; enabled category, barangay and assignment rules determine its report access.
+System administrators can invite a new stakeholder by email. The invite flow supports barangay staff (one required barangay assignment) and office/service-provider staff (one required active organization membership). A validated invitation activates the scoped staff profile immediately; the recipient must accept the email invitation before signing in. Changing the role of an existing account still resets it to pending for separate administrator approval. City Engineer, CENRO, CDRRMO, DPWH, utility providers and City Traffic are organization memberships under the existing `office` role, not separate authorization roles. Membership identifies the stakeholder; enabled category, barangay and assignment rules determine its report access.
 
 The backend checks current database state on every request. Disabling an account, removing a membership, deactivating an organization or disabling its access rule immediately affects subsequent requests, including sessions with unexpired access tokens. The web refreshes access context every 30 seconds, on focus and token refresh; it clears cached application data when identity or permissions change.
 
 Supabase persists and refreshes sessions. Sign-out clears local state and revokes refresh access. An already issued access token can remain valid until its expiration; disabling the account is the supported immediate administrative revocation path. Existing signed storage URLs remain usable until their short expiry; new URL creation checks current permissions.
+
+## Initial report review and handoff — 2026-11-13
+
+Only an administrator or the report's assigned barangay can complete an initial or reopened review. The barangay records severity, urgency, and the public review note in the same transaction as its decision. Keeping the case verified leaves it with the barangay; routing assigns it to one active office whose enabled access rule matches both category and barangay. The responsible handler must then record a future work date before moving the case to ongoing, and only ongoing work can be resolved. Category-level read permission does not let an office review or change an unassigned report.
+
+Office action permissions continue to require the explicit assignment plus the matching enabled responsibility rule. Review actor and barangay attribution come from the server-written action history. These checks are enforced by `change_report`, the report-access helper and the scoped `report_permissions`, `referral_options` and `report_action_history` RPCs, not by the client step navigation.
 
 ## Office responsibilities
 
@@ -78,7 +90,7 @@ These are labelled synthetic access profiles, not verified government arrangemen
 - Rollback-wrapped `supabase/tests/security.sql` passed after both RBAC migrations.
 - Session persistence, refresh, sign-out, revoked refresh denial, manipulated JWT rejection and immediate administrative revocation passed. Expiration recovery was exercised by setting stored session expiry metadata into the past; a real signed JWT was not held until wall-clock expiry.
 - The connected Codex browser returned “Local browser use is disabled in Work settings.” A later isolated Chrome check visually rendered login, citywide, Tibanga and CENRO dashboards and the shared heatmap at desktop and mobile widths; 320 px and 390 px login and 390 px authenticated pages had no horizontal overflow. Mobile filters start collapsed and reopen from their summary. Full keyboard traversal and every stakeholder's screen interactions remain unverified; see `verification.md`.
-- Supabase advisor flags the seven intentionally exposed guarded SECURITY DEFINER entry points and disabled leaked-password protection. No missing-RLS warning was returned. [Function access guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable) and [password protection guidance](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+- Supabase Security Advisor on 2026-11-13 reports 13 authenticated-callable `SECURITY DEFINER` functions, three RLS-enabled tables without policies, `pg_net` in `public`, and leaked-password protection disabled. The function warning indicates call reachability, not by itself a privilege bypass. Reviewed role/account mutators check `private.is_admin()` (or its invoker wrapper); `change_report` checks `private.report_action()`. The no-policy tables are private announcement deliveries, city-boundary data, and the service-only email outbox. Do not blanket-revoke these RPCs without replacing the client workflows and reviewing each body. Leaked-password protection is plan-gated here. See [function access guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable) and [password protection guidance](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
 - The previously recorded dependency findings, map-provider/authoritative-boundary constraints and production deployment requirements remain. See `verification.md`.
 
 The frontend follow-up adds linked-record notification navigation, session initialization guards and map container resizing. Its 109 targeted live linked-record checks, build and typechecks passed; see `verification.md` for exact coverage and browser limitations. The 107-check RBAC and 41-check workflow results above are from the preceding backend milestone.

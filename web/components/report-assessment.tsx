@@ -7,30 +7,36 @@ import { db, result } from "../lib/client";
 
 type Errors = Partial<Record<"severity" | "urgency" | "note", string>>;
 type Assessment = { id: string; severity: number; urgency: number; note: string; created_at: string };
-const editableStatuses: Status[] = ["under_review", "verified", "assigned", "in_progress"];
+const editableStatuses: Status[] = ["under_review", "verified", "assigned", "scheduled", "in_progress"];
 const rating = (options: typeof SEVERITY_OPTIONS | typeof URGENCY_OPTIONS, value: number | null | undefined) => {
   const option = options.find((item) => item.value === value);
   return option ? `${option.value}/5 · ${option.label}` : "Not assessed";
 };
 
-export function AssessmentFields({ idPrefix, severity, urgency, errors = {}, disabled = false }: {
+export function AssessmentFields({ idPrefix, severity, urgency, errors = {}, disabled = false, values, onValueChange }: {
   idPrefix: string; severity?: number | null; urgency?: number | null; errors?: Errors; disabled?: boolean;
+  values?: { severity: string; urgency: string };
+  onValueChange?: (field: "severity" | "urgency", value: string) => void;
 }) {
   const [selectedSeverity, setSeverity] = useState(severity == null ? "" : String(severity));
   const [selectedUrgency, setUrgency] = useState(urgency == null ? "" : String(urgency));
+  const ratingValues = { severity: values?.severity ?? selectedSeverity, urgency: values?.urgency ?? selectedUrgency };
+  const updateRating = (field: "severity" | "urgency", value: string) => {
+    onValueChange ? onValueChange(field, value) : field === "severity" ? setSeverity(value) : setUrgency(value);
+  };
   return <fieldset className="assessment-fields" disabled={disabled}>
     <legend>Staff assessment</legend>
     <p className="assessment-fields-intro">Severity describes the impact. Urgency describes how soon staff attention is needed.</p>
     <div className="assessment-rating-grid">
       {([
-        ["severity", "Severity · impact", SEVERITY_OPTIONS, selectedSeverity, setSeverity],
-        ["urgency", "Urgency · time sensitivity", URGENCY_OPTIONS, selectedUrgency, setUrgency],
-      ] as const).map(([name, title, options, value, setValue]) => {
+        ["severity", "Severity · impact", SEVERITY_OPTIONS, ratingValues.severity],
+        ["urgency", "Urgency · time sensitivity", URGENCY_OPTIONS, ratingValues.urgency],
+      ] as const).map(([name, title, options, value]) => {
         const id = `${idPrefix}-${name}`;
         return <div key={name} className="assessment-rating-field">
           <label htmlFor={id}>{title} <span aria-hidden="true">*</span></label>
           <select id={id} name={name} value={value} required aria-invalid={!!errors[name] || undefined}
-            aria-describedby={`${id}-hint${errors[name] ? ` ${id}-error` : ""}`} onChange={(event) => setValue(event.target.value)}>
+            aria-describedby={`${id}-hint${errors[name] ? ` ${id}-error` : ""}`} onChange={(event) => updateRating(name, event.target.value)}>
             <option value="">Choose {name}</option>
             {options.map((option) => <option key={option.value} value={option.value}>{option.value} · {option.label}</option>)}
           </select>

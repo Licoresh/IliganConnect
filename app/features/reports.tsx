@@ -15,7 +15,11 @@ import {
   Report,
   Status,
   Lookup,
+  Profile,
   label,
+  reportStatusLabel,
+  reportStatusDescription,
+  reportScheduleLabel,
   distanceMeters,
   parseReportCoordinates,
   hasReportCoordinates,
@@ -27,7 +31,7 @@ import { barangayAreaKm2, barangayDensity, barangayDensityColor, barangayHeatCol
 import LocationMap from "../components/deferred-location-map";
 import type { MapStyle, Point } from "../components/location-map";
 import { ListSkeleton } from "../components/loading";
-import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, PhotoAttribution, type PhotoCredit, AppBackNavigation, colors, categoryToneFor, categoryIconFor, categoryDescriptionFor, categoryDisplayName, statusToneFor } from "../components/ui";
+import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryToneFor, categoryIconFor, categoryDescriptionFor, categoryDisplayName, statusToneFor } from "../components/ui";
 
 type NoticeTone = "info" | "warning" | "success" | "error";
 
@@ -121,12 +125,16 @@ export function ReportForm({
   categories,
   barangays,
   onSaved,
+  residentProfile,
+  onEditProfile,
   initialCategory = "",
   initialBarangay = "",
 }: {
   categories: Lookup[];
   barangays: Lookup[];
   onSaved: () => void;
+  residentProfile?: Profile;
+  onEditProfile?: () => void;
   initialCategory?: string;
   initialBarangay?: string;
 }) {
@@ -430,17 +438,23 @@ export function ReportForm({
       showMessage((e as Error).message, "error");
     }
   }
+  if (residentProfile && !residentProfile.barangay_id) return <View style={s.card}>
+    <Text style={s.title}>Complete your registered barangay</Text>
+    <Text style={s.body}>Choose your barangay in Profile so officials can identify where you are registered. You can then report a concern at its actual location.</Text>
+    {onEditProfile && <Button title="Open Profile" onPress={onEditProfile} />}
+  </View>;
   return (
     <>
       <Text style={[s.heading, { fontSize: 28, lineHeight: 34 }]}>Report a concern</Text>
+      {residentProfile && <Text style={s.small}>Reporting as {residentProfile.display_name} · Registered in {barangays.find(b => b.id === residentProfile.barangay_id)?.name || "your barangay"}</Text>}
+      {!saved && <Text style={s.body}>Describe the concern, confirm its location, then check and send. Your name and registered barangay are taken from your signed-in account.</Text>}
       {!!message && <ReportNotice tone={messageTone} message={message} onDismiss={clearMessage} />}
       {saved ? (
         <View style={s.card}>
           <Text style={s.eyebrow}>REPORT RECEIVED</Text>
           <Text style={s.title}>Thank you for speaking up.</Text>
           <Text style={s.body}>
-            Your concern is ready for human review. Submission does not
-            guarantee a repair date.
+            The barangay responsible for your pinned location will review your report. Officials can investigate and handle it locally or forward it to the responsible office. Open Your reports to follow updates and read the final action taken.
           </Text>
           <Text selectable style={s.small}>
             {saved}
@@ -793,8 +807,9 @@ export function ReportTracking({
       const [problem, engagement, history, following, office] = await Promise.all([
         r.problem_type ? result<{ label: string }>(db!.from("report_problem_types").select("label").eq("category_id", r.category_id).eq("code", r.problem_type).abortSignal(signal).single()) : null,
         result<{ followers: number; endorsements: number }>(db!.rpc("report_engagement", { p_id: r.id }).abortSignal(signal)),
-        result<{ id: number; new_status: string; public_note: string; created_at: string }[]>(
-          db!.from("report_status_history").select("id,new_status,public_note,created_at").eq("report_id", r.id).order("created_at").abortSignal(signal)),
+        result<{ id: number; new_status: string; public_note: string; created_at: string; actor_name?: string; action_kind?: string; attachment_count?: number }[]>(
+          r.resident_id ? db!.rpc("report_action_history", { p_id: r.id }).abortSignal(signal) :
+            db!.from("report_status_history").select("id,new_status,public_note,created_at").eq("report_id", r.id).order("created_at").abortSignal(signal)),
         result<{ report_id: string }[]>(db!.from("report_followers").select("report_id").eq("report_id", r.id).abortSignal(signal)),
         r.organization_id && r.status !== "duplicate" ? result<Lookup>(db!.from("organizations").select("id,name").eq("id", r.organization_id).abortSignal(signal).single()) : null,
       ]);
@@ -806,8 +821,8 @@ export function ReportTracking({
     enabled: currentReport.data !== null,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const rows = await result<({ path: string } & PhotoCredit)[]>(db!.from("report_attachments").select("path,source_url,attribution,is_illustrative").eq("report_id", r.id).order("path"));
-      if (!rows.length) return [] as ({ path: string; url: string } & PhotoCredit)[];
+      const rows = await result<{ path: string }[]>(db!.from("report_attachments").select("path").eq("report_id", r.id).order("path"));
+      if (!rows.length) return [] as { path: string; url: string }[];
       const signed = await db!.storage.from("report-evidence").createSignedUrls(rows.map((item) => item.path), 600);
       if (signed.error) throw signed.error;
       return rows.flatMap((item, index) => signed.data[index]?.signedUrl ? [{ ...item, url: signed.data[index].signedUrl! }] : []);
@@ -816,6 +831,7 @@ export function ReportTracking({
   const goBack = () => { setMoreOpen(false); close(); };
   const following = !!q.data?.following.length;
   const tone = reportStatusTone(r.status);
+  const flowStep = reportFlowStep(r.status);
   const categoryTone = categoryToneFor(categoryName);
   const toggleFollow = async () => {
     setMessage("");
@@ -843,7 +859,7 @@ export function ReportTracking({
       </>} />
       {currentReport.error && <View style={s.card}><Text accessibilityRole="alert" style={s.error}>Could not refresh this report. The details below may be out of date.</Text><Button secondary title="Retry report" loading={currentReport.isFetching} onPress={() => void currentReport.refetch()} /></View>}
       <View style={{ gap: 9, paddingHorizontal: 2, paddingBottom: 2 }}>
-        <View style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, backgroundColor: tone.background }}><Ionicons name={r.status === "resolved" ? "checkmark-circle" : r.status === "rejected" ? "close-circle" : "time-outline"} size={16} color={tone.foreground} /><Text style={{ color: tone.foreground, fontSize: 12, fontWeight: "800" }}>{r.status === "duplicate" ? "Linked duplicate" : label(r.status)}</Text></View>
+        <View style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, backgroundColor: tone.background }}><Ionicons name={r.status === "resolved" ? "checkmark-circle" : r.status === "rejected" ? "close-circle" : "time-outline"} size={16} color={tone.foreground} /><Text style={{ color: tone.foreground, fontSize: 12, fontWeight: "800" }}>{r.status === "duplicate" ? "Linked duplicate" : reportStatusLabel(r.status)}</Text></View>
         <Text accessibilityRole="header" style={[s.heading, { fontSize: 25, lineHeight: 31 }]}>{r.title}</Text>
         {!!r.description && <>
           <Text style={[s.body, { color: colors.muted }]}>{r.description}</Text>
@@ -852,6 +868,25 @@ export function ReportTracking({
         {!!r.problem_other && <Text style={s.small}>{r.problem_other}</Text>}
       </View>
 
+      <Text style={s.body}>{reportStatusDescription(r.status)}</Text>
+      {flowStep !== null && <View accessibilityRole="progressbar" accessibilityLabel={`Report progress: ${flowStep === 2 ? "Resolved" : flowStep === 1 ? "Schedule and work" : "Review"}`} accessibilityValue={{ min: 1, max: 3, now: flowStep + 1 }} style={{ flexDirection: "row", alignItems: "flex-start", gap: 5, paddingVertical: 5 }}>
+        {["Review", "Schedule & work", "Resolved"].map((stage, index) => {
+          const complete = index < flowStep || r.status === "resolved";
+          const active = index === flowStep && r.status !== "resolved";
+          return <View key={stage} style={{ flex: 1, minWidth: 0, alignItems: "center", gap: 5 }}>
+            <View style={{ width: "100%", flexDirection: "row", alignItems: "center" }}>
+              {index > 0 && <View style={{ flex: 1, height: 2, backgroundColor: complete || active ? "#75c9b3" : "#dce6e8" }} />}
+              <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: complete ? colors.brand : active ? "#e2f5ef" : "#edf2f4", borderWidth: active ? 1 : 0, borderColor: colors.brand }}><Text style={{ color: complete ? "white" : active ? colors.brand : colors.muted, fontSize: 11, fontWeight: "800" }}>{complete ? "✓" : index + 1}</Text></View>
+              {index < 2 && <View style={{ flex: 1, height: 2, backgroundColor: index < flowStep ? "#75c9b3" : "#dce6e8" }} />}
+            </View>
+            <Text numberOfLines={2} style={{ color: active || complete ? colors.brandDark : colors.muted, fontSize: 10, lineHeight: 13, fontWeight: active ? "800" : "600", textAlign: "center" }}>{stage}</Text>
+          </View>;
+        })}
+      </View>}
+      {r.status === "scheduled" && r.scheduled_at && <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 12, borderColor: "#cfe7e1", backgroundColor: "#f3faf8" }]}>
+        <View style={{ width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#e1f2ec" }}><Ionicons name="calendar-outline" size={20} color={colors.brand} /></View>
+        <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={s.small}>PLANNED WORK · PHILIPPINE TIME</Text><Text style={[s.title, { marginBottom: 0 }]}>{reportScheduleLabel(r.scheduled_at)}</Text></View>
+      </View>}
       {r.status === "duplicate" && <View style={[s.card, { gap: 12, borderColor: "#cfe5dd", backgroundColor: "#f4faf7" }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}><Ionicons name="git-merge-outline" size={22} color={colors.brand} /><Text style={[s.title, { flex: 1, marginBottom: 0 }]}>Main report progress</Text></View>
         <Text style={s.small}>This submission is linked to the main report. Follow its progress here. Your submission and photos stay separate.</Text>
@@ -859,7 +894,7 @@ export function ReportTracking({
           : duplicateProgress.isPending ? <Text accessibilityLiveRegion="polite" style={s.small}>Loading main report progress…</Text>
           : !duplicateProgress.data ? <View style={{ gap: 8 }}><Text style={s.small}>The main report link is unavailable. Your submission is still recorded.</Text><Button secondary title="Check main report link" loading={duplicateProgress.isFetching} onPress={() => void duplicateProgress.refetch()} /></View>
           : <>
-            <View style={{ alignSelf: "flex-start", paddingHorizontal: 11, paddingVertical: 7, borderRadius: 18, backgroundColor: reportStatusTone(duplicateProgress.data.status).background }}><Text accessibilityLabel={`Main report status: ${label(duplicateProgress.data.status)}`} style={{ color: reportStatusTone(duplicateProgress.data.status).foreground, fontSize: 14, fontWeight: "800" }}>{label(duplicateProgress.data.status)}</Text></View>
+            <View style={{ alignSelf: "flex-start", paddingHorizontal: 11, paddingVertical: 7, borderRadius: 18, backgroundColor: reportStatusTone(duplicateProgress.data.status).background }}><Text accessibilityLabel={`Main report status: ${reportStatusLabel(duplicateProgress.data.status)}`} style={{ color: reportStatusTone(duplicateProgress.data.status).foreground, fontSize: 14, fontWeight: "800" }}>{reportStatusLabel(duplicateProgress.data.status)}</Text></View>
             {duplicateProgress.data.main_title && <Text style={s.fieldLabel}>{duplicateProgress.data.main_title}</Text>}
             <Text style={s.small}>Main report · {duplicateProgress.data.main_report_id.slice(0, 8).toUpperCase()}</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Main report updates" accessibilityState={{ expanded: mainTimelineOpen }} aria-expanded={mainTimelineOpen} onPress={() => setMainTimelineOpen(!mainTimelineOpen)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}><Text style={[s.fieldLabel, { flex: 1 }]}>Main report updates ({duplicateProgress.data.history.length})</Text><Ionicons name={mainTimelineOpen ? "chevron-up" : "chevron-down"} size={19} color={colors.brand} /></Pressable>
@@ -873,8 +908,8 @@ export function ReportTracking({
           <View style={{ gap: 2 }}><Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 14, lineHeight: 18, fontWeight: "800" }}>{barangayName === "Not specified" ? "Not specified" : barangayName}</Text><Text numberOfLines={1} style={{ color: colors.muted, fontSize: 10, lineHeight: 14 }}>Iligan City · Lanao del Norte</Text></View>
         </View>
         <View style={[s.card, { width: windowWidth < 360 ? "100%" : "48.5%", minHeight: 106, justifyContent: "center", gap: 9, padding: 12, borderColor: "#e0efec", backgroundColor: "#fff" }]}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><View style={{ width: 30, height: 30, borderRadius: 11, backgroundColor: "#eaf2ff", alignItems: "center", justifyContent: "center" }}><Ionicons name="business-outline" size={17} color="#3972b8" /></View><Text style={{ color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.6 }}>{r.status === "duplicate" ? "MAIN REPORT OFFICE" : "ASSIGNED OFFICE"}</Text></View>
-          <Text style={{ color: colors.brandDark, fontSize: 14, lineHeight: 18, fontWeight: "800" }}>{r.status === "duplicate" ? duplicateProgress.isPending ? "Loading main report office…" : duplicateProgress.error ? "Main report office unavailable" : duplicateProgress.data ? duplicateProgress.data.organization_name || "Awaiting assignment" : "Main report link unavailable" : q.isPending ? "Loading office…" : q.data?.office?.name || (r.organization_id ? "Office details unavailable" : r.resident_id ? "Awaiting assignment" : "Office details are private")}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><View style={{ width: 30, height: 30, borderRadius: 11, backgroundColor: "#eaf2ff", alignItems: "center", justifyContent: "center" }}><Ionicons name="business-outline" size={17} color="#3972b8" /></View><Text style={{ color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.6 }}>{r.status === "duplicate" ? "MAIN REPORT OFFICE" : "HANDLING TEAM"}</Text></View>
+          <Text style={{ color: colors.brandDark, fontSize: 14, lineHeight: 18, fontWeight: "800" }}>{r.status === "duplicate" ? duplicateProgress.isPending ? "Loading main report office…" : duplicateProgress.error ? "Main report office unavailable" : duplicateProgress.data ? duplicateProgress.data.organization_name || "Awaiting assignment" : "Main report link unavailable" : q.isPending ? "Loading office…" : q.data?.office?.name || (r.organization_id ? "Office details unavailable" : r.resident_id ? `${barangayName || "Local"} barangay` : "Office details are private")}</Text>
         </View>
       </View>
 
@@ -897,7 +932,7 @@ export function ReportTracking({
           {hasReportCoordinates(r) && <Button secondary title="Open location in Maps" onPress={() => { void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${r.latitude},${r.longitude}`).catch(() => setMessage("Could not open Maps. Use the coordinates shown above.")); }} />}
         </View>
         {hasReportCoordinates(r) && <LocationMap point={{ latitude: r.latitude, longitude: r.longitude, title: r.title, categoryName, color: categoryTone.foreground, subtitle: `${barangayName === "Not specified" ? "Iligan City" : barangayName} · ${r.resident_id ? "reported location" : "approximate location"}` }} height={Math.max(190, Math.min(320, Math.round(windowWidth * 0.62)))} bounds={ILIGAN_MAP_BOUNDS} />}
-        <View style={{ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 13, backgroundColor: "white" }}><View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={19} color={colors.brand} /></View><View style={{ flex: 1, gap: 2 }}><Text style={s.fieldLabel}>Submitted</Text><Text style={s.small}>{new Date(r.created_at).toLocaleString()}</Text></View></View>
+        <View style={{ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 13, backgroundColor: "white" }}><View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={19} color={colors.brand} /></View><View style={{ flex: 1, gap: 2 }}><Text style={s.fieldLabel}>Submitted · Philippine time</Text><Text style={s.small}>{new Date(r.created_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" })}</Text></View></View>
       </View>
 
       <View style={s.card}>
@@ -929,10 +964,18 @@ function reportStatusTone(status: string) {
   if (value.includes("resolved")) return { background: "#e5f3e9", foreground: "#286b3b" };
   if (value.includes("rejected") || value.includes("cancelled")) return { background: "#ffefed", foreground: "#a43d35" };
   if (value.includes("progress")) return { background: "#fff3dc", foreground: "#865a0b" };
+  if (value.includes("scheduled")) return { background: "#eaf2ff", foreground: "#315b92" };
   if (value.includes("review")) return { background: "#eaf2ff", foreground: "#315b92" };
   if (value.includes("assigned")) return { background: "#f0eaff", foreground: "#6844a3" };
   if (value.includes("verified")) return { background: "#e8f1ff", foreground: "#3264a0" };
   return statusToneFor(status);
+}
+
+function reportFlowStep(status: string): number | null {
+  if (status === "submitted" || status === "under_review") return 0;
+  if (["verified", "assigned", "scheduled", "in_progress"].includes(status)) return 1;
+  if (status === "resolved") return 2;
+  return null;
 }
 
 function EngagementMetric({ icon, value, label: text }: { icon: "people-outline" | "share-social-outline" | "time-outline"; value?: number; label: string }) {
@@ -948,7 +991,7 @@ function ReportTimelineSkeleton() {
   </View>;
 }
 
-function ReportTimeline({ history, currentStatus }: { history: { id: number; new_status: string; public_note: string; created_at: string }[]; currentStatus: string }) {
+function ReportTimeline({ history, currentStatus }: { history: { id: number; new_status: string; public_note: string; created_at: string; actor_name?: string; action_kind?: string; attachment_count?: number }[]; currentStatus: string }) {
   return <View>
     {history.map((event, index) => {
       const isCurrent = index === history.length - 1 && event.new_status === currentStatus;
@@ -957,15 +1000,17 @@ function ReportTimeline({ history, currentStatus }: { history: { id: number; new
       return <View key={event.id} style={{ minHeight: 66, flexDirection: "row", gap: 12 }}>
         <View style={{ width: 22, alignItems: "center" }}><View style={{ width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: tone.foreground }}><Ionicons name={exceptional ? "close" : "checkmark"} size={14} color="white" /></View>{index < history.length - 1 && <View style={{ width: 2, flex: 1, backgroundColor: "#b9dfd5" }} />}</View>
         <View style={{ flex: 1, minWidth: 0, gap: 3, paddingBottom: index < history.length - 1 ? 13 : 0 }}>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: 4 }}><Text style={{ flexShrink: 1, color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>{label(event.new_status)}{isCurrent ? " · Current" : ""}</Text><Text style={{ color: colors.muted, fontSize: 10 }}>{new Date(event.created_at).toLocaleString()}</Text></View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: 4 }}><Text style={{ flexShrink: 1, color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>{event.action_kind === "progress_update" ? "Progress update" : event.action_kind === "personnel_assignment" ? "Barangay personnel assigned" : reportStatusLabel(event.new_status)}{isCurrent ? " · Current" : ""}</Text><Text style={{ color: colors.muted, fontSize: 10 }}>{new Date(event.created_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" })}</Text></View>
+          {!!event.actor_name && <Text style={s.small}>By {event.actor_name}</Text>}
           {!!event.public_note && <Text style={s.small}>{event.public_note}</Text>}
+          {!!event.attachment_count && <Text style={s.small}>{event.attachment_count} photos for action #{event.id} in Report photos.</Text>}
         </View>
       </View>;
     })}
   </View>;
 }
 
-function ReportAttachments({ items, loading, error, onRetry }: { items: ({ path: string; url: string } & PhotoCredit)[]; loading: boolean; error: string; onRetry: () => void }) {
+function ReportAttachments({ items, loading, error, onRetry }: { items: { path: string; url: string }[]; loading: boolean; error: string; onRetry: () => void }) {
   const { width, height } = useWindowDimensions();
   const [open, setOpen] = useState(false), [index, setIndex] = useState(0);
   const viewer = useRef<ScrollView>(null);
@@ -981,7 +1026,6 @@ function ReportAttachments({ items, loading, error, onRetry }: { items: ({ path:
     {loading ? <View style={{ height: 92, borderRadius: 13, backgroundColor: "#e7eeeb" }} /> : error ? <View style={{ gap: 8 }}><Text accessibilityRole="alert" style={s.error}>{error}</Text><Button secondary title="Retry attachments" onPress={onRetry} /></View> : items.length ? <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={{ gap: 9 }}>
       {items.map((item, itemIndex) => <Pressable key={item.path} accessibilityRole="button" accessibilityLabel={`View report photo ${itemIndex + 1} of ${items.length}`} onPress={() => showPhoto(itemIndex)} style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}><Image source={{ uri: item.url }} resizeMode="cover" style={{ width: Math.min(152, width * 0.42), height: 92, borderRadius: 13, backgroundColor: "#eaf2f1", borderWidth: 1, borderColor: colors.line }} /><View pointerEvents="none" style={{ position: "absolute", right: 6, bottom: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: "#ffffffed", alignItems: "center", justifyContent: "center" }}><Ionicons name="expand-outline" size={13} color={colors.brandDark} /></View></Pressable>)}
     </ScrollView> : <View style={{ minHeight: 74, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 13, backgroundColor: "#f5f9f7" }}><Ionicons name="image-outline" size={18} color={colors.muted} /><Text style={s.small}>No photos or files are attached to this report.</Text></View>}
-    {items[index]?.attribution && <PhotoAttribution credit={items[index]} />}
     {open && <Modal visible transparent animationType="fade" presentationStyle="overFullScreen" onRequestClose={() => setOpen(false)} onShow={() => viewer.current?.scrollTo({ x: index * slideWidth, animated: false })}>
       <View style={{ flex: 1, backgroundColor: "#06111e", justifyContent: "center" }}>
         <ScrollView ref={viewer} horizontal pagingEnabled showsHorizontalScrollIndicator={false} onMomentumScrollEnd={(event) => setIndex(Math.round(event.nativeEvent.contentOffset.x / slideWidth))}>
@@ -992,7 +1036,6 @@ function ReportAttachments({ items, loading, error, onRetry }: { items: ({ path:
           <Pressable accessibilityRole="button" accessibilityLabel="Previous photo" disabled={!index} onPress={() => move(index - 1)} style={{ position: "absolute", left: 12, top: "48%", width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: "#ffffffdd", opacity: index ? 1 : 0.45 }}><Ionicons name="chevron-back" size={23} color={colors.brandDark} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Next photo" disabled={index >= items.length - 1} onPress={() => move(index + 1)} style={{ position: "absolute", right: 12, top: "48%", width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: "#ffffffdd", opacity: index < items.length - 1 ? 1 : 0.45 }}><Ionicons name="chevron-forward" size={23} color={colors.brandDark} /></Pressable>
         </>}
-        {items[index]?.attribution && <View style={{ position: "absolute", bottom: 54, left: 18, right: 18, padding: 12, borderRadius: 13, backgroundColor: "#06111eee" }}><PhotoAttribution credit={items[index]} dark /></View>}
         <Text style={{ position: "absolute", bottom: 28, alignSelf: "center", color: "white", fontSize: 13, fontWeight: "700" }}>{index + 1} of {items.length}</Text>
       </View>
     </Modal>}
@@ -1097,10 +1140,10 @@ export function Explore({
     enabled: photoReportIds.length > 0,
     staleTime: 45 * 60 * 1000,
     queryFn: async () => {
-      const empty = { urls: {} as Record<string, string>, credits: {} as Record<string, PhotoCredit> };
+      const empty = { urls: {} as Record<string, string> };
       try {
-        const attachments = await result<({ report_id: string; path: string } & PhotoCredit)[]>(
-          db!.from("report_attachments").select("report_id,path,source_url,attribution,is_illustrative").in("report_id", photoReportIds),
+        const attachments = await result<{ report_id: string; path: string }[]>(
+          db!.from("report_attachments").select("report_id,path").in("report_id", photoReportIds),
         );
         if (!attachments.length) return empty;
         const urls = await db!.storage.from("report-evidence").createSignedUrls(
@@ -1109,7 +1152,7 @@ export function Explore({
         if (urls.error) return empty;
         return { urls: Object.fromEntries(attachments.flatMap((item, index) =>
           urls.data[index]?.signedUrl ? [[item.report_id, urls.data[index].signedUrl!]] : [],
-        )), credits: Object.fromEntries(attachments.map((item) => [item.report_id, item])) };
+        )) };
       } catch {
         // Public report evidence remains subject to the existing attachment and storage RLS policies.
         return empty;
@@ -1120,10 +1163,9 @@ export function Explore({
     const categoryName = categoryNames.get(report.category_id) || "Other reports";
     return { ...report, createdAt: report.created_at, categoryName, color: categoryToneFor(categoryName).foreground,
       photoUrl: reportPhotos.data?.urls[report.id],
-      photoCredit: reportPhotos.data?.credits[report.id],
-      statusLabel: label(report.status),
+      statusLabel: reportStatusLabel(report.status),
       barangayName: barangayNames.get(report.barangay_id) ?? "Iligan City",
-      subtitle: `${label(report.status)} · ${barangayNames.get(report.barangay_id) ?? "Community"}` };
+      subtitle: `${reportStatusLabel(report.status)} · ${barangayNames.get(report.barangay_id) ?? "Community"}` };
   }), [mapReports, reportPhotos.data, categoryNames, barangayNames]);
   const barangayCounts = useMemo(() => mapReports.reduce<Record<string, number>>((counts, report) => {
     const name = barangayNames.get(report.barangay_id);
@@ -1158,8 +1200,8 @@ export function Explore({
     const tone = categoryToneFor(name);
     const photo = reportPhotos.data?.urls[report.id];
     return <Pressable key={report.id} accessibilityRole="button" accessibilityLabel={`Open report: ${report.title}`} onPress={() => onOpenReport(report)} style={({ pressed }) => [{ minHeight: 60, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderTopWidth: 1, borderColor: "#e7eff1" }, pressed && { opacity: 0.75 }]}>
-      {photo && !failedPhotos[report.id] ? <PhotoViewer source={{ uri: photo }} label={`${categoryDisplayName(name)} report photo`} credit={reportPhotos.data?.credits[report.id]} onError={() => setFailedPhotos((value) => ({ ...value, [report.id]: true }))} style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background }} /> : <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(name)} size={19} color={tone.foreground} /></View>}
-      <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>{report.title}</Text><Text numberOfLines={1} style={s.small}>{categoryDisplayName(name)} · {label(report.status)} · {new Date(report.created_at).toLocaleDateString()}</Text></View><Ionicons name="chevron-forward" size={17} color={colors.muted} />
+      {photo && !failedPhotos[report.id] ? <PhotoViewer source={{ uri: photo }} label={`${categoryDisplayName(name)} report photo`} onError={() => setFailedPhotos((value) => ({ ...value, [report.id]: true }))} style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background }} /> : <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(name)} size={19} color={tone.foreground} /></View>}
+      <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>{report.title}</Text><Text numberOfLines={1} style={s.small}>{categoryDisplayName(name)} · {reportStatusLabel(report.status)} · {new Date(report.created_at).toLocaleDateString()}</Text></View><Ionicons name="chevron-forward" size={17} color={colors.muted} />
     </Pressable>;
   });
   const locateNearby = useCallback(async (radius = nearbyRadius) => {
@@ -1284,6 +1326,7 @@ export function Explore({
           {expandedMap ? <View style={{ height: mapHeight }} /> : <LocationMap
             points={mapPoints}
             height={mapHeight}
+            zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"}
             density={!showBarangayMap && density}
             showPoints={!showBarangayMap && showPins}
             onDensityCellPress={setDensityCellCount}
@@ -1300,6 +1343,7 @@ export function Explore({
             onBarangayPress={selectBarangayOnMap}
             onMapBackgroundPress={() => setSelectedChoroplethName("")}
             selectedBarangayName={selectedChoroplethName}
+            summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand}
             mapStyle={mapStyle}
             onMapStyleChange={setMapStyle}
             initialRegion={mapViewport.current}
@@ -1344,7 +1388,8 @@ export function Explore({
                 <Pressable accessibilityRole="button" accessibilityLabel="Close expanded map" onPress={() => setExpandedMap(false)} style={{ width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "white" }}><Ionicons name="close" size={23} color={colors.brandDark} /></Pressable>
               </View>
               <ScrollView contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 24, gap: 12 }}>
-                <LocationMap points={mapPoints} height={showBarangayMap ? Math.max(310, windowHeight * 0.5) : Math.max(320, windowHeight - 92)} density={!showBarangayMap && density} showPoints={!showBarangayMap && showPins} onDensityCellPress={setDensityCellCount} selectedCellCount={densityCellCount} userPoint={currentLocation} locating={locating} onLocate={locateOnMap} selectedPointId={selectedReportId ?? undefined} onPointPress={(point) => { selectMapPoint(point); const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }} mapStyle={mapStyle} onMapStyleChange={setMapStyle} initialRegion={mapViewport.current} onViewportChange={setMapViewport} bounds={ILIGAN_MAP_BOUNDS} showBarangayBoundaries={showBarangayMap} barangayCounts={barangayCounts} barangayMetric={barangayMetric} onBarangayPress={selectBarangayOnMap} onMapBackgroundPress={() => setSelectedChoroplethName("")} selectedBarangayName={selectedChoroplethName} />
+                {!showBarangayMap && showPins && <Text style={s.small}>Report pins stay visible at every zoom; pin colors show the report category.</Text>}
+                <LocationMap points={mapPoints} height={showBarangayMap ? Math.max(310, windowHeight * 0.5) : Math.max(320, windowHeight - 92)} zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"} density={!showBarangayMap && density} showPoints={!showBarangayMap && showPins} onDensityCellPress={setDensityCellCount} selectedCellCount={densityCellCount} userPoint={currentLocation} locating={locating} onLocate={locateOnMap} selectedPointId={selectedReportId ?? undefined} onPointPress={(point) => { selectMapPoint(point); const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }} mapStyle={mapStyle} onMapStyleChange={setMapStyle} initialRegion={mapViewport.current} onViewportChange={setMapViewport} bounds={ILIGAN_MAP_BOUNDS} showBarangayBoundaries={showBarangayMap} barangayCounts={barangayCounts} barangayMetric={barangayMetric} onBarangayPress={selectBarangayOnMap} onMapBackgroundPress={() => setSelectedChoroplethName("")} selectedBarangayName={selectedChoroplethName} summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand} />
                 {showBarangayMap && <View style={[s.card, { gap: 12 }]}>
                   <View style={[s.row, { flexWrap: "nowrap", justifyContent: "space-between", alignItems: "center" }]}><Text style={[s.title, { fontSize: 15, flex: 1 }]}>{selectedChoroplethName || "Barangay report heat"}</Text><Text style={[s.small, { fontWeight: "700" }]}>{selectedChoroplethName ? `${selectedBarangayReports.length} reports` : `${mappedBarangayReportCount} mapped`}</Text>{!!selectedChoroplethName && <Pressable accessibilityRole="button" accessibilityLabel="Clear barangay selection" onPress={() => setSelectedChoroplethName("")} style={{ minHeight: 48, justifyContent: "center", paddingHorizontal: 8 }}><Text style={{ color: colors.brand, fontSize: 11, fontWeight: "800" }}>Clear</Text></Pressable>}</View>
                   <Text style={s.small}>{selectedChoroplethName ? "Tap this barangay again, tap outside it on the map, or choose Clear to return to the heat summary." : barangayMetric === "density" ? "Color shows reports per km²; counts below use your current map filters." : "Color shows total matching reports for each barangay."}</Text>
@@ -1360,8 +1405,8 @@ export function Explore({
                     const name = categoryNames.get(report.category_id) || "Other reports";
                     const tone = categoryToneFor(name);
                     return <Pressable key={report.id} accessibilityRole="button" accessibilityLabel={`Open report: ${report.title}`} onPress={() => onOpenReport(report)} style={({ pressed }) => [{ minHeight: 60, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderTopWidth: 1, borderColor: "#e7eff1" }, pressed && { opacity: 0.75 }]}>
-                      {reportPhotos.data?.urls[report.id] && !failedPhotos[report.id] ? <PhotoViewer source={{ uri: reportPhotos.data.urls[report.id] }} label={`${categoryDisplayName(name)} report photo`} credit={reportPhotos.data?.credits[report.id]} onError={() => setFailedPhotos((value) => ({ ...value, [report.id]: true }))} style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background }} /> : <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(name)} size={19} color={tone.foreground} /></View>}
-                      <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>{report.title}</Text><Text numberOfLines={1} style={s.small}>{categoryDisplayName(name)} · {label(report.status)} · {new Date(report.created_at).toLocaleDateString()}</Text></View><Ionicons name="chevron-forward" size={17} color={colors.muted} />
+                      {reportPhotos.data?.urls[report.id] && !failedPhotos[report.id] ? <PhotoViewer source={{ uri: reportPhotos.data.urls[report.id] }} label={`${categoryDisplayName(name)} report photo`} onError={() => setFailedPhotos((value) => ({ ...value, [report.id]: true }))} style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background }} /> : <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(name)} size={19} color={tone.foreground} /></View>}
+                      <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>{report.title}</Text><Text numberOfLines={1} style={s.small}>{categoryDisplayName(name)} · {reportStatusLabel(report.status)} · {new Date(report.created_at).toLocaleDateString()}</Text></View><Ionicons name="chevron-forward" size={17} color={colors.muted} />
                     </Pressable>;
                   })}
                 </View>}
@@ -1377,7 +1422,7 @@ export function Explore({
             return <View style={[s.card, { borderRadius: 19, borderLeftWidth: 4, borderLeftColor: selectedMapReport.color, gap: 10 }]}>
             <Pressable accessibilityRole="button" accessibilityLabel={`Open full details for ${selectedMapReport.title}`} onPress={() => onOpenReport(selectedMapReport)} style={({ pressed }) => [pressed && { opacity: 0.82 }]}>
             <View style={{ flexDirection: "row", alignItems: "stretch", gap: 11 }}>
-              {selectedMapReport.photoUrl && !failed ? <PhotoViewer source={{ uri: selectedMapReport.photoUrl }} label={`${categoryDisplayName(selectedMapReport.categoryName)} report photo`} credit={reportPhotos.data?.credits[selectedMapReport.id!]} onError={() => setFailedPhotos((value) => ({ ...value, [selectedMapReport.id!]: true }))} style={{ width: thumbnailWidth, height: 108, borderRadius: 13, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: thumbnailWidth, height: 108, borderRadius: 13, backgroundColor: tone.background, borderWidth: 1, borderColor: `${tone.foreground}20`, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(selectedMapReport.categoryName)} size={32} color={tone.foreground} /></View>}
+              {selectedMapReport.photoUrl && !failed ? <PhotoViewer source={{ uri: selectedMapReport.photoUrl }} label={`${categoryDisplayName(selectedMapReport.categoryName)} report photo`} onError={() => setFailedPhotos((value) => ({ ...value, [selectedMapReport.id!]: true }))} style={{ width: thumbnailWidth, height: 108, borderRadius: 13, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: thumbnailWidth, height: 108, borderRadius: 13, backgroundColor: tone.background, borderWidth: 1, borderColor: `${tone.foreground}20`, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(selectedMapReport.categoryName)} size={32} color={tone.foreground} /></View>}
               <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
                   <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 6 }}><View style={{ width: 27, height: 27, borderRadius: 9, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(selectedMapReport.categoryName)} size={15} color={tone.foreground} /></View><Text numberOfLines={1} style={[s.eyebrow, { flex: 1, fontSize: 10 }]}>{categoryDisplayName(selectedMapReport.categoryName)}</Text></View>
@@ -1395,7 +1440,7 @@ export function Explore({
             <Button secondary title={follows.data?.some((item) => item.report_id === selectedMapReport.id) ? "Following · Unfollow" : "Follow updates & support"} disabled={busy || follows.isPending || !!follows.error} loading={busy} onPress={() => void toggleFollow(selectedMapReport.id)} />
           </View>;
           })()}
-          {showPins && pinCategories.length > 0 && <View style={{ minHeight: 34, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 2 }}>
+          {!showBarangayMap && showPins && pinCategories.length > 0 && <View style={{ minHeight: 34, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 2 }}>
             <Text style={{ color: colors.muted, fontSize: 10, fontWeight: "800" }}>Types</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={{ flexDirection: "row", alignItems: "center", gap: 12 }} style={{ flex: 1, minWidth: 0 }}>
               {pinCategories.map(([name, color]) => <View key={name} style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
@@ -1404,6 +1449,7 @@ export function Explore({
               </View>)}
             </ScrollView>
           </View>}
+          {!showBarangayMap && showPins && pinCategories.length > 0 && <Text style={[s.small, { fontSize: 10 }]}>Report pins stay visible at every zoom; pin colors show the report category.</Text>}
           {mapQuery.data?.length === 500 && <Text style={s.small}>Showing the latest 500 published locations. Use the barangay or category filters to narrow the map.</Text>}
           <View style={[s.card, { gap: 10 }]}>
             <View style={[s.row, { flexWrap: "nowrap", alignItems: "center" }]}>
@@ -1432,11 +1478,11 @@ export function Explore({
         return (
           <View style={[s.card, { gap: 12 }]} key={r.id}>
             <Pressable accessibilityRole="button" accessibilityLabel={`View public details for ${r.title}`} onPress={() => setSelectedListReportId(r.id)} style={({ pressed }) => [{ flexDirection: "row", alignItems: "stretch", gap: 11 }, pressed && { opacity: 0.84 }]}>
-              {photoUrl && !failedPhotos[r.id] ? <PhotoViewer source={{ uri: photoUrl }} label={`${categoryDisplayName(categoryName)} report photo`} credit={reportPhotos.data?.credits[r.id]} onError={() => setFailedPhotos((value) => ({ ...value, [r.id]: true }))} style={{ width: thumbnailWidth, height: 108, borderRadius: 13, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: thumbnailWidth, height: 108, borderRadius: 13, backgroundColor: categoryToneFor(categoryName).background, borderWidth: 1, borderColor: `${categoryToneFor(categoryName).foreground}20`, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={32} color={categoryToneFor(categoryName).foreground} /></View>}
+              {photoUrl && !failedPhotos[r.id] ? <PhotoViewer source={{ uri: photoUrl }} label={`${categoryDisplayName(categoryName)} report photo`} onError={() => setFailedPhotos((value) => ({ ...value, [r.id]: true }))} style={{ width: thumbnailWidth, height: 108, borderRadius: 13, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: thumbnailWidth, height: 108, borderRadius: 13, backgroundColor: categoryToneFor(categoryName).background, borderWidth: 1, borderColor: `${categoryToneFor(categoryName).foreground}20`, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={32} color={categoryToneFor(categoryName).foreground} /></View>}
               <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 5 }}>
                   <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 6 }}><View style={{ width: 27, height: 27, borderRadius: 9, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={15} color={categoryToneFor(categoryName).foreground} /></View><Text numberOfLines={1} style={[s.eyebrow, { flex: 1, fontSize: 10 }]}>{categoryDisplayName(categoryName)}</Text></View>
-                  <View style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 20, backgroundColor: statusTone.background }}><Text numberOfLines={1} style={{ color: statusTone.foreground, fontSize: 10, fontWeight: "700" }}>{label(r.status)}</Text></View>
+                  <View style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 20, backgroundColor: statusTone.background }}><Text numberOfLines={1} style={{ color: statusTone.foreground, fontSize: 10, fontWeight: "700" }}>{reportStatusLabel(r.status)}</Text></View>
                 </View>
                 <Text numberOfLines={2} style={[s.title, { fontSize: 14, lineHeight: 18 }]}>{r.title}</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}><Ionicons name="location-outline" size={14} color={colors.muted} /><Text numberOfLines={1} style={[s.small, { flex: 1 }]}>{barangays.find((b) => b.id === r.barangay_id)?.name ?? "Iligan City"} · approx. location</Text></View>
@@ -1469,7 +1515,7 @@ export function Explore({
             <Pressable accessibilityRole="button" accessibilityLabel="Close report details" onPress={() => setSelectedListReportId(null)} style={{ flex: 1 }} />
             <View style={{ maxHeight: "82%", borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingBottom: 28, gap: 13, backgroundColor: "white" }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}><Text style={[s.eyebrow, { color: colors.brand }]}>PUBLIC REPORT</Text><Pressable accessibilityRole="button" accessibilityLabel="Close report details" onPress={() => setSelectedListReportId(null)} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#f2f7f6" }}><Ionicons name="close" size={21} color={colors.brandDark} /></Pressable></View>
-              {photoUrl && !failedPhotos[selectedListReport.id] ? <PhotoViewer source={{ uri: photoUrl }} label={`${categoryDisplayName(categoryName)} report photo`} credit={reportPhotos.data?.credits[selectedListReport.id]} onError={() => setFailedPhotos((value) => ({ ...value, [selectedListReport.id]: true }))} style={{ width: "100%", height: 190, borderRadius: 17, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: "100%", height: 140, borderRadius: 17, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={48} color={categoryToneFor(categoryName).foreground} /></View>}
+              {photoUrl && !failedPhotos[selectedListReport.id] ? <PhotoViewer source={{ uri: photoUrl }} label={`${categoryDisplayName(categoryName)} report photo`} onError={() => setFailedPhotos((value) => ({ ...value, [selectedListReport.id]: true }))} style={{ width: "100%", height: 190, borderRadius: 17, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: "100%", height: 140, borderRadius: 17, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={48} color={categoryToneFor(categoryName).foreground} /></View>}
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}><View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Ionicons name={categoryIconFor(categoryName)} size={18} color={categoryToneFor(categoryName).foreground} /><Text style={[s.eyebrow, { flexShrink: 1 }]}>{categoryDisplayName(categoryName)}</Text></View><View style={{ borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: tone.background }}><Text style={{ color: tone.foreground, fontSize: 11, fontWeight: "700" }}>{label(selectedListReport.status)}</Text></View></View>
               <Text style={[s.title, { fontSize: 21, lineHeight: 27 }]}>{selectedListReport.title}</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="location-outline" size={18} color={colors.muted} /><Text style={[s.body, { flex: 1 }]}>{barangays.find((item) => item.id === selectedListReport.barangay_id)?.name ?? "Iligan City"} · approximate public location</Text></View>

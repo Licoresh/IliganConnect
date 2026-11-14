@@ -3,6 +3,7 @@ begin;
 do $$declare resident uuid:=gen_random_uuid(); administrator uuid:=gen_random_uuid(); begin
   insert into auth.users(id,email) values(resident,resident::text||'@example.invalid'),(administrator,administrator::text||'@example.invalid');
   update public.profiles set role='admin',account_status='active' where id=administrator;
+  update public.profiles set barangay_id=(select id from public.barangays order by name limit 1) where id=resident;
   perform set_config('test.resident',resident::text,true);
   perform set_config('test.admin',administrator::text,true);
 end $$;

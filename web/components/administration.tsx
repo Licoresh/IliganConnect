@@ -5,6 +5,7 @@ import { db, result } from "../lib/client";
 import { label, Lookup, Profile } from "@community/shared";
 import type { References } from "./workspace";
 import { AccessAdministration } from "./access-administration";
+import { ResidentsManagement } from "./residents-management";
 import { roleNames } from "../lib/access";
 import { ReportCategoryLabel, reportCategoryPresentation } from "./report-category";
 import { Building2, ChevronDown, GitBranch, History, Info, Layers3, MailPlus, PencilLine, Plus, Settings2, ShieldCheck, Trash2, UsersRound } from "lucide-react";
@@ -129,7 +130,7 @@ export function Administration({
       }
       if (data?.error) throw new Error(data.error);
       setMessageKind("success");
-      setMessage(data?.message || "Invitation sent. The account is pending approval.");
+      setMessage(data?.message || "Invitation sent. The staff account is active; the recipient can sign in after accepting the email invitation.");
       formElement.reset();
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["administration"] }),
@@ -149,6 +150,7 @@ export function Administration({
   const auditRows = (audit.data || []).filter((entry) => !auditFilter || entry.entity === auditFilter);
   const visibleAuditPage = Math.min(auditPage, Math.max(0, Math.ceil(auditRows.length / 15) - 1));
   const organizationSections = [
+    { id: "residents", title: "Residents Management", shortTitle: "Residents", Icon: UsersRound },
     { id: "accounts", title: "Stakeholder accounts", shortTitle: "Accounts", Icon: UsersRound },
     { id: "organizations", title: "Organizations", shortTitle: "Organizations", Icon: Building2 },
     { id: "routing", title: "Department routing", shortTitle: "Routing", Icon: GitBranch },
@@ -186,6 +188,7 @@ export function Administration({
       </div>
       <div className="organization-workspace">
         <section className="organization-main">
+          {admin && <section className="panel organization-panel" id="organization-panel-residents" role="tabpanel" aria-labelledby="organization-tab-residents" hidden={organizationSection !== "residents"}><ResidentsManagement barangays={refs.barangays} active={organizationSection === "residents"} /></section>}
           <section className="panel organization-panel organization-directory" id="organization-panel-organizations" role="tabpanel" aria-labelledby="organization-tab-organizations" hidden={organizationSection !== "organizations"}>
           <header className="organization-section-heading"><span className="organization-section-icon"><UsersRound size={22} aria-hidden="true" /></span><div><h2>Participating organizations</h2><p>Maintain confirmed office responsibilities and routing guidance.</p></div><span className="management-section-count">{directoryOrganizations.length} {includeInactiveOrganizations ? "organizations" : "active organizations"}</span></header>
           {inactiveOrganizationCount > 0 && <label className="check organization-inactive-filter"><input type="checkbox" checked={includeInactiveOrganizations} onChange={event => setIncludeInactiveOrganizations(event.target.checked)} />Show inactive organizations ({inactiveOrganizationCount})</label>}
@@ -357,7 +360,7 @@ export function Administration({
             <header className="organization-section-heading"><span className="organization-section-icon"><UsersRound size={22} aria-hidden="true" /></span><div><h2>Stakeholder accounts</h2><p>Invite staff, assign their scope, and manage account approval.</p></div></header>
             <div className="administration-account-grid">
             <form className="organization-form administration-invite-form" onSubmit={(event) => void inviteStaff(event)}>
-              <div className="organization-form-heading"><span className="organization-section-icon"><MailPlus size={20} aria-hidden="true" /></span><div><h3>Create a stakeholder account</h3><p>Send an invitation to an authorized staff member. New accounts require approval.</p></div></div>
+              <div className="organization-form-heading"><span className="organization-section-icon"><MailPlus size={20} aria-hidden="true" /></span><div><h3>Create a stakeholder account</h3><p>Invited staff accounts are activated with the selected scope. Recipients sign in after accepting the email invitation.</p></div></div>
               <label>
                 Staff member name
                 <input name="invite_name" required minLength={2} maxLength={100} autoComplete="name" placeholder="Enter full name" />
@@ -470,7 +473,7 @@ export function Administration({
                   </label>
                   <button disabled={busy}>Assign role</button>
                 </form>
-                <form
+                {person.role === "barangay" && <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     void run(
@@ -497,7 +500,7 @@ export function Administration({
                     </select>
                   </label>
                   <button disabled={busy}>Save jurisdiction</button>
-                </form>
+                </form>}
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -518,9 +521,11 @@ export function Administration({
                     </select>
                   </label>
                   <p className="fine">
-                    Changing a staff role requires approval again. Assign
-                    jurisdiction or organization before activating. Disabled
-                    accounts lose backend access immediately.
+                    Changing a staff role requires approval again. {person.role === "office"
+                      ? "Office staff use organization membership; no barangay assignment is needed."
+                      : person.role === "barangay"
+                        ? "Assign a barangay before activating."
+                        : "This account type does not need a staff jurisdiction."} Disabled accounts lose backend access immediately.
                   </p>
                   <button disabled={busy}>Save account status</button>
                 </form>

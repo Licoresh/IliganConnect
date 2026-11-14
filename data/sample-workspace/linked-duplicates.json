@@ -1,0 +1,38 @@
+{
+  "version": "iligan-linked-duplicates-v1",
+  "main_report_id": "059c88f9-9f37-5e40-b0a5-17f57a692240",
+  "reports": [
+    {
+      "id": "c75e07c2-c055-4c8d-9398-4b5ea2a5b231",
+      "title": "Drainage blockage beside the pedestrian crossing",
+      "photo_key": "drainage",
+      "description": "Water is collecting at the drainage crossing and obstructing safe pedestrian access. This submission describes the same blocked section already under maintenance review.",
+      "reason": "Reviewed the location, problem and evidence. This submission describes the same drainage blockage tracked on the main report.",
+      "days_after": 1
+    },
+    {
+      "id": "6a6963bd-f2e5-4f2e-9ce2-7414eb415fc6",
+      "title": "Water collecting above the same blocked drain",
+      "photo_key": "drainage",
+      "description": "Water is collecting at the drainage crossing and obstructing safe pedestrian access. This submission describes the same blocked section already under maintenance review.",
+      "reason": "Reviewed the location, problem and evidence. This submission describes the same drainage blockage tracked on the main report.",
+      "days_after": 2
+    },
+    {
+      "id": "fdc88622-8660-47df-bde4-55453053e134",
+      "title": "Blocked drainage affecting access to nearby homes",
+      "photo_key": "drainage",
+      "description": "Water is collecting at the drainage crossing and obstructing safe pedestrian access. This submission describes the same blocked section already under maintenance review.",
+      "reason": "Reviewed the location, problem and evidence. This submission describes the same drainage blockage tracked on the main report.",
+      "days_after": 3
+    },
+    {
+      "id": "9dd0ce92-b61d-45c4-a1aa-4d945f5ee604",
+      "title": "Standing water along the drainage crossing",
+      "photo_key": "drainage",
+      "description": "Water is collecting at the drainage crossing and obstructing safe pedestrian access. This submission describes the same blocked section already under maintenance review.",
+      "reason": "Reviewed the location, problem and evidence. This submission describes the same drainage blockage tracked on the main report.",
+      "days_after": 4
+    }
+  ]
+}

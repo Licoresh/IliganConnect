@@ -20,6 +20,7 @@ begin
   update public.profiles set role='barangay',barangay_id=area where id=official;
   update public.profiles set role='barangay',barangay_id=other_area where id=outside_official;
   update public.profiles set role='admin' where id=administrator;
+  update public.profiles set barangay_id=area where id=resident;
   perform set_config('request.jwt.claim.sub',resident::text,true);
   set local role authenticated;
   perform public.submit_report(manual_id,category,area,'Rollback map directions','A transaction-only report with specific directions and a required map pin.',8.22947578,124.23688253,

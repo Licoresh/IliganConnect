@@ -1,0 +1,17 @@
+{
+  "version": "assessment-office-retirement-v1",
+  "final_action": "delete",
+  "offices": [
+    { "from_id": "cd2eb89e-b45c-4552-bae7-74778539a9b0", "from": "Engineering assessment team", "to": "City Engineer" },
+    { "from_id": "b5598cd1-c2ce-4f02-ab10-297702c4de43", "from": "Environment assessment team", "to": "CENRO" }
+  ],
+  "open_reports": [
+    { "key": "roads:in_progress", "from": "Engineering assessment team", "to": "City Engineer" },
+    { "key": "garbage:in_progress", "from": "Environment assessment team", "to": "CENRO" }
+  ],
+  "pending_meeting_action": "b445a9d6-4785-5386-8900-6ac09f45fa2e",
+  "closed_report_key": "streetlights:resolved",
+  "closed_consultation": "5702f899-f801-519a-aa00-d1d860d3ef72",
+  "completed_meeting_action": "f5f0dfa7-141d-507a-b8ae-385613d4c302",
+  "history": "Owner requested complete removal after retirement. Reconcile remaining organization references to City Engineer/CENRO; preserve record IDs, content, progress, actors, timestamps and audit history. Remove obsolete memberships and disabled rules."
+}

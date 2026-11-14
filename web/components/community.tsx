@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { validateImageFile } from "../lib/images";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -30,7 +30,7 @@ import {
   X,
 } from "lucide-react";
 import { db, result } from "../lib/client";
-import { label, Profile, UUID_PATTERN, SHORT_REASON_LIMIT, characterLimitHint } from "@community/shared";
+import { googleCalendarDraftUrl, label, meetingDateTimeInput, normalizeGoogleMeetUrl, parseManilaDateTimeInput, Profile, UUID_PATTERN, SHORT_REASON_LIMIT, characterLimitHint } from "@community/shared";
 import type { References } from "./workspace";
 import { useAccess } from "./access-context";
 import { canCreate } from "../lib/access";
@@ -41,6 +41,7 @@ type Row = {
   title: string;
   body: string;
   status: string;
+  coordination_status?: "open" | "unavailable";
   barangay_id: string | null;
   organization_id?: string | null;
   outcome?: string;
@@ -72,22 +73,28 @@ const localDate = (value?: string) => {
 function useSave() {
   const qc = useQueryClient();
   const [message, setMessage] = useState(""),
+    [failed, setFailed] = useState(false),
     [busy, setBusy] = useState(false);
   return {
     message,
+    failed,
     busy,
     run: async (
       p: PromiseLike<{ data: unknown; error: { message: string } | null }>,
+      onError?: (message: string) => boolean | void,
     ) => {
       setBusy(true);
       setMessage("");
+      setFailed(false);
       try {
         await result(p);
         await qc.invalidateQueries();
         setMessage("Saved.");
         return true;
       } catch (e) {
-        setMessage((e as Error).message);
+        const error = (e as Error).message;
+        if (!onError?.(error)) setMessage(error);
+        setFailed(true);
         return false;
       } finally {
         setBusy(false);
@@ -133,7 +140,7 @@ export function Community({
     [page, setPage] = useState(0);
   const searchTerm = useDebouncedValue(search.trim());
   const columns = table === "meeting_requests"
-    ? "id,title,body,status,barangay_id,decision_reason,consultation_id,category_id,report_id,created_at"
+    ? "id,title,body,status,coordination_status,barangay_id,decision_reason,consultation_id,category_id,report_id,created_at"
     : "*";
   const selectedId = selection === undefined ? initialRecordId : selection;
   const target = useQuery({
@@ -205,7 +212,8 @@ export function Community({
         .order("created_at", { ascending: sort === "oldest" })
         .range(page * 20, page * 20 + 19);
       if (searchTerm) query = query.ilike("title", `%${searchTerm}%`);
-      if (status) query = query.eq("status", status);
+      if (status === "unavailable" && table === "meeting_requests") query = query.eq("coordination_status", status);
+      else if (status) query = query.eq("status", status);
       if (barangay) query = query.eq("barangay_id", barangay);
       if (dateRange !== "all") {
         const start = new Date();
@@ -672,7 +680,9 @@ export function Community({
           ) : table === "consultations" ? (
             <Discussion row={selected} manage={canManage(selected)} />
           ) : table === "meeting_requests" ? (
-            <Meeting row={selected} refs={refs} manage={canManage(selected)} />
+            <Meeting row={selected} refs={refs} manage={canManage(selected)}
+              canInvite={profile.role === "admin" || (profile.role === "barangay" && profile.barangay_id === selected.barangay_id)}
+              officeIds={profile.role === "office" ? (memberships.data || []).map((membership) => membership.organization_id) : []} />
           ) : (
             <Announcement
               row={selected}
@@ -691,6 +701,7 @@ type MeetingSchedule = {
   venue: string;
   starts_at: string;
   completed: boolean;
+  meet_url?: string | null;
 };
 
 function MeetingRequestsView({
@@ -746,7 +757,7 @@ function MeetingRequestsView({
       result<MeetingSchedule[]>(
         db!
           .from("meetings")
-          .select("id,request_id,venue,starts_at,completed")
+          .select("*")
           .in("request_id", requestIds)
           .order("starts_at"),
       ),
@@ -762,7 +773,7 @@ function MeetingRequestsView({
   const approved = rows.filter((row) => row.status === "approved").length;
   const completed = (meetings.data ?? []).filter((meeting) => meeting.completed).length;
   const formatDate = (value: string) =>
-    new Date(value).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+    new Date(value).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" });
   const statusFor = (row: Row) => {
     const schedule = scheduleByRequest.get(row.id);
     if (schedule?.completed) return { key: "completed", label: "Completed" };
@@ -832,13 +843,14 @@ function MeetingRequestsView({
                 const status = statusFor(row);
                 const schedule = scheduleByRequest.get(row.id);
                 const barangayName = refs.barangays.find((item) => item.id === row.barangay_id)?.name ?? "Barangay not specified";
+                const meetingLink = normalizeGoogleMeetUrl(schedule?.meet_url || "");
                 return (
                   <article className="meeting-card" key={row.id}>
                     <div className="meeting-card-top"><span className={`meeting-status ${status.key}`}>{statusIcon(status.key)}{status.label}</span><time dateTime={row.created_at}>{formatDate(row.created_at)}</time></div>
                     <h3>{row.title}</h3>
                     <p className="meeting-card-body">{row.body}</p>
                     <div className="meeting-card-meta"><span><MapPin size={15} />{barangayName}</span><span><CalendarDays size={15} />Requested {formatDate(row.created_at)}</span></div>
-                    {schedule && <div className="meeting-schedule"><CalendarDays size={16} /><div><strong>{formatDate(schedule.starts_at)} · {new Date(schedule.starts_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}</strong><span>{schedule.venue}</span></div></div>}
+                    {schedule && <div className="meeting-schedule"><CalendarDays size={16} /><div><strong>{formatDate(schedule.starts_at)} · {new Date(schedule.starts_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" })}</strong><span>{schedule.venue}</span></div>{meetingLink && <a className="meeting-join-link" href={meetingLink} target="_blank" rel="noreferrer"><Link2 size={14} aria-hidden="true" />Join Google Meet</a>}</div>}
                     {row.decision_reason && <p className="meeting-decision">{row.decision_reason}</p>}
                     <button className="meeting-review" onClick={() => onOpen(row.id)}><FileText size={16} /> Review &amp; follow up <ChevronRight size={17} /></button>
                   </article>
@@ -852,7 +864,7 @@ function MeetingRequestsView({
               <div className="meeting-rail-heading"><span className="meeting-rail-icon"><CalendarDays size={18} /></span><div><h3>Upcoming meetings</h3><p>Confirmed dates and venues</p></div></div>
               {meetings.isPending ? <p className="meeting-rail-empty">Loading schedules…</p> : meetings.error ? <p className="meeting-rail-error">Meeting schedules are unavailable.</p> : !upcoming.length ? <p className="meeting-rail-empty">No upcoming meetings scheduled.</p> : upcoming.map((meeting) => {
                 const request = rows.find((row) => row.id === meeting.request_id);
-                return <button className="meeting-upcoming" key={meeting.id} onClick={() => request && onOpen(request.id)} disabled={!request}><span className="meeting-date-tile"><strong>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { day: "2-digit" })}</strong><small>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { month: "short" }).toUpperCase()}</small></span><span className="meeting-upcoming-copy"><strong>{request?.title ?? "Meeting request"}</strong><small>{new Date(meeting.starts_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })} · {refs.barangays.find((item) => item.id === request?.barangay_id)?.name ?? "Barangay"}</small></span><ChevronRight size={16} /></button>;
+                return <button className="meeting-upcoming" key={meeting.id} onClick={() => request && onOpen(request.id)} disabled={!request}><span className="meeting-date-tile"><strong>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { day: "2-digit", timeZone: "Asia/Manila" })}</strong><small>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { month: "short", timeZone: "Asia/Manila" }).toUpperCase()}</small></span><span className="meeting-upcoming-copy"><strong>{request?.title ?? "Meeting request"}</strong><small>{new Date(meeting.starts_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" })} · {refs.barangays.find((item) => item.id === request?.barangay_id)?.name ?? "Barangay"}</small></span><ChevronRight size={16} /></button>;
               })}
             </section>
             <section className="panel meeting-rail-panel">
@@ -985,26 +997,37 @@ function Meeting({
   row,
   refs,
   manage,
+  canInvite,
+  officeIds,
 }: {
   row: Row;
   refs: References;
   manage: boolean;
+  canInvite: boolean;
+  officeIds: string[];
 }) {
-  const { run, message, busy } = useSave();
+  const { run, message, failed, busy } = useSave();
+  const [meetingFormError, setMeetingFormError] = useState("");
+  const [venueType, setVenueType] = useState<"venue" | "online">("venue");
   const q = useQuery({
     queryKey: ["meeting", row.id],
     queryFn: async () => {
       const meeting = await result<{
         id: string;
         venue: string;
+        venue_type?: "venue" | "online";
         starts_at: string;
         outcome: string;
         completed: boolean;
+        meet_url?: string | null;
       } | null>(
         db!.from("meetings").select("*").eq("request_id", row.id).maybeSingle(),
       );
       return {
         meeting,
+        invitations: await result<{ organization_id: string; status: string; decline_reason: string | null }[]>(
+          db!.from("meeting_request_offices").select("organization_id,status,decline_reason").eq("request_id", row.id),
+        ),
         actions: meeting
           ? await result<
               {
@@ -1021,27 +1044,28 @@ function Meeting({
                 .eq("meeting_id", meeting.id),
             )
           : [],
-        participants: meeting
-          ? await result<{ organization_id: string }[]>(
-              db!
-                .from("meeting_participants")
-                .select("organization_id")
-                .eq("meeting_id", meeting.id),
-            )
-          : [],
       };
     },
   });
   const meeting = q.data?.meeting;
-  const participants = q.data?.participants || [];
+  useEffect(() => {
+    setVenueType(meeting?.venue_type || (meeting?.meet_url ? "online" : "venue"));
+  }, [meeting?.id, meeting?.venue_type, meeting?.meet_url]);
+  const meetingLink = normalizeGoogleMeetUrl(meeting?.meet_url || "");
+  const invitations = q.data?.invitations || [];
+  const requestOpen = row.status === "pending" || row.status === "approved";
   const availableOrganizations = refs.organizations.filter(
-    (organization) => (organization as { active?: boolean }).active !== false && !participants.some((participant) => participant.organization_id === organization.id),
+    (organization) => {
+      const office = organization as typeof organization & { active?: boolean; can_consult?: boolean; can_coordinate?: boolean };
+      return office.active && (office.can_consult || office.can_coordinate) &&
+        !invitations.some((invitation) => invitation.organization_id === office.id && invitation.status !== "declined");
+    },
   );
   return (
     <div className="meeting-detail-workspace">
       {q.isPending ? <p className="meeting-feedback">Loading meeting details…</p> : null}
       {q.error && <p role="alert" className="meeting-feedback error">{q.error.message}</p>}
-      {message && <p role="status" className="meeting-feedback success">{message}</p>}
+      {message && <p role={failed ? "alert" : "status"} className={`meeting-feedback ${failed ? "error" : "success"}`}>{message}</p>}
 
       <section className="meeting-section meeting-overview">
         <div className="meeting-overview-main">
@@ -1049,10 +1073,12 @@ function Meeting({
             {meeting?.completed ? "Completed" : meeting ? "Scheduled" : label(row.status)}
           </span>
           <p>{row.body}</p>
+          {meeting && <div className="meeting-overview-place"><MapPin size={16} aria-hidden="true" /><div><strong>{meeting.venue_type === "online" ? "Online meeting" : "Meeting venue"}</strong><span>{meeting.venue_type === "online" ? "Google Meet" : meeting.venue}</span></div></div>}
+          {meetingLink && <a className="meeting-join-link" href={meetingLink} target="_blank" rel="noreferrer"><Link2 size={15} aria-hidden="true" />Join Google Meet</a>}
         </div>
         <div className="meeting-overview-date">
           <CalendarDays size={21} aria-hidden="true" />
-          <div><strong>Meeting date and time</strong><span>{meeting ? new Date(meeting.starts_at).toLocaleString() : "Not scheduled yet"}</span></div>
+          <div><strong>Meeting date and time</strong><span>{meeting ? new Date(meeting.starts_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }) + " Philippine time" : "Not scheduled yet"}</span></div>
         </div>
       </section>
 
@@ -1067,20 +1093,21 @@ function Meeting({
         </section>
       )}
 
-      {manage && row.status === "pending" && (
+      {canInvite && row.status === "pending" && (
         <section className="meeting-section">
           <div className="meeting-section-heading">
             <span className="meeting-section-icon is-blue"><CheckCircle2 size={20} /></span>
-            <div><h3>Review meeting request</h3><p>Record a decision and explain it to the requester.</p></div>
+            <div><h3>Review meeting request</h3><p>Record a decision the requester can see.</p></div>
           </div>
           <form className="meeting-form" onSubmit={async (e) => {
             e.preventDefault();
             const f = new FormData(e.currentTarget);
             const status = String(f.get("status"));
-            await run(db!.from("meeting_requests").update({ status, decision_reason: f.get("reason") }).eq("id", row.id));
+            const reason = String(f.get("reason") || "").trim();
+            await run(db!.from("meeting_requests").update({ status, decision_reason: reason || null }).eq("id", row.id));
           }}>
             <label className="meeting-field"><span>Decision</span><select name="status"><option value="approved">Approve</option><option value="declined">Decline</option></select></label>
-            <label className="meeting-field"><span>Official reason</span><textarea required minLength={5} maxLength={SHORT_REASON_LIMIT} name="reason" placeholder="Explain the decision and any next steps…" aria-describedby="meeting-decision-reason-hint" /><small id="meeting-decision-reason-hint">Keep it brief. Use 5–500 characters.</small></label>
+            <label className="meeting-field"><span>Reason (optional)</span><textarea maxLength={SHORT_REASON_LIMIT} name="reason" placeholder="Explain the decision or share next steps…" /></label>
             <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Record decision"}</button></div>
           </form>
         </section>
@@ -1090,46 +1117,121 @@ function Meeting({
         <form className="meeting-section meeting-details-form" key={meeting?.id || "new"} onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
-          void run(db!.from("meetings").upsert({ request_id: row.id, venue: f.get("venue"), starts_at: new Date(String(f.get("date"))).toISOString(), outcome: f.get("outcome"), completed: f.get("completed") === "on" }, { onConflict: "request_id" }));
+          const startsAt = parseManilaDateTimeInput(String(f.get("date") || ""));
+          const selectedVenueType = String(f.get("venue_type") || "venue") === "online" ? "online" : "venue";
+          const meetUrlInput = String(f.get("meet_url") || "").trim();
+          const meetUrl = normalizeGoogleMeetUrl(meetUrlInput);
+          const completed = f.get("completed") === "on";
+          if (!startsAt) { setMeetingFormError("Enter a valid date and time in Philippine time."); return; }
+          if (selectedVenueType === "venue" && String(f.get("venue") || "").trim().length < 3) { setMeetingFormError("Enter the physical meeting venue."); return; }
+          if (selectedVenueType === "online" && !meetUrl) { setMeetingFormError("Add a valid Google Meet link before saving an online meeting."); return; }
+          if (meetUrlInput && !meetUrl) { setMeetingFormError("Enter a valid Google Meet link, such as https://meet.google.com/abc-defg-hij."); return; }
+          if (!completed && startsAt.getTime() < Date.now() - 60_000) { setMeetingFormError("Choose a future time, or mark the meeting completed if it has already taken place."); return; }
+          if (completed && startsAt.getTime() > Date.now()) { setMeetingFormError("A meeting cannot be marked completed before its scheduled time."); return; }
+          setMeetingFormError("");
+          const payload = { request_id: row.id, venue_type: selectedVenueType,
+            venue: selectedVenueType === "online" ? "Online via Google Meet" : String(f.get("venue") || "").trim(),
+            starts_at: startsAt.toISOString(), outcome: f.get("outcome"), completed,
+            meet_url: selectedVenueType === "online" ? meetUrl : null };
+          void run(db!.from("meetings").upsert(payload, { onConflict: "request_id" }), (error) => {
+            if (/venue_type|meet_url|schema cache/i.test(error)) {
+              setMeetingFormError("This workspace database needs the meeting-format update before it can save the schedule. The schedule was not changed.");
+              return true;
+            }
+          });
         }}>
           <div className="meeting-section-heading">
             <span className="meeting-section-icon"><FileText size={20} /></span>
-            <div><h3>Meeting information</h3><p>Set the venue, schedule, and public summary.</p></div>
+            <div><h3>Meeting information</h3><p>Choose how residents will attend, then set the time and details.</p></div>
           </div>
+          <fieldset className="meeting-mode-fieldset">
+            <legend>Meeting format <b>*</b></legend>
+            <div className="meeting-mode-options">
+              <label className={`meeting-mode-option ${venueType === "venue" ? "is-selected" : ""}`}><input type="radio" name="venue_type" value="venue" checked={venueType === "venue"} onChange={() => setVenueType("venue")} /><span><strong>In person</strong><small>Set the meeting venue</small></span></label>
+              <label className={`meeting-mode-option ${venueType === "online" ? "is-selected" : ""}`}><input type="radio" name="venue_type" value="online" checked={venueType === "online"} onChange={() => setVenueType("online")} /><span><strong>Online</strong><small>Join through Google Meet</small></span></label>
+            </div>
+          </fieldset>
           <div className="meeting-form-grid">
-            <label className="meeting-field"><span>Venue or meeting URL <b>*</b></span><input maxLength={240} name="venue" required minLength={3} defaultValue={meeting?.venue} placeholder="Enter the venue or online meeting link" /></label>
-            <label className="meeting-field"><span>Date and time <b>*</b></span><input name="date" type="datetime-local" required defaultValue={localDate(meeting?.starts_at)} /></label>
+            {venueType === "venue"
+              ? <label className="meeting-field"><span>Meeting venue <b>*</b></span><input maxLength={240} name="venue" required minLength={3} defaultValue={meeting?.venue_type === "online" ? "" : meeting?.venue} placeholder="Building, office, or complete address" /></label>
+              : <div className="meeting-online-note"><MapPin size={16} aria-hidden="true" /><span>Online through Google Meet. A valid join link is required before this meeting can be saved.</span></div>}
+            <label className="meeting-field"><span>Date and time <b>*</b></span><input name="date" type="datetime-local" required defaultValue={meetingDateTimeInput(meeting?.starts_at)} /><small>Entered and displayed in Philippine time.</small></label>
           </div>
+          {venueType === "online" && <label className="meeting-field"><span>Google Meet link <b>*</b></span><input name="meet_url" type="url" inputMode="url" required autoCapitalize="none" autoCorrect="off" maxLength={300} defaultValue={meeting?.meet_url || ""} placeholder="https://meet.google.com/abc-defg-hij" aria-describedby="meeting-link-hint" /><small id="meeting-link-hint">Create or copy the Meet link from Google Calendar. The resident will receive it by email.</small></label>}
+          <div className="meeting-calendar-help"><CalendarPlus size={16} aria-hidden="true" /><span>{venueType === "online" ? "Open a Calendar draft, turn on Google Meet, save the event, then paste its link above. A Meet link cannot be generated from a Calendar draft alone." : "Open a one-hour Calendar draft using this venue and schedule."}</span></div>
+          {meetingFormError && <p className="meeting-feedback error" role="alert">{meetingFormError}</p>}
           <label className="meeting-field"><span>Public summary and minutes</span><textarea name="outcome" maxLength={2000} defaultValue={meeting?.outcome || ""} placeholder="Write a summary, decisions, and key discussion points…" /></label>
           <label className="meeting-completed"><input name="completed" type="checkbox" defaultChecked={meeting?.completed} /><span><strong>Meeting completed</strong><small>Mark complete after the planned activities and follow-up are finished.</small></span></label>
-          <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Save meeting details"}</button></div>
+          <div className="meeting-form-actions"><button type="button" className="secondary" disabled={busy} onClick={(event) => {
+            const form = event.currentTarget.form;
+            if (!form) return;
+            const fields = new FormData(form);
+            const startsAt = parseManilaDateTimeInput(String(fields.get("date") || ""));
+            const selectedVenueType = String(fields.get("venue_type") || "venue") === "online" ? "online" : "venue";
+            const meetUrlInput = String(fields.get("meet_url") || "").trim();
+            const meetUrl = normalizeGoogleMeetUrl(meetUrlInput);
+            if (!startsAt) { setMeetingFormError("Enter a valid date and time in Philippine time before opening Calendar."); return; }
+            if (meetUrlInput && !meetUrl) { setMeetingFormError("Enter a valid Google Meet link, such as https://meet.google.com/abc-defg-hij."); return; }
+            const calendarUrl = googleCalendarDraftUrl({
+              title: `Iligan Connect · ${row.title}`,
+              details: `${row.body}\n\nBarangay: ${refs.barangays.find((item) => item.id === row.barangay_id)?.name || "Iligan City"}`,
+              venue: selectedVenueType === "venue" ? String(fields.get("venue") || "") : "",
+              startsAt,
+              meetUrl,
+            });
+            if (!calendarUrl) { setMeetingFormError("The selected date could not be added to Calendar."); return; }
+            setMeetingFormError("");
+            window.open(calendarUrl, "_blank", "noopener,noreferrer");
+          }}><CalendarPlus size={15} aria-hidden="true" />Create Calendar draft</button><button disabled={busy}>{busy ? "Saving…" : "Save meeting details"}</button></div>
         </form>
       )}
 
-      {meeting && (
-        <>
+      {q.data && (canInvite || invitations.length > 0) && (
           <section className="meeting-section">
             <div className="meeting-section-heading">
               <span className="meeting-section-icon"><Users size={20} /></span>
-              <div><h3>Participating offices</h3><p>Add the offices taking part in this meeting.</p></div>
+              <div><h3>Office invitations</h3><p>{row.coordination_status === "unavailable" ? "All invited offices declined." : "Offices can accept or decline their invitation."}</p></div>
             </div>
-            {participants.length ? <div className="meeting-participant-list">{participants.map((p) => (
+            {invitations.length ? <div className="meeting-participant-list">{invitations.map((p) => (
               <div className="meeting-participant" key={p.organization_id}>
                 <span className="meeting-participant-icon"><Users size={17} /></span>
-                <strong>{refs.organizations.find((o) => o.id === p.organization_id)?.name || "Organization"}</strong>
-                {manage && <button type="button" className="meeting-remove" aria-label="Remove participating office" disabled={busy} onClick={() => void run(db!.from("meeting_participants").delete().eq("meeting_id", meeting.id).eq("organization_id", p.organization_id))}><X size={17} /></button>}
+                <div className="meeting-invitation-copy">
+                  <strong>{refs.organizations.find((o) => o.id === p.organization_id)?.name || "Office"}</strong>
+                  <p>{p.status === "pending" ? "Awaiting reply" : label(p.status)}{p.decline_reason && ` · ${p.decline_reason}`}</p>
+                  {requestOpen && p.status === "pending" && officeIds.includes(p.organization_id) && (
+                    <form className="meeting-form" onSubmit={(event) => {
+                      event.preventDefault();
+                      const fields = new FormData(event.currentTarget, event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : undefined);
+                      const decision = fields.get("decision");
+                      if (decision !== "accept" && decision !== "decline") return;
+                      void run(db!.rpc("respond_meeting_office_invitation", {
+                        p_request: row.id, p_organization: p.organization_id,
+                        p_accept: decision === "accept", p_reason: decision === "decline" ? String(fields.get("reason") || "") : "",
+                      }));
+                    }}>
+                      <label className="meeting-field"><span>Reason for declining (optional)</span><textarea name="reason" maxLength={SHORT_REASON_LIMIT} /></label>
+                      <div className="meeting-form-actions">
+                        <button type="submit" name="decision" value="decline" className="secondary" disabled={busy}>Decline</button>
+                        <button type="submit" name="decision" value="accept" disabled={busy}>Accept invitation</button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+                {canInvite && p.status === "pending" && <button type="button" className="meeting-remove" aria-label="Withdraw office invitation" disabled={busy} onClick={() => void run(db!.rpc("remove_meeting_office_invitation", { p_request: row.id, p_organization: p.organization_id }))}><X size={17} /></button>}
               </div>
-            ))}</div> : <p className="meeting-empty">No participating offices have been added yet.</p>}
-            {manage && <form className="meeting-add-office" onSubmit={(e) => {
+            ))}</div> : <p className="meeting-empty">No offices have been invited yet.</p>}
+            {canInvite && requestOpen && <form className="meeting-add-office" onSubmit={(e) => {
               e.preventDefault();
               const organizationId = new FormData(e.currentTarget).get("office");
-              if (organizationId) void run(db!.from("meeting_participants").upsert({ meeting_id: meeting.id, organization_id: organizationId }));
+              if (organizationId) void run(db!.rpc("invite_meeting_office", { p_request: row.id, p_organization: organizationId }));
             }}>
-              <label className="meeting-field"><span>Participating office</span><select name="office" required disabled={!availableOrganizations.length}><option value="">{availableOrganizations.length ? "Select an office" : "All offices added"}</option>{availableOrganizations.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
-              <button disabled={busy || !availableOrganizations.length}><Plus size={17} /> Add office</button>
+              <label className="meeting-field"><span>Office to invite</span><select name="office" required disabled={!availableOrganizations.length}><option value="">{availableOrganizations.length ? "Select an office" : "No available offices"}</option>{availableOrganizations.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+              <button disabled={busy || !availableOrganizations.length}><Plus size={17} /> Invite office</button>
             </form>}
           </section>
+      )}
 
+      {meeting && (
           <section className="meeting-section">
             <div className="meeting-section-heading">
               <span className="meeting-section-icon"><CheckCircle2 size={20} /></span>
@@ -1154,7 +1256,6 @@ function Meeting({
               <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Record follow-up action"}</button></div>
             </form>}
           </section>
-        </>
       )}
     </div>
   );

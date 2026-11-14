@@ -22,9 +22,9 @@ select public.provision_staff_account(
   '20000000-0000-4000-8000-000000000011'
 );
 do $$begin
-  if not exists(select 1 from public.profiles where id='10000000-0000-4000-8000-000000000012' and role='barangay' and account_status='pending' and barangay_id is not null) then raise exception 'TEST FAILED: barangay assignment'; end if;
+  if not exists(select 1 from public.profiles where id='10000000-0000-4000-8000-000000000012' and role='barangay' and account_status='active' and barangay_id is not null) then raise exception 'TEST FAILED: active barangay assignment'; end if;
   if exists(select 1 from public.organization_memberships where user_id='10000000-0000-4000-8000-000000000012') then raise exception 'TEST FAILED: barangay account received office membership'; end if;
-  if not exists(select 1 from public.profiles where id='10000000-0000-4000-8000-000000000013' and role='office' and account_status='pending' and barangay_id is null) then raise exception 'TEST FAILED: office account role'; end if;
+  if not exists(select 1 from public.profiles where id='10000000-0000-4000-8000-000000000013' and role='office' and account_status='active' and barangay_id is null) then raise exception 'TEST FAILED: active office account role'; end if;
   if not exists(select 1 from public.organization_memberships where user_id='10000000-0000-4000-8000-000000000013' and organization_id='20000000-0000-4000-8000-000000000011') then raise exception 'TEST FAILED: office membership'; end if;
 end$$;
 

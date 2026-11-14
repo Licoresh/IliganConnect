@@ -69,7 +69,21 @@ Deno.serve(async (request) => {
   const { data, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
     data: { display_name: displayName },
   });
-  if (inviteError || !data.user) return reply({ error: "The invitation could not be created. Check that the email is new and try again." }, 409);
+  if (inviteError || !data.user) {
+    const code = inviteError && "code" in inviteError ? String((inviteError as { code?: unknown }).code || "") : "";
+    const message = inviteError?.message.toLowerCase() || "";
+    if (code === "email_exists" || code === "user_already_exists" || /already (registered|exists)|user already exists/.test(message)) {
+      return reply({ error: "An account already uses this email. Use a different address or manage the existing account." }, 409);
+    }
+    if (inviteError && (inviteError.status === 429 || /rate.?limit|too many/.test(message))) {
+      return reply({ error: "The email provider is temporarily limiting invitations. Wait a few minutes, then retry." }, 429);
+    }
+    console.error("Stakeholder invitation email failed", { status: inviteError?.status ?? null, code: code || null });
+    return reply({
+      error: "The account invitation could not be emailed. Check Supabase Auth SMTP delivery, the verified sender, and the provider logs before retrying.",
+      code: "INVITATION_EMAIL_FAILED",
+    }, 502);
+  }
 
   const { error: provisionError } = await userClient.rpc("provision_staff_account", {
     p_user: data.user.id,
@@ -83,5 +97,5 @@ Deno.serve(async (request) => {
     return reply({ error: rollbackError ? "The invitation was sent, but setup did not finish. Contact the system administrator before retrying." : "Setup did not finish, so the invitation was canceled. Check the selected scope and try again." }, 500);
   }
 
-  return reply({ message: "Invitation sent. The stakeholder account is pending approval until an administrator activates it." }, 201);
+  return reply({ message: "Invitation sent. The staff account is active; the recipient can sign in after accepting the email invitation." }, 201);
 });

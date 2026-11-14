@@ -2,9 +2,9 @@ import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import MapView, { Callout, Marker, Polygon, type Region } from "react-native-maps";
 import { Pressable, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { aggregateReportCells, ILIGAN_MAP_BOUNDS } from "@community/shared";
-import { barangayAreaKm2, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
-import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, PhotoViewer, colors, type PhotoCredit } from "./ui";
+import { aggregateReportCells, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, ILIGAN_MAP_BOUNDS, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
+import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
+import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, PhotoViewer, colors } from "./ui";
 export { ILIGAN_MAP_BOUNDS };
 export type MapStyle = "map" | "terrain" | "satellite";
 export type MapBounds = typeof ILIGAN_MAP_BOUNDS;
@@ -17,7 +17,6 @@ export type Point = {
   subtitle?: string;
   createdAt?: string;
   photoUrl?: string;
-  photoCredit?: PhotoCredit;
   categoryName?: string;
   color?: string;
   statusLabel?: string;
@@ -43,12 +42,14 @@ export type MapProps = {
   initialRegion?: Region;
   onViewportChange?: (region: Region) => void;
   bounds?: MapBounds;
+  zoomBehavior?: "issue-map" | "barangay-gis";
   showBarangayBoundaries?: boolean;
   barangayCounts?: Record<string, number>;
   onBarangayPress?: (name: string) => void;
   onMapBackgroundPress?: () => void;
   selectedBarangayName?: string;
   barangayMetric?: "count" | "density";
+  summaryColor?: string;
 };
 const ReportPin = memo(function ReportPin({ selected, onPointPress, ...p }: Point & { selected: boolean; onPointPress?: MapProps["onPointPress"] }) {
   const tone = categoryToneFor(p.categoryName || "");
@@ -70,7 +71,7 @@ const ReportPin = memo(function ReportPin({ selected, onPointPress, ...p }: Poin
             <Callout tooltip onPress={() => onPointPress?.(p)}>
               <View style={{ width: 276, borderRadius: 18, padding: 12, backgroundColor: "#fff", borderWidth: 1, borderColor: "#e0e9e6", shadowColor: "#173b3a", shadowOpacity: 0.2, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8 }}>
                 <View style={{ flexDirection: "row", gap: 10, alignItems: "stretch" }}>
-                  {p.photoUrl ? <PhotoViewer source={{ uri: p.photoUrl }} label={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community"} report photo`} credit={p.photoCredit} style={{ width: 76, height: 94, borderRadius: 12, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 76, height: 94, borderRadius: 12, backgroundColor: categoryToneFor(p.categoryName || "").background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(p.categoryName || "")} size={31} color={categoryToneFor(p.categoryName || "").foreground} /></View>}
+                  {p.photoUrl ? <PhotoViewer source={{ uri: p.photoUrl }} label={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community"} report photo`} style={{ width: 76, height: 94, borderRadius: 12, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 76, height: 94, borderRadius: 12, backgroundColor: categoryToneFor(p.categoryName || "").background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(p.categoryName || "")} size={31} color={categoryToneFor(p.categoryName || "").foreground} /></View>}
                   <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 }}><Text numberOfLines={1} style={{ flex: 1, color: p.color || "#08756b", fontSize: 10, fontWeight: "800" }}>{p.categoryName ? categoryDisplayName(p.categoryName) : "Community report"}</Text>{!!p.statusLabel && <Text numberOfLines={1} style={{ color: statusToneFor(p.statusLabel).foreground, backgroundColor: statusToneFor(p.statusLabel).background, fontSize: 9, fontWeight: "700", paddingHorizontal: 7, paddingVertical: 4, borderRadius: 12 }}>{p.statusLabel}</Text>}</View>
                     <Text numberOfLines={2} style={{ color: "#173b3a", fontSize: 14, fontWeight: "800", lineHeight: 18 }}>{p.title || "Reported issue"}</Text>
@@ -105,15 +106,20 @@ export default function LocationMap({
   initialRegion,
   onViewportChange,
   bounds,
+  zoomBehavior = "barangay-gis",
   showBarangayBoundaries = false,
   barangayCounts = {},
   onBarangayPress,
   onMapBackgroundPress,
   selectedBarangayName,
   barangayMetric = "density",
+  summaryColor = colors.brand,
 }: MapProps) {
   const map = useRef<MapView>(null);
   const lastBarangayTap = useRef(0);
+  const defaultRegion: Region = { latitude: 8.228, longitude: 124.2452, latitudeDelta: 0.12, longitudeDelta: 0.12 };
+  const currentRegion = useRef(initialRegion ?? defaultRegion);
+  const [zoomLevel, setZoomLevel] = useState(() => mapZoomFromLongitudeDelta(currentRegion.current.longitudeDelta));
   const [localBase, setLocalBase] = useState<MapStyle>("satellite"), [stylePickerOpen, setStylePickerOpen] = useState(false);
   const base = mapStyle ?? localBase;
   const nextBase: MapStyle = base === "map" ? "terrain" : base === "terrain" ? "satellite" : "map";
@@ -121,6 +127,13 @@ export default function LocationMap({
   const choosePoint = (next: Point) => onChoose?.(next);
   const pointsKey = useMemo(() => points.map((p) => `${p.id}:${p.latitude}:${p.longitude}`).join("|"), [points]);
   const reportPoints = useMemo(() => points.filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180), [points]);
+  const categoryClusters = useMemo(() => zoomBehavior === "barangay-gis" ? clusterReportsByCategory(reportPoints, zoomLevel) : [], [reportPoints, zoomLevel, zoomBehavior]);
+  const showBarangayTotals = zoomBehavior === "barangay-gis" && showPoints && !showBarangayBoundaries && zoomLevel <= BARANGAY_TOTAL_ZOOM;
+  const barangayTotalMarkers = useMemo(() => showBarangayTotals ? iliganBarangayBoundaries.flatMap((feature) => {
+    const count = barangayCounts[barangayMapKey(feature.properties.adm4_en)] ?? 0;
+    const center = count ? barangayCenter(feature) : null;
+    return center ? [{ ...center, name: feature.properties.adm4_en, count }] : [];
+  }) : [], [showBarangayTotals, barangayCounts]);
   const reportCells = useMemo(() => aggregateReportCells(reportPoints), [reportPoints]);
   const maxBarangayDensity = useMemo(() => Math.max(0, ...iliganBarangayBoundaries.map((item) => barangayDensity(barangayCounts[barangayMapKey(item.properties.adm4_en)] ?? 0, barangayAreaKm2(item)))), [barangayCounts]);
   const densityLayer = useMemo(() => density && reportCells.map((cell) => <Polygon
@@ -154,6 +167,13 @@ export default function LocationMap({
     else if (points.length === 1) map.current?.animateToRegion({ ...points[0], latitudeDelta: 0.035, longitudeDelta: 0.035 }, 250);
     else if (points.length > 1) map.current?.fitToCoordinates(points, { edgePadding: { top: 72, right: 64, bottom: 72, left: 64 }, animated: true });
   };
+  const zoomInto = (latitude: number, longitude: number, factor: number) => {
+    const current = currentRegion.current;
+    map.current?.animateToRegion({ latitude, longitude,
+      latitudeDelta: Math.max(0.002, current.latitudeDelta / factor),
+      longitudeDelta: Math.max(0.002, current.longitudeDelta / factor),
+    }, 320);
+  };
   useEffect(() => {
     if (bounds) map.current?.setMapBoundaries(bounds.northEast, bounds.southWest);
   }, [bounds]);
@@ -186,8 +206,8 @@ export default function LocationMap({
         mapType={base === "terrain" ? "terrain" : base === "satellite" ? "satellite" : "standard"}
         pitchEnabled
         rotateEnabled
-        initialRegion={point ? { ...point, latitudeDelta: 0.02, longitudeDelta: 0.02 } : initialRegion ?? { latitude: 8.228, longitude: 124.2452, latitudeDelta: 0.12, longitudeDelta: 0.12 }}
-        onRegionChangeComplete={onViewportChange}
+        initialRegion={point ? { ...point, latitudeDelta: 0.02, longitudeDelta: 0.02 } : currentRegion.current}
+        onRegionChangeComplete={(region) => { currentRegion.current = region; setZoomLevel(mapZoomFromLongitudeDelta(region.longitudeDelta)); onViewportChange?.(region); }}
         onPress={(e) => {
           if (onChoose) choosePoint(e.nativeEvent.coordinate);
           else if (showBarangayBoundaries && Date.now() - lastBarangayTap.current > 160) onMapBackgroundPress?.();
@@ -206,7 +226,13 @@ export default function LocationMap({
           />
         )}
         {userPoint && <Marker coordinate={userPoint} title="Your current location" pinColor="#3976d2" zIndex={1004} />}
-        {showPoints && reportPoints.map((p, i) => (
+        {showBarangayTotals && barangayTotalMarkers.map((item) => <Marker key={`barangay-total-${item.name}`} coordinate={item} zIndex={1001} accessibilityLabel={`${item.count} reports assigned to ${item.name}`} onPress={() => { onBarangayPress?.(item.name); zoomInto(item.latitude, item.longitude, 3); }}>
+          <View style={{ minWidth: 36, height: 32, paddingHorizontal: 8, borderRadius: 16, borderWidth: 2, borderColor: "white", backgroundColor: summaryColor, alignItems: "center", justifyContent: "center", shadowColor: "#10263f", shadowOpacity: 0.22, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 4 }}><Text style={{ color: "white", fontSize: 11, fontWeight: "800" }}>{item.count.toLocaleString("en-PH")}</Text></View>
+        </Marker>)}
+        {showPoints && !showBarangayBoundaries && zoomBehavior === "barangay-gis" && zoomLevel < INDIVIDUAL_REPORT_PIN_ZOOM && categoryClusters.map((cluster) => <Marker key={cluster.id} coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }} zIndex={1002} accessibilityLabel={`${cluster.count} ${categoryDisplayName(cluster.categoryName)} reports`} onPress={() => zoomInto(cluster.centerLatitude, cluster.centerLongitude, 2)}>
+          <View style={{ minWidth: 38, height: 38, paddingHorizontal: 5, borderRadius: 20, borderWidth: 2.5, borderColor: "white", backgroundColor: cluster.color, alignItems: "center", justifyContent: "center", shadowColor: "#10263f", shadowOpacity: 0.24, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 5 }}><Text style={{ color: "white", fontSize: cluster.count > 99 ? 10 : 12, fontWeight: "900" }}>{cluster.count.toLocaleString("en-PH")}</Text></View>
+        </Marker>)}
+        {showPoints && !showBarangayBoundaries && (zoomBehavior === "issue-map" || zoomLevel >= INDIVIDUAL_REPORT_PIN_ZOOM) && reportPoints.map((p, i) => (
           <ReportPin key={p.id || i} {...p} selected={p.id === selectedPointId} onPointPress={onPointPress} />
         ))}
       </MapView>

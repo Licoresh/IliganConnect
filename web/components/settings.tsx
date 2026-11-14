@@ -14,7 +14,7 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react";
-import type { Profile } from "@community/shared";
+import { MIN_PASSWORD_LENGTH, passwordInputError, type Profile } from "@community/shared";
 import type { Organization } from "../lib/access";
 import { roleNames } from "../lib/access";
 import { db, result } from "../lib/client";
@@ -46,7 +46,10 @@ export function SettingsPanel({
       setMessage("Your changes have been saved.");
       await qc.invalidateQueries();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "We could not save those changes. Please try again.");
+      const detail = error instanceof Error ? error.message.toLowerCase() : "";
+      setMessage(detail.includes("rate limit")
+        ? "Too many attempts. Wait a few minutes before trying again."
+        : "We could not save those changes. Check the requirements and try again.");
     } finally {
       setBusy(false);
     }
@@ -106,7 +109,13 @@ export function SettingsPanel({
           event.preventDefault();
           const form = event.currentTarget;
           const data = new FormData(event.currentTarget);
-          if (data.get("password") !== data.get("confirm")) {
+          const password = String(data.get("password") || "");
+          const passwordIssue = passwordInputError(password, MIN_PASSWORD_LENGTH);
+          if (passwordIssue) {
+            setMessage(passwordIssue);
+            return;
+          }
+          if (password !== data.get("confirm")) {
             setMessage("Those passwords do not match. Check both fields and try again.");
             return;
           }
@@ -120,18 +129,18 @@ export function SettingsPanel({
           <label className="settings-field">
             <span>New password</span>
             <span className="settings-password-input">
-              <input maxLength={1024} name="password" type={showPassword ? "text" : "password"} minLength={12} autoComplete="new-password" required />
+              <input maxLength={1024} name="password" type={showPassword ? "text" : "password"} minLength={MIN_PASSWORD_LENGTH} autoComplete="new-password" required />
               <button type="button" className="settings-reveal" aria-label={showPassword ? "Hide new password" : "Show new password"} aria-pressed={showPassword} onClick={() => setShowPassword((shown) => !shown)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
             </span>
           </label>
           <label className="settings-field">
             <span>Confirm new password</span>
             <span className="settings-password-input">
-              <input maxLength={1024} name="confirm" type={showConfirm ? "text" : "password"} minLength={12} autoComplete="new-password" required />
+              <input maxLength={1024} name="confirm" type={showConfirm ? "text" : "password"} minLength={MIN_PASSWORD_LENGTH} autoComplete="new-password" required />
               <button type="button" className="settings-reveal" aria-label={showConfirm ? "Hide confirmation password" : "Show confirmation password"} aria-pressed={showConfirm} onClick={() => setShowConfirm((shown) => !shown)}>{showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}</button>
             </span>
           </label>
-          <small className="settings-password-hint">Use at least 12 characters.</small>
+          <small className="settings-password-hint">Use at least {MIN_PASSWORD_LENGTH} characters. Avoid reusing a password from another account.</small>
           <button className="settings-primary" disabled={busy}>{busy ? "Updating…" : "Update password"}</button>
         </form>
       </section>

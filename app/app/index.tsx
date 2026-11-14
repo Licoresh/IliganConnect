@@ -4,6 +4,7 @@ import {
   Text,
   View,
   Image,
+  ActivityIndicator,
   Modal,
   ScrollView,
   Pressable,
@@ -24,8 +25,8 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as Crypto from "expo-crypto";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, result, configured } from "../lib/client";
-import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, type PhotoCredit, colors, categoryIconFor, categoryToneFor, statusToneFor, categoryDisplayName } from "../components/ui";
-import { Profile, Lookup, Report, label, textInputError, emailInputError, passwordInputError } from "@community/shared";
+import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryIconFor, categoryToneFor, statusToneFor, categoryDisplayName } from "../components/ui";
+import { Profile, Lookup, Report, label, textInputError, residentNamePartsError, residentDisplayName, residentAgeError, emailInputError, mobileInputError, normalizePhilippineMobile, passwordInputError, MIN_PASSWORD_LENGTH, EMAIL_OTP_LENGTH, EMAIL_OTP_EXPIRY_SECONDS, EMAIL_RESEND_INTERVAL_SECONDS } from "@community/shared";
 import { ReportForm, ReportTracking, Explore as ExploreScreen } from "../features/reports";
 import { Community as CommunityScreen, Announcements } from "../features/community";
 import { ListSkeleton } from "../components/loading";
@@ -33,6 +34,16 @@ const REPORT_PAGE_SIZE = 5;
 const Explore = memo(ExploreScreen);
 const Community = memo(CommunityScreen);
 if (Platform.OS === "web") WebBrowser.maybeCompleteAuthSession();
+function formatAuthError(error: unknown, step: "sign-in" | "verification" | "resend" | "recovery" | "password" = "sign-in") {
+  const detail = error instanceof Error ? error.message.toLowerCase() : "";
+  if (detail.includes("rate limit") || detail.includes("too many requests")) return "Too many attempts. Wait a few minutes before trying again.";
+  if (detail.includes("network") || detail.includes("fetch")) return "We could not reach the sign-in service. Check your connection and retry.";
+  if (step === "verification") return "That code is invalid or expired. Check the email or request a new code.";
+  if (step === "resend") return "We could not send a new code just now. Wait a moment, then try again.";
+  if (step === "recovery") return "We could not start account recovery. Please try again shortly.";
+  if (step === "password") return "We could not update your password. Check the requirements and try again.";
+  return "We could not sign you in. Check your details, confirm your email if needed, and retry.";
+}
 const authRedirects = new Map<string, Promise<boolean>>();
 function completeAuthRedirect(url: string) {
   const existing = authRedirects.get(url);
@@ -112,11 +123,11 @@ export default function Home() {
       if (!active || sessionVersion) return;
       sessionUser.current = data.session?.user.id ?? null;
       setUser(data.session?.user.id ?? null);
-      if (error) setAuthError(error.message);
+      if (error) setAuthError(formatAuthError(error));
       setLoading(false);
     }).catch((error: Error) => {
       if (!active || sessionVersion) return;
-      setAuthError(error.message);
+      setAuthError(formatAuthError(error));
       setLoading(false);
     });
     const { data } = db.auth.onAuthStateChange((event, session) => {
@@ -140,7 +151,7 @@ export default function Home() {
       try {
         if (await completeAuthRedirect(url)) setRecovery(true);
       } catch (e) {
-        setAuthError((e as Error).message);
+        setAuthError(formatAuthError(e, "verification"));
       }
     }
     if (Platform.OS !== "web")
@@ -212,6 +223,12 @@ export default function Home() {
       return { profile, categories, barangays, announcements, unreadCount: unread.count ?? 0, includeSamples: settings.include_samples };
     },
   });
+  useEffect(() => {
+    if (q.data?.profile.role === "resident" && !q.data.profile.barangay_id) {
+      setBarangayMessage("Choose your registered barangay to finish setting up your resident profile.");
+      setBarangaysOpen(true);
+    }
+  }, [q.data?.profile.id, q.data?.profile.barangay_id, q.data?.profile.role]);
   const reportsQuery = useQuery({
     queryKey: ["my-reports", user, page, q.data?.includeSamples],
     enabled: !!user && !!q.data && tab === "Home" && !selected,
@@ -233,11 +250,11 @@ export default function Home() {
     enabled: !!user && tab === "Home" && !selected && reportIds.length > 0,
     staleTime: 45 * 60 * 1000,
     queryFn: async () => {
-      const attachments = await result<({ report_id: string; path: string } & PhotoCredit)[]>(db!.from("report_attachments").select("report_id,path,source_url,attribution,is_illustrative").in("report_id", reportIds));
-      if (!attachments.length) return { urls: {} as Record<string, string>, credits: {} as Record<string, PhotoCredit> };
+      const attachments = await result<{ report_id: string; path: string }[]>(db!.from("report_attachments").select("report_id,path").in("report_id", reportIds));
+      if (!attachments.length) return { urls: {} as Record<string, string> };
       const urls = await db!.storage.from("report-evidence").createSignedUrls(attachments.map((item) => item.path), 3600);
       if (urls.error) throw urls.error;
-      return { urls: Object.fromEntries(attachments.flatMap((item, index) => urls.data[index]?.signedUrl ? [[item.report_id, urls.data[index].signedUrl!]] : [])), credits: Object.fromEntries(attachments.map((item) => [item.report_id, item])) };
+      return { urls: Object.fromEntries(attachments.flatMap((item, index) => urls.data[index]?.signedUrl ? [[item.report_id, urls.data[index].signedUrl!]] : [])) };
     },
   });
   if (loading)
@@ -379,6 +396,8 @@ export default function Home() {
                   />
                 ) : tab === "Report" ? (
                   <ReportForm
+                    residentProfile={q.data.profile}
+                    onEditProfile={() => setTab("Profile")}
                     categories={q.data.categories}
                     barangays={q.data.barangays}
                     initialCategory={category}
@@ -478,6 +497,15 @@ export default function Home() {
                         </Pressable>;
                       })}
                     </View>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 7 }}><Text style={{ color: "#12343d", fontSize: 20, fontWeight: "800", letterSpacing: -0.3 }}>From your community</Text><Pressable accessibilityRole="button" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={{ minHeight: 48, justifyContent: "center" }}><Text style={{ color: colors.brand, fontSize: 13, fontWeight: "700" }}>View all</Text></Pressable></View>
+                    {q.data.announcements.length ? q.data.announcements.map((a) => (
+                      <Pressable key={a.id} accessibilityRole="button" accessibilityLabel={`${a.kind}: ${a.title}. Open official update`} style={({ pressed }) => [{ minHeight: 94, flexDirection: "row", alignItems: "center", gap: 13, padding: 14, borderRadius: 20, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }, pressed && { opacity: 0.85 }]} onPress={() => { setSelectedAnnouncement(a.id); setTab("Announcements"); }}>
+                        <View style={{ width: 48, height: 48, borderRadius: 17, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name={a.kind.toLowerCase().includes("meeting") ? "calendar-outline" : "megaphone-outline"} size={22} color={colors.brand} /></View>
+                        <View style={{ flex: 1, gap: 5 }}><Text style={{ color: "#008d86", fontSize: 10, fontWeight: "800", letterSpacing: 1.3 }}>{a.kind.toUpperCase()}</Text><Text numberOfLines={2} style={{ color: "#10263f", fontSize: 15, lineHeight: 20, fontWeight: "700" }}>{a.title}</Text><Text style={{ color: "#5d7378", fontSize: 12 }}>Read official update</Text></View>
+                        <Ionicons name="chevron-forward" size={18} color="#9aabba" />
+                      </Pressable>
+                    )) : <View style={{ minHeight: 86, borderRadius: 18, padding: 16, backgroundColor: "#ffffff", justifyContent: "center" }}><Text style={{ color: "#526b82", fontSize: 14 }}>No new community announcements.</Text><Text style={s.small}>Check back for official city and barangay updates.</Text></View>}
+                    <Pressable accessibilityRole="button" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={({ pressed }) => [{ minHeight: 54, borderRadius: 18, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }, pressed && { opacity: 0.82 }]}><Text style={{ color: colors.brand, fontSize: 15, fontWeight: "800" }}>All official announcements</Text><Ionicons name="chevron-forward" size={18} color={colors.brand} /></Pressable>
                     <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginTop: 9, marginBottom: 1 }}>
                       <Text style={{ color: "#10263f", fontSize: 20, fontWeight: "800", letterSpacing: -0.3 }}>Your reports</Text>
                       <Text style={{ color: "#5d7378", fontSize: 13 }}>{reportsQuery.data ? `${reportsQuery.data.count} total` : ""}</Text>
@@ -496,7 +524,7 @@ export default function Home() {
                           key={r.id}
                           onPress={() => { setReportReturnTab("Home"); setSelected(r); }}
                         >
-                          {reportPhotos.data?.urls[r.id] && !failedReportPhotos[r.id] ? <PhotoViewer source={{ uri: reportPhotos.data.urls[r.id] }} label={`${categoryName} report photo`} credit={reportPhotos.data.credits[r.id]} onError={() => setFailedReportPhotos((value) => ({ ...value, [r.id]: true }))} style={{ width: 78, height: 78, borderRadius: 14, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 78, height: 78, borderRadius: 14, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={27} color={categoryToneFor(categoryName).foreground} /></View>}
+                          {reportPhotos.data?.urls[r.id] && !failedReportPhotos[r.id] ? <PhotoViewer source={{ uri: reportPhotos.data.urls[r.id] }} label={`${categoryName} report photo`} onError={() => setFailedReportPhotos((value) => ({ ...value, [r.id]: true }))} style={{ width: 78, height: 78, borderRadius: 14, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 78, height: 78, borderRadius: 14, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={27} color={categoryToneFor(categoryName).foreground} /></View>}
                           <View style={{ flex: 1, gap: 6 }}>
                             <Text style={[s.title, { fontSize: 15, lineHeight: 19 }]} numberOfLines={1}>{r.title}</Text>
                             <View style={[s.row, { gap: 7 }]}>
@@ -532,15 +560,6 @@ export default function Home() {
                         <Pressable accessibilityRole="button" accessibilityLabel="Next report page" disabled={reportsQuery.isFetching || !!reportsQuery.error || (page + 1) * REPORT_PAGE_SIZE >= (reportsQuery.data?.count ?? 0)} onPress={() => setPage((value) => value + 1)} style={{ flex: 1, minHeight: 54, borderWidth: 1, borderColor: "#dcebe8", borderRadius: 17, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, opacity: reportsQuery.isFetching || !!reportsQuery.error || (page + 1) * REPORT_PAGE_SIZE >= (reportsQuery.data?.count ?? 0) ? 0.48 : 1 }}><Text style={{ color: colors.brand, fontSize: 14, fontWeight: "800" }}>Next</Text><Ionicons name="chevron-forward" size={19} color={colors.brand} /></Pressable>
                       </View>
                     </View>}
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 7 }}><Text style={{ color: "#12343d", fontSize: 20, fontWeight: "800", letterSpacing: -0.3 }}>From your community</Text><Pressable accessibilityRole="button" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={{ minHeight: 48, justifyContent: "center" }}><Text style={{ color: colors.brand, fontSize: 13, fontWeight: "700" }}>View all</Text></Pressable></View>
-                    {q.data.announcements.length ? q.data.announcements.map((a) => (
-                      <Pressable key={a.id} accessibilityRole="button" accessibilityLabel={`${a.kind}: ${a.title}. Open official update`} style={({ pressed }) => [{ minHeight: 94, flexDirection: "row", alignItems: "center", gap: 13, padding: 14, borderRadius: 20, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }, pressed && { opacity: 0.85 }]} onPress={() => { setSelectedAnnouncement(a.id); setTab("Announcements"); }}>
-                        <View style={{ width: 48, height: 48, borderRadius: 17, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name={a.kind.toLowerCase().includes("meeting") ? "calendar-outline" : "megaphone-outline"} size={22} color={colors.brand} /></View>
-                        <View style={{ flex: 1, gap: 5 }}><Text style={{ color: "#008d86", fontSize: 10, fontWeight: "800", letterSpacing: 1.3 }}>{a.kind.toUpperCase()}</Text><Text numberOfLines={2} style={{ color: "#10263f", fontSize: 15, lineHeight: 20, fontWeight: "700" }}>{a.title}</Text><Text style={{ color: "#5d7378", fontSize: 12 }}>Read official update</Text></View>
-                        <Ionicons name="chevron-forward" size={18} color="#9aabba" />
-                      </Pressable>
-                    )) : <View style={{ minHeight: 86, borderRadius: 18, padding: 16, backgroundColor: "#ffffff", justifyContent: "center" }}><Text style={{ color: "#526b82", fontSize: 14 }}>No new community announcements.</Text><Text style={s.small}>Check back for official city and barangay updates.</Text></View>}
-                    <Pressable accessibilityRole="button" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={({ pressed }) => [{ minHeight: 54, borderRadius: 18, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }, pressed && { opacity: 0.82 }]}><Text style={{ color: colors.brand, fontSize: 15, fontWeight: "800" }}>All official announcements</Text><Ionicons name="chevron-forward" size={18} color={colors.brand} /></Pressable>
                     <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 14, borderRadius: 18, backgroundColor: "#eef5fb", borderWidth: 1, borderColor: "#dfebf6" }}><Ionicons name="information-circle" size={21} color="#3b73ba" /><Text style={{ flex: 1, color: "#5b7185", fontSize: 12, lineHeight: 18 }}>Not an emergency service. Stay clear of dangerous infrastructure while documenting a report.</Text></View>
                   </>
                 )}
@@ -551,9 +570,15 @@ export default function Home() {
       </KeyboardAvoidingView>
       <SelectionSheet
         visible={barangaysOpen}
-        onClose={() => setBarangaysOpen(false)}
+        onClose={() => {
+          if (q.data?.profile.role === "resident" && !q.data.profile.barangay_id) {
+            setBarangayMessage("Choose your registered barangay to finish setting up your resident profile.");
+            return;
+          }
+          setBarangaysOpen(false);
+        }}
         title="Choose a barangay"
-        subtitle="Select your home barangay to see relevant community updates."
+        subtitle="Select your home barangay. It is saved to your profile and used as the default for new reports."
         searchPlaceholder="Search barangay"
         items={(q.data?.barangays || []).map((item) => ({ id: item.id, name: item.name, description: `Community updates for ${item.name}`, icon: "location-outline" as const, tone: { background: "#e5f6f2", foreground: colors.brand } }))}
         value={q.data?.profile.barangay_id || ""}
@@ -611,13 +636,28 @@ export default function Home() {
 }
 function Auth({ initialError }: { initialError: string }) {
   const [mode, setMode] = useState("login"),
-    [name, setName] = useState(""),
+    [firstName, setFirstName] = useState(""),
+    [middleName, setMiddleName] = useState(""),
+    [lastName, setLastName] = useState(""),
+    [age, setAge] = useState(""),
+    [ageTouched, setAgeTouched] = useState(false),
+    [mobile, setMobile] = useState(""),
+    [mobileTouched, setMobileTouched] = useState(false),
+    [registeredBarangay, setRegisteredBarangay] = useState(""),
+    [barangayPickerOpen, setBarangayPickerOpen] = useState(false),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
+    [otp, setOtp] = useState(""),
+    [resendSeconds, setResendSeconds] = useState(0),
     [message, setMessage] = useState(initialError),
     [busy, setBusy] = useState(false),
     [showPassword, setShowPassword] = useState(false);
   const [messageIsError, setMessageIsError] = useState(!!initialError);
+  useEffect(() => {
+    if (mode !== "verify" || resendSeconds <= 0) return;
+    const timer = setTimeout(() => setResendSeconds((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [mode, resendSeconds]);
   const providers = useQuery({
     queryKey: ["auth-providers"],
     enabled: configured,
@@ -630,15 +670,54 @@ function Auth({ initialError }: { initialError: string }) {
       return (await response.json()).external as Partial<Record<"google" | "facebook", boolean>>;
     },
   });
+  const signupBarangays = useQuery({
+    queryKey: ["public-signup-barangays"],
+    enabled: configured && mode === "register",
+    staleTime: Infinity,
+    queryFn: () => result<Lookup[]>(db!.rpc("signup_barangays")),
+  });
+  const registeredBarangayName = signupBarangays.data?.find((item) => item.id === registeredBarangay)?.name;
+  const fullName = residentDisplayName(firstName, middleName, lastName);
+  const namePartsProblem = residentNamePartsError(firstName, middleName, lastName);
+  const ageProblem = residentAgeError(age, true);
   const redirect = () =>
-    Platform.OS === "web" ? window.location.origin : Linking.createURL("auth/callback");
+    Platform.OS === "web"
+      ? window.location.origin
+      : Linking.createURL("/", { scheme: "iliganconnect", isTripleSlashed: true });
   const changeMode = (next: string) => {
+    setBarangayPickerOpen(false);
+    setMobileTouched(false);
+    setAgeTouched(false);
+    setFirstName(""); setMiddleName(""); setLastName(""); setAge("");
     setMode(next);
     setMessage("");
     setMessageIsError(false);
     setPassword("");
+    setOtp("");
+    setResendSeconds(0);
     setShowPassword(false);
   };
+  const setAuthFailure = (error: unknown, step: "sign-in" | "verification" | "resend" | "recovery" | "password" = "sign-in") => {
+    setMessage(formatAuthError(error, step));
+    setMessageIsError(true);
+  };
+  async function resendSignupCode() {
+    if (busy || resendSeconds > 0 || !db) return;
+    setBusy(true); setMessage(""); setMessageIsError(false);
+    try {
+      const { error } = await db.auth.resend({
+        type: "signup",
+        email: email.trim().toLowerCase(),
+        options: { emailRedirectTo: redirect() },
+      });
+      if (error) throw error;
+      setOtp("");
+      setResendSeconds(EMAIL_RESEND_INTERVAL_SECONDS);
+      setMessage("If this address can receive verification messages, a new verification message is on the way.");
+    } catch (error) {
+      setAuthFailure(error, "resend");
+    } finally { setBusy(false); }
+  }
   async function signInSocial(provider: "google" | "facebook") {
     if (busy || !providers.data?.[provider]) return;
     setBusy(true); setMessage(""); setMessageIsError(false);
@@ -660,10 +739,10 @@ function Auth({ initialError }: { initialError: string }) {
       }
     } catch (error) {
       const details = (error as Error).message || "";
-      setMessage(/provider|unsupported/i.test(details)
-        ? `${provider === "google" ? "Google" : "Facebook"} sign-in needs to be enabled by the administrator.`
-        : details || "Could not sign in. Please try again.");
-      setMessageIsError(true);
+      if (/provider|unsupported/i.test(details)) {
+        setMessage(`${provider === "google" ? "Google" : "Facebook"} sign-in needs to be enabled by the administrator.`);
+        setMessageIsError(true);
+      } else setAuthFailure(error);
     } finally { setBusy(false); }
   }
   return (
@@ -700,7 +779,7 @@ function Auth({ initialError }: { initialError: string }) {
             <View style={[s.card, s.authCard]}>
               <View style={s.authCardHeading}>
                 <Text accessibilityRole="header" style={s.authTitleText}>
-                  {mode === "register"
+                  {mode === "register" || mode === "verify"
                     ? "Join your community"
                     : mode === "reset"
                       ? "Recover your account"
@@ -709,22 +788,124 @@ function Auth({ initialError }: { initialError: string }) {
                 <Text style={s.small}>
                   {mode === "register"
                     ? "Create an account to report and follow local issues."
+                    : mode === "verify"
+                      ? "Enter the one-time code sent to your email to activate your account."
                     : mode === "reset"
                       ? "We’ll send a secure recovery link to your email."
                       : "Sign in to see your reports and community updates."}
                 </Text>
               </View>
-            {configured ? (
+            {configured ? mode === "verify" ? (
+              <>
+                <Text style={s.body}>Check <Text style={{ fontWeight: "700" }}>{email.trim().toLowerCase()}</Text> for your verification code. If the email contains a confirmation link, opening it will verify your account too.</Text>
+                <Field
+                  label={`${EMAIL_OTP_LENGTH}-digit email code`} required hint={`Enter the code from your email. It expires after ${EMAIL_OTP_EXPIRY_SECONDS / 60} minutes.`}
+                  value={otp}
+                  onChangeText={(value) => setOtp(value.replace(/\D/g, "").slice(0, EMAIL_OTP_LENGTH))}
+                  keyboardType="number-pad"
+                  autoComplete="one-time-code"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={EMAIL_OTP_LENGTH}
+                />
+                <Button title={busy ? "Verifying…" : "Verify email"} disabled={busy || otp.length !== EMAIL_OTP_LENGTH} loading={busy} onPress={async () => {
+                  if (!new RegExp(`^\\d{${EMAIL_OTP_LENGTH}}$`).test(otp)) { setMessage(`Enter the ${EMAIL_OTP_LENGTH}-digit code from your email.`); setMessageIsError(true); return; }
+                  setBusy(true); setMessage(""); setMessageIsError(false);
+                  try {
+                    const { error } = await db!.auth.verifyOtp({ email: email.trim().toLowerCase(), token: otp, type: "signup" });
+                    if (error) throw error;
+                    setOtp("");
+                  } catch (error) { setAuthFailure(error, "verification"); }
+                  finally { setBusy(false); }
+                }} />
+                <Pressable accessibilityRole="button" disabled={busy || resendSeconds > 0} style={s.textAction} onPress={() => void resendSignupCode()}>
+                  <Text style={[s.textActionLabel, (busy || resendSeconds > 0) && { opacity: 0.55 }]}>{resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : "Resend verification code"}</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" disabled={busy} style={s.textAction} onPress={() => changeMode("register")}>
+                  <Text style={s.textActionLabel}>Change email or account details</Text>
+                </Pressable>
+              </>
+            ) : (
               <>
                 {mode === "register" && (
-                  <Field
-                    label="Display name (required)" required minLength={2} hint="Use 2–100 characters. Letters from any language are welcome."
-                    placeholder="How should we address you?"
-                    value={name}
-                    onChangeText={setName}
-                    maxLength={100}
-                    autoComplete="name"
-                  />
+                  <View style={{ gap: 11 }}>
+                    <Text style={s.eyebrow}>PERSONAL DETAILS</Text>
+                    <Field
+                      label="First name *" required minLength={1} hint="Use your name as it appears on your records."
+                      placeholder="First name"
+                      value={firstName}
+                      onChangeText={setFirstName}
+                      maxLength={60}
+                      autoCapitalize="words"
+                      autoComplete="given-name"
+                    />
+                    <Field
+                      label="Middle name (optional)" hint="Leave blank if you do not use a middle name."
+                      placeholder="Middle name"
+                      value={middleName}
+                      onChangeText={setMiddleName}
+                      maxLength={60}
+                      autoCapitalize="words"
+                      autoComplete="additional-name"
+                    />
+                    <Field
+                      label="Last name *" required minLength={1}
+                      error={fullName.length > 100 ? "Use no more than 100 characters across all name fields." : undefined}
+                      placeholder="Last name"
+                      value={lastName}
+                      onChangeText={setLastName}
+                      maxLength={60}
+                      autoCapitalize="words"
+                      autoComplete="family-name"
+                    />
+                    <Field
+                      label="Age *" required hint="Enter a whole number from 1 to 120."
+                      placeholder="Age"
+                      value={age}
+                      onChangeText={(value) => setAge(value.slice(0, 3))}
+                      onBlur={() => setAgeTouched(true)}
+                      error={ageTouched ? residentAgeError(age, true) || undefined : undefined}
+                      maxLength={3}
+                      keyboardType="number-pad"
+                      autoComplete="off"
+                    />
+                    <Field
+                      label="Mobile number (optional)"
+                      hint="Philippine mobile number, for example 0917 123 4567. Authorized administrators can view it."
+                      placeholder="0917 123 4567"
+                      value={mobile}
+                      onChangeText={setMobile}
+                      onBlur={() => setMobileTouched(true)}
+                      error={mobileTouched ? mobileInputError(mobile) || undefined : undefined}
+                      maxLength={24}
+                      keyboardType="phone-pad"
+                      autoComplete="tel"
+                    />
+                    <View style={{ gap: 7 }}>
+                      <Text style={s.fieldLabel}>Registered barangay <Text style={{ color: "#a43d35" }}>*</Text></Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={registeredBarangayName ? `Registered barangay: ${registeredBarangayName}` : "Choose your registered barangay"}
+                        accessibilityHint="This becomes the barangay saved to your resident profile and used to prefill new reports."
+                        accessibilityState={{ disabled: signupBarangays.isPending || (!signupBarangays.data && !signupBarangays.isError) }}
+                        disabled={signupBarangays.isPending || (!signupBarangays.data && !signupBarangays.isError)}
+                        onPress={() => signupBarangays.isError ? void signupBarangays.refetch() : setBarangayPickerOpen(true)}
+                        style={({ pressed }) => [{ minHeight: 52, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 13, borderRadius: 14, borderWidth: 1, borderColor: registeredBarangayName ? "#c8e2dc" : colors.line, backgroundColor: "#fff", opacity: pressed ? 0.8 : 1 }]}
+                      >
+                        {signupBarangays.isPending ? <ActivityIndicator size="small" color={colors.brand} /> : <Ionicons name={signupBarangays.isError ? "refresh-outline" : "location-outline"} size={19} color={colors.brand} />}
+                        <Text numberOfLines={1} style={{ flex: 1, color: registeredBarangayName ? colors.brandDark : colors.muted, fontSize: 14, fontWeight: registeredBarangayName ? "700" : "500" }}>
+                          {signupBarangays.isPending ? "Loading barangays…" : signupBarangays.isError ? "Retry loading barangays" : registeredBarangayName || "Choose your barangay"}
+                        </Text>
+                        {!signupBarangays.isPending && <Ionicons name={signupBarangays.isError ? "reload" : "chevron-down"} size={17} color={colors.muted} />}
+                      </Pressable>
+                      {signupBarangays.isError ? (
+                        <Text accessibilityRole="alert" style={s.error}>The barangay list could not load. Retry before creating your account.</Text>
+                      ) : (
+                        <Text style={s.small}>Saved to your profile and used as the default barangay for new reports.</Text>
+                      )}
+                    </View>
+                    <Text style={s.eyebrow}>ACCOUNT DETAILS</Text>
+                  </View>
                 )}
                 <Field maxLength={254}
                   label="Email address" required hint="Enter the address you used to register."
@@ -739,9 +920,10 @@ function Auth({ initialError }: { initialError: string }) {
                   <Field maxLength={1024}
                     label={
                       mode === "register"
-                        ? "Password (at least 12 characters)"
+                        ? `Password (at least ${MIN_PASSWORD_LENGTH} characters)`
                         : "Password"
                     }
+                    hint={mode === "register" ? "Avoid reusing a password from another account." : undefined}
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry={!showPassword}
@@ -779,11 +961,20 @@ function Auth({ initialError }: { initialError: string }) {
                   disabled={
                     busy ||
                     !email ||
-                    (mode === "register" && (password.length < 12 || name.trim().length < 2))
+                    (mode === "register" && (
+                      password.length < MIN_PASSWORD_LENGTH ||
+                      !!namePartsProblem ||
+                      !!ageProblem ||
+                      !registeredBarangay ||
+                      !!mobileInputError(mobile) ||
+                      signupBarangays.isPending ||
+                      signupBarangays.isError ||
+                      !signupBarangays.data?.some((item) => item.id === registeredBarangay)
+                    ))
                   }
                   loading={busy}
                   onPress={async () => {
-                    const problem = emailInputError(email) || (mode === "register" ? textInputError(name, { min: 2, max: 100, required: true }) : "") || (mode !== "reset" ? passwordInputError(password, mode === "register" ? 12 : 1) : "");
+                    const problem = emailInputError(email) || (mode === "register" ? namePartsProblem || ageProblem || mobileInputError(mobile) || (!registeredBarangay || !signupBarangays.data?.some((item) => item.id === registeredBarangay) ? "Choose your registered barangay before creating an account." : "") : "") || (mode !== "reset" ? passwordInputError(password, mode === "register" ? MIN_PASSWORD_LENGTH : 1) : "");
                     if (problem) { setMessage(problem); setMessageIsError(true); return; }
                     setBusy(true);
                     setMessage("");
@@ -805,7 +996,16 @@ function Auth({ initialError }: { initialError: string }) {
                                 email: email.trim().toLowerCase(),
                                 password,
                                 options: {
-                                  data: { display_name: name.trim() },
+                                  data: {
+                                    registration_type: "resident",
+                                    first_name: firstName.trim(),
+                                    middle_name: middleName.trim() || null,
+                                    last_name: lastName.trim(),
+                                    age: Number(age),
+                                    display_name: fullName,
+                                    phone: normalizePhilippineMobile(mobile) || null,
+                                    barangay_id: registeredBarangay,
+                                  },
                                   emailRedirectTo: redirect(),
                                 },
                               })
@@ -814,20 +1014,22 @@ function Auth({ initialError }: { initialError: string }) {
                                 password,
                               });
                         if (response.error) throw response.error;
-                        if (mode === "register" && !response.data.session)
-                          setMessage(
-                            "Check your email to confirm your account, then sign in.",
-                          );
+                        if (mode === "register" && !response.data.session) {
+                          setMode("verify");
+                          setEmail(email.trim().toLowerCase());
+                          setOtp("");
+                          setResendSeconds(EMAIL_RESEND_INTERVAL_SECONDS);
+                          setMessage(`If this address can receive verification messages, check for a code or confirmation link. Codes expire in ${EMAIL_OTP_EXPIRY_SECONDS / 60} minutes.`);
+                        }
                       }
                     } catch (e) {
-                      setMessage((e as Error).message);
-                      setMessageIsError(true);
+                      setAuthFailure(e, mode === "reset" ? "recovery" : "sign-in");
                     } finally {
                       setBusy(false);
                     }
                   }}
                 />
-                {mode !== "reset" && (providers.data?.google || providers.data?.facebook) && <>
+                {mode === "login" && (providers.data?.google || providers.data?.facebook) && <>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 }}><View style={{ height: 1, flex: 1, backgroundColor: "#e0eaee" }} /><Text style={{ color: colors.muted, fontSize: 10, fontWeight: "700", letterSpacing: 0.8 }}>OR CONTINUE WITH</Text><View style={{ height: 1, flex: 1, backgroundColor: "#e0eaee" }} /></View>
                   <View style={{ flexDirection: "row", gap: 9 }}>
                     {([ ["google", "logo-google", "Google", "#4285f4"], ["facebook", "logo-facebook", "Facebook", "#1877f2"] ] as const).filter(([provider]) => providers.data?.[provider]).map(([provider, icon, title, tint]) => <Pressable key={provider} accessibilityRole="button" accessibilityLabel={`Continue with ${title}`} accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={() => void signInSocial(provider)} style={({ pressed }) => [{ flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 13, borderWidth: 1, borderColor: "#dce7ed", backgroundColor: "white", opacity: busy ? 0.55 : pressed ? 0.78 : 1 }]}><Ionicons name={icon} size={18} color={tint} /><Text style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>{title}</Text></Pressable>)}
@@ -855,12 +1057,23 @@ function Auth({ initialError }: { initialError: string }) {
                 setup.
               </Text>
             )}
-            {message && (
+            {!!message && (
               <Text accessibilityRole="alert" style={messageIsError ? s.error : s.body}>
                 {message}
               </Text>
             )}
           </View>
+          <SelectionSheet
+            visible={barangayPickerOpen}
+            onClose={() => setBarangayPickerOpen(false)}
+            title="Choose your barangay"
+            subtitle="This becomes the barangay saved to your resident profile and used for new reports."
+            searchPlaceholder="Search barangay"
+            confirmLabel="Use this barangay"
+            items={(signupBarangays.data || []).map((item) => ({ id: item.id, name: item.name, icon: "location-outline" as const, tone: { background: colors.brandSoft, foreground: colors.brand } }))}
+            value={registeredBarangay}
+            onConfirm={setRegisteredBarangay}
+          />
           <Text style={[s.small, s.authFoot]}>
             Not an emergency service. Your precise report location and
             photographs are protected.
@@ -879,7 +1092,7 @@ function PasswordChange({ onDone }: { onDone?: () => void }) {
   return (
     <View style={s.card}>
       <Field maxLength={1024}
-        label="New password" hint="Use at least 12 characters."
+        label="New password" hint={`Use at least ${MIN_PASSWORD_LENGTH} characters.`}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -893,7 +1106,7 @@ function PasswordChange({ onDone }: { onDone?: () => void }) {
       />
       <Button
         title={busy ? "Updating…" : "Update password"}
-        disabled={busy || !!passwordInputError(password, 12) || password !== confirm}
+        disabled={busy || !!passwordInputError(password, MIN_PASSWORD_LENGTH) || password !== confirm}
         onPress={async () => {
           setBusy(true);
           setMessage("");
@@ -905,7 +1118,9 @@ function PasswordChange({ onDone }: { onDone?: () => void }) {
             setConfirm("");
             onDone?.();
           } catch (error) {
-            setMessage((error as Error).message || "Could not update your password. Please try again.");
+            setMessage(error instanceof Error && error.message.toLowerCase().includes("rate limit")
+              ? "Too many attempts. Wait a few minutes before trying again."
+              : "We could not update your password. Check the requirements and try again.");
           } finally { setBusy(false); }
         }}
       />
@@ -922,7 +1137,11 @@ function ProfileForm({
   barangays: Lookup[];
   onNavigate: (destination: "Home" | "Community", communityTab?: "consultations" | "meetings") => void;
 }) {
-  const [name, setName] = useState(p.display_name),
+  const [firstName, setFirstName] = useState(p.first_name || ""),
+    [middleName, setMiddleName] = useState(p.middle_name || ""),
+    [lastName, setLastName] = useState(p.last_name || ""),
+    [age, setAge] = useState(p.age == null ? "" : String(p.age)),
+    [phone, setPhone] = useState(p.phone || ""),
     [barangay, setBarangay] = useState(p.barangay_id || ""),
     [notifications, setNotifications] = useState(p.notifications_enabled),
     [message, setMessage] = useState(""),
@@ -964,7 +1183,12 @@ function ProfileForm({
   const totals = activity.data?.[0];
   const userEmail = auth.data?.email || "Not available";
   const homeBarangay = barangays.find((item) => item.id === barangay)?.name || "Not set";
-  const initials = name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toLocaleUpperCase()).join("") || "R";
+  const storedFullName = residentDisplayName(p.first_name || "", p.middle_name || "", p.last_name || "") || p.display_name;
+  const initials = storedFullName.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toLocaleUpperCase()).join("") || "R";
+  const hasNameParts = !!(p.first_name || p.middle_name || p.last_name || firstName.trim() || middleName.trim() || lastName.trim());
+  const namePartsProblem = hasNameParts ? residentNamePartsError(firstName, middleName, lastName) : "";
+  const fullNameTooLong = residentDisplayName(firstName, middleName, lastName).length > 100;
+  const ageProblem = age.trim() ? residentAgeError(age) : "";
   const version = (require("../app.json") as { expo: { version: string } }).expo.version;
 
   async function changePhoto(source: "gallery" | "camera") {
@@ -1021,14 +1245,24 @@ function ProfileForm({
   }
 
   async function saveProfile() {
-    const problem = textInputError(name, { min: 2, max: 100, required: true });
-    if (problem) { setMessage(problem); return; }
-    const displayName = name.trim();
-    if (displayName.length < 2) { setMessage("Enter a display name with at least 2 characters."); return; }
+    if (namePartsProblem) { setMessage(namePartsProblem); return; }
+    if (ageProblem) { setMessage(ageProblem); return; }
+    const phoneProblem = mobileInputError(phone);
+    if (phoneProblem) { setMessage(phoneProblem); return; }
+    const displayName = hasNameParts ? residentDisplayName(firstName, middleName, lastName) : p.display_name;
+    const nextAge = age.trim() ? Number(age) : p.age ?? null;
     if (writeLock.current) return;
-    const changes: Partial<Pick<Profile, "display_name" | "barangay_id">> = {};
+    const normalizedPhone = normalizePhilippineMobile(phone) || null;
+    const changes: Partial<Pick<Profile, "display_name" | "first_name" | "middle_name" | "last_name" | "age" | "barangay_id" | "phone">> = {};
     if (displayName !== p.display_name) changes.display_name = displayName;
+    if (hasNameParts) {
+      if (firstName.trim() !== (p.first_name || "")) changes.first_name = firstName.trim();
+      if ((middleName.trim() || null) !== (p.middle_name || null)) changes.middle_name = middleName.trim() || null;
+      if (lastName.trim() !== (p.last_name || "")) changes.last_name = lastName.trim();
+    }
+    if (nextAge !== (p.age ?? null)) changes.age = nextAge;
     if ((barangay || null) !== p.barangay_id) changes.barangay_id = barangay || null;
+    if (normalizedPhone !== (p.phone || null)) changes.phone = normalizedPhone;
     if (!Object.keys(changes).length) { setEditing(false); setMessage("Your profile is already up to date."); return; }
     writeLock.current = true;
     setBusy(true);
@@ -1079,7 +1313,7 @@ function ProfileForm({
     { key: "meetings", title: "Meeting requests", count: totals?.meeting_requests, icon: "calendar-outline" as const, tone: { background: "#e5f6f2", foreground: colors.brand }, action: () => onNavigate("Community", "meetings") },
   ];
   const privacyItems = [
-    { key: "profile", title: "Profile visibility", icon: "person-circle-outline" as const, body: "Your display name and home barangay are account details. Public report views use the report’s approved public information, not your private profile email." },
+    { key: "profile", title: "Profile visibility", icon: "person-circle-outline" as const, body: "Your name, age, mobile number, email, and home barangay are account details visible to you and authorized administrators. Public report views use the report’s approved public information, not your private contact details." },
     { key: "location", title: "Report location privacy", icon: "location-outline" as const, body: "The city receives the precise location you confirm to assess the issue. Public map views use an approximate location." },
     { key: "photos", title: "Photo privacy", icon: "image-outline" as const, body: "Your profile picture is private to your account and is not shown on public reports. Report photos are shared with authorized reviewers under the report’s visibility settings." },
     { key: "data", title: "Account data", icon: "document-text-outline" as const, body: "Your profile, reports, community activity, and meeting requests remain linked to your account so you can track them. Historical report locations are not changed when you update your home barangay." },
@@ -1104,21 +1338,27 @@ function ProfileForm({
       <View style={{ minHeight: 112, flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: 22, backgroundColor: "#073f47", borderWidth: 1, borderColor: "#073f47", overflow: "hidden", shadowColor: "#073f47", shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 3 }}>
         <View pointerEvents="none" style={{ position: "absolute", right: -30, top: -66, width: 190, height: 190, borderRadius: 100, borderWidth: 1, borderColor: "#ffffff20" }} />
         <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Change profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ width: 62, height: 62, borderRadius: 22, backgroundColor: "#dff5ef", alignItems: "center", justifyContent: "center", overflow: "hidden" }, pressed && { opacity: 0.8 }]}>{avatar.data ? <Image source={{ uri: avatar.data }} accessibilityLabel="Your profile photo" resizeMode="cover" style={{ width: 62, height: 62 }} /> : <Text accessibilityLabel={`Avatar initials ${initials}`} style={{ color: colors.brand, fontSize: 23, fontWeight: "800" }}>{initials}</Text>}{photoBusy && <View style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center", backgroundColor: "#071b2770" }}><Ionicons name="hourglass-outline" size={19} color="white" /></View>}</Pressable>
-        <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Text style={{ color: "#70d8ca", fontSize: 10, fontWeight: "800", letterSpacing: 1.35 }}>ILIGAN CONNECT ACCOUNT</Text><Text numberOfLines={2} style={{ color: "white", fontSize: 18, lineHeight: 22, fontWeight: "800" }}>{name.trim() || "Resident"}</Text><Text numberOfLines={1} style={{ color: "#d2e5e5", fontSize: 12 }}>{label(p.role)} · Iligan City</Text></View>
+        <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Text style={{ color: "#70d8ca", fontSize: 10, fontWeight: "800", letterSpacing: 1.35 }}>ILIGAN CONNECT ACCOUNT</Text><Text numberOfLines={2} style={{ color: "white", fontSize: 18, lineHeight: 22, fontWeight: "800" }}>{p.display_name.trim() || "Resident"}</Text><Text numberOfLines={1} style={{ color: "#d2e5e5", fontSize: 12 }}>{label(p.role)} · Iligan City</Text></View>
         <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Edit profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, borderRadius: 12, borderWidth: 1, borderColor: "#44cbb7", opacity: photoBusy ? 0.6 : pressed ? 0.75 : 1 }]}><Ionicons name="camera-outline" size={17} color="#b8fff3" /><Text numberOfLines={1} style={{ color: "white", fontSize: 11, fontWeight: "700" }}>{photoBusy ? "Saving" : "Edit photo"}</Text></Pressable>
       </View>
 
       {message && <View accessibilityRole="alert" style={{ flexDirection: "row", gap: 7, alignItems: "flex-start", padding: 10, borderRadius: 13, backgroundColor: /updated|removed|up to date|are on|are off/i.test(message) ? "#eff9f5" : "#fff2f0" }}><Ionicons name={/updated|removed|up to date|are on|are off/i.test(message) ? "checkmark-circle-outline" : "alert-circle-outline"} size={18} color={/updated|removed|up to date|are on|are off/i.test(message) ? colors.brand : "#a43d35"} /><Text style={{ flex: 1, color: /updated|removed|up to date|are on|are off/i.test(message) ? colors.brand : "#a43d35", fontSize: 12, lineHeight: 17 }}>{message}</Text></View>}
 
       <View style={{ gap: 8 }}>
-        <View style={{ minHeight: 38, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="person-circle-outline" size={21} color={colors.brand} /><Text style={[s.title, { flex: 1, marginBottom: 0 }]}>Personal details</Text><Pressable accessibilityRole="button" accessibilityLabel={editing ? "Cancel profile editing" : "Edit personal details"} onPress={() => { setMessage(""); if (editing) { setName(p.display_name); setBarangay(p.barangay_id || ""); } setEditing(!editing); }} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 12, borderRadius: 13, backgroundColor: "#e8f7f3" }, pressed && { opacity: 0.75 }]}><Ionicons name={editing ? "close-outline" : "create-outline"} size={17} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>{editing ? "Cancel" : "Edit"}</Text></Pressable></View>
+        <View style={{ minHeight: 38, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="person-circle-outline" size={21} color={colors.brand} /><Text style={[s.title, { flex: 1, marginBottom: 0 }]}>Personal details</Text><Pressable accessibilityRole="button" accessibilityLabel={editing ? "Cancel profile editing" : "Edit personal details"} onPress={() => { setMessage(""); if (editing) { setFirstName(p.first_name || ""); setMiddleName(p.middle_name || ""); setLastName(p.last_name || ""); setAge(p.age == null ? "" : String(p.age)); setPhone(p.phone || ""); setBarangay(p.barangay_id || ""); } setEditing(!editing); }} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 12, borderRadius: 13, backgroundColor: "#e8f7f3" }, pressed && { opacity: 0.75 }]}><Ionicons name={editing ? "close-outline" : "create-outline"} size={17} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>{editing ? "Cancel" : "Edit"}</Text></Pressable></View>
         <View style={[s.card, { padding: 12, gap: 0, borderRadius: 18 }]}>
           {editing ? <>
-            <Field label="Display name" required minLength={2} hint="Use 2–100 characters." placeholder="Your name" value={name} onChangeText={setName} maxLength={100} leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
+            <Field label="First name" required minLength={1} hint="Use the name on your official records." placeholder="First name" value={firstName} onChangeText={setFirstName} maxLength={60} autoCapitalize="words" autoComplete="given-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
+            <Field label="Middle name (optional)" hint="Leave blank if you do not use a middle name." placeholder="Middle name" value={middleName} onChangeText={setMiddleName} maxLength={60} autoCapitalize="words" autoComplete="additional-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
+            <Field label="Last name" required minLength={1} error={fullNameTooLong ? "Use no more than 100 characters across all name fields." : undefined} placeholder="Last name" value={lastName} onChangeText={setLastName} maxLength={60} autoCapitalize="words" autoComplete="family-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
+            <Field label="Age" hint="Leave blank to keep the saved age. Only you and authorized city administrators can view it." placeholder="Age" value={age} onChangeText={(value) => setAge(value.slice(0, 3))} error={age ? residentAgeError(age) || undefined : undefined} maxLength={3} keyboardType="number-pad" autoComplete="off" leading={<Ionicons name="calendar-outline" size={19} color={colors.brand} />} />
+            <Field label="Mobile number (optional)" hint="Philippine mobile number, e.g. 0917 123 4567." placeholder="0917 123 4567" value={phone} onChangeText={setPhone} maxLength={24} keyboardType="phone-pad" autoComplete="tel" error={phone ? mobileInputError(phone) || undefined : undefined} leading={<Ionicons name="call-outline" size={19} color={colors.brand} />} />
             <View style={{ gap: 7, marginTop: 3 }}><Text style={s.fieldLabel}>Your barangay</Text><Choices compact title="Choose a barangay" subtitle="Choose your home barangay for relevant local updates." sheetKind="barangay" items={barangays} value={barangay} onChange={setBarangay} leadingIcon="location-outline" /></View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 }}><Button grow secondary title="Cancel" disabled={busy} onPress={() => { setName(p.display_name); setBarangay(p.barangay_id || ""); setEditing(false); setMessage(""); }} /><Button grow title="Save changes" loading={busy} disabled={!!textInputError(name, { min: 2, max: 100, required: true })} onPress={() => void saveProfile()} /></View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 }}><Button grow secondary title="Cancel" disabled={busy} onPress={() => { setFirstName(p.first_name || ""); setMiddleName(p.middle_name || ""); setLastName(p.last_name || ""); setAge(p.age == null ? "" : String(p.age)); setPhone(p.phone || ""); setBarangay(p.barangay_id || ""); setEditing(false); setMessage(""); }} /><Button grow title="Save changes" loading={busy} disabled={!!namePartsProblem || !!ageProblem || !!mobileInputError(phone)} onPress={() => void saveProfile()} /></View>
           </> : <>
-            <ProfileInfoRow icon="person-outline" label="Display name" value={name.trim() || "Not set"} />
+            <ProfileInfoRow icon="person-outline" label="Full name" value={p.display_name.trim() || "Not set"} />
+            <ProfileInfoRow icon="calendar-outline" label="Age" value={p.age == null ? "Not provided" : String(p.age)} />
+            <ProfileInfoRow icon="call-outline" label="Mobile number" value={p.phone || "Not provided"} />
             <ProfileInfoRow icon="location-outline" label="Your barangay" value={homeBarangay} />
             <ProfileInfoRow icon="mail-outline" label="Email address" value={userEmail} last />
           </>}
@@ -1231,7 +1471,7 @@ function PhotoAction({ icon, title, onPress, destructive = false }: { icon: "ima
   return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [{ minHeight: 52, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 13, borderRadius: 14, borderWidth: 1, borderColor: destructive ? "#f1d9d7" : "#dcece9", backgroundColor: destructive ? "#fff8f7" : "#f7fbfa" }, pressed && { opacity: 0.78 }]}><Ionicons name={icon} size={20} color={color} /><Text style={{ color, fontSize: 14, fontWeight: "700" }}>{title}</Text></Pressable>;
 }
 
-function ProfileInfoRow({ icon, label, value, last = false }: { icon: "person-outline" | "location-outline" | "mail-outline"; label: string; value: string; last?: boolean }) {
+function ProfileInfoRow({ icon, label, value, last = false }: { icon: "person-outline" | "calendar-outline" | "location-outline" | "mail-outline" | "call-outline"; label: string; value: string; last?: boolean }) {
   return <View>
     <View style={{ minHeight: 67, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 2, paddingVertical: 8 }}>
       <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name={icon} size={19} color={colors.brand} /></View>

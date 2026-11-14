@@ -9,6 +9,27 @@ type Boundary = {
 export const iliganBarangayBoundaries = boundaries.features as Boundary[];
 export const barangayMapKey = (name: string) => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
+export function barangayCenter(feature: Boundary) {
+  const ring = feature.geometry.coordinates[0] ?? [];
+  if (ring.length < 3) return null;
+  let area2 = 0, longitudeSum = 0, latitudeSum = 0;
+  for (let index = 0; index < ring.length; index++) {
+    const [longitudeA, latitudeA] = ring[index];
+    const [longitudeB, latitudeB] = ring[(index + 1) % ring.length];
+    const cross = longitudeA * latitudeB - longitudeB * latitudeA;
+    area2 += cross;
+    longitudeSum += (longitudeA + longitudeB) * cross;
+    latitudeSum += (latitudeA + latitudeB) * cross;
+  }
+  if (Math.abs(area2) < 1e-12) {
+    return {
+      longitude: ring.reduce((sum, point) => sum + point[0], 0) / ring.length,
+      latitude: ring.reduce((sum, point) => sum + point[1], 0) / ring.length,
+    };
+  }
+  return { longitude: longitudeSum / (3 * area2), latitude: latitudeSum / (3 * area2) };
+}
+
 export function barangayAreaKm2(feature: Boundary) {
   if (feature.properties.area_km2 && feature.properties.area_km2 > 0) return feature.properties.area_km2;
   const radiusKm = 6371.0088;

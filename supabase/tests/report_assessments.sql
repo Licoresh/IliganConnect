@@ -24,6 +24,7 @@ begin
   insert into public.organization_memberships(user_id,organization_id) values(officer,office_id);
   insert into public.organization_access_rules(organization_id,category_id,barangay_id,assignment_only,can_review,can_update,enabled)
     values(office_id,category,area,true,false,true,true);
+  update public.profiles set barangay_id=area where id=resident;
   perform set_config('request.jwt.claim.sub',resident::text,true);
   set local role authenticated;
   perform public.submit_report(v_report_id,category,area,'Rollback impact assessment','A rollback-only fixture for official severity and urgency assessment.',8.22947578,124.23688253,'',problem);
@@ -46,34 +47,42 @@ begin
   perform public.change_report(v_report_id,'under_review','Begin review of the reported impact');
   for bad in select * from (values
     (null::integer,2::integer,'Missing impact rating'::text),(2,null,'Missing urgency rating'),
-    (0,2,'Invalid low impact'),(6,2,'Invalid high impact'),(2,0,'Invalid low urgency'),(2,6,'Invalid high urgency'),
-    (2,2,''),(2,2,repeat(U&'\200B',8)),(2,2,repeat('x',4001)),(2,2,E'Invalid\001control')
+    (0,2,'Invalid low impact'::text),(6,2,'Invalid high impact'),(2,0,'Invalid low urgency'),(2,6,'Invalid high urgency')
   ) f(severity,urgency,note) loop
     denied:=false;
-    begin perform public.record_report_assessment(v_report_id,bad.severity,bad.urgency,bad.note);
-    exception when check_violation then denied:=true;end;
-    assert denied,'Invalid assessment accepted';
+    begin perform public.change_report(v_report_id,'verified','Review note with a valid reason',null,bad.severity,null,null,bad.urgency);
+      exception when check_violation then denied:=true;end;
+    assert denied and exists(select 1 from public.reports where id=v_report_id and status='under_review' and severity is null),
+      'Invalid review assessment changed the report';
   end loop;
+  denied:=false;
+  begin perform public.record_report_assessment(v_report_id,2,4,'Assessment must save with the review decision');
+  exception when check_violation then denied:=true;end;
+  assert denied,'Review assessment was saved separately from its decision';
   denied:=false;
   begin perform public.change_report(v_report_id,'verified','Missing urgency must not verify',null,3);
   exception when check_violation then denied:=true;end;
   assert denied and exists(select 1 from public.reports where id=v_report_id and status='under_review' and severity is null),
     'Failed verification was not atomic';
-  perform public.record_report_assessment(v_report_id,2,4,'  Limited disruption needs prompt coordination.  ');
-  assert exists(select 1 from public.reports where id=v_report_id and severity=2 and urgency=4 and status='under_review'),'Assessment changed status or lost ratings';
-  assert exists(select 1 from public.report_assessments a where a.report_id=v_report_id and actor_id=reviewer and note='Limited disruption needs prompt coordination.'),'History lost actor or rationale';
   perform public.change_report(v_report_id,'verified','Verified physical impact and time sensitivity',null,3,null,null,4);
   assert exists(select 1 from public.reports where id=v_report_id and severity=3 and urgency=4 and status='verified'),'Verification lost assessment';
-  assert (select count(*) from public.report_assessments a where a.report_id=v_report_id)=2,'Verification assessment history missing';
+  assert (select count(*) from public.report_assessments a where a.report_id=v_report_id)=1,'Verification assessment history missing';
+  for bad in select note from (values (''::text),(repeat(U&'\200B',8)),(repeat('x',4001)),(E'Invalid\001control')) f(note) loop
+    denied:=false;
+    begin perform public.record_report_assessment(v_report_id,2,3,bad.note);
+      exception when check_violation then denied:=true;end;
+    assert denied,'Invalid assessment rationale accepted';
+  end loop;
   reset role;
   update public.reports set organization_id=office_id,status='assigned' where id=v_report_id;
   perform set_config('request.jwt.claim.sub',officer::text,true);
   set local role authenticated;
-  assert (select count(*) from public.report_assessments a where a.report_id=v_report_id)=2,'Assigned progress office cannot read scoped history';
+  assert (select count(*) from public.report_assessments a where a.report_id=v_report_id)=1,'Assigned progress office cannot read scoped history';
   denied:=false;
   begin perform public.record_report_assessment(v_report_id,5,5,'Progress-only staff cannot change assessments');
   exception when insufficient_privilege then denied:=true;end;
   assert denied,'Progress permission allowed assessment';
+  perform public.change_report(v_report_id,'scheduled','Office schedule added before work starts.',p_scheduled_at=>now()+interval '1 day');
   denied:=false;
   begin perform public.change_report(v_report_id,'in_progress','Progress call cannot change official urgency',null,null,null,null,5);
   exception when check_violation then denied:=true;end;
@@ -82,7 +91,7 @@ begin
   update public.organization_access_rules set can_review=true where organization_id=office_id;
   set local role authenticated;
   perform public.record_report_assessment(v_report_id,4,3,'Authorized assigned reviewer updated the evidence');
-  assert (select count(*) from public.report_assessments a where a.report_id=v_report_id)=3,'Reassessment replaced history';
+  assert (select count(*) from public.report_assessments a where a.report_id=v_report_id)=2,'Reassessment replaced history';
   foreach actor in array array[resident,stranger,disabled_staff] loop
     perform set_config('request.jwt.claim.sub',actor::text,true);
     assert not exists(select 1 from public.report_assessments a where a.report_id=v_report_id),'History leaked outside staff scope';
@@ -92,7 +101,7 @@ begin
     assert denied,'Unauthorized actor assessed report';
   end loop;
   perform set_config('request.jwt.claim.sub',administrator::text,true);
-  assert (select count(*) from public.report_assessments a where a.report_id=v_report_id)=3,'Admin cannot read staff history';
+  assert (select count(*) from public.report_assessments a where a.report_id=v_report_id)=2,'Admin cannot read staff history';
   denied:=false;
   begin insert into public.report_assessments(report_id,actor_id,severity,urgency,note) values(v_report_id,administrator,1,1,'Direct history insert forbidden');
   exception when insufficient_privilege then denied:=true;end;
@@ -110,9 +119,11 @@ begin
     reset role;
   end loop;
   update public.reports set status='verified',public_visible=true,public_summary='Public rollback assessment summary' where id=v_report_id;
+  perform set_config('request.jwt.claim.sub',resident::text,true);
   insert into public.reports(id,resident_id,category_id,barangay_id,title,description,latitude,longitude,problem_type,status,is_demo)
-    values(sample_id,resident,category,area,'Rollback hidden assessment','A rollback-only presentation-cohort visibility fixture.',8.22947578,124.23688253,problem,'under_review',true);
+    values(sample_id,resident,category,area,'Rollback hidden assessment','A rollback-only presentation-cohort visibility fixture.',8.22947578,124.23688253,problem,'verified',true);
   update public.analytics_settings set include_samples=true;
+  perform set_config('request.jwt.claim.sub',administrator::text,true);
   set local role authenticated;
   perform public.record_report_assessment(sample_id,1,1,'Visible presentation report can be assessed');
   reset role;
@@ -129,7 +140,7 @@ begin
   reset role;
   assert not has_function_privilege('anon','public.record_report_assessment(uuid,integer,integer,text)','EXECUTE'),'Anonymous assessment RPC is callable';
   assert not has_function_privilege('anon','private.record_report_assessment(uuid,integer,integer,text)','EXECUTE'),'Anonymous private assessment function is callable';
-  assert (select count(*) from public.report_assessments a where a.report_id=v_report_id)=3,'Denied mutations changed history';
+  assert (select count(*) from public.report_assessments a where a.report_id=v_report_id)=2,'Denied mutations changed history';
   raise notice 'PASS: atomic verification/reassessment, required ratings, append-only history, role/scope/sample privacy and spoof guards';
 end $tests$;
 rollback;

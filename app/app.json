@@ -3,7 +3,7 @@
     "name": "Iligan Connect",
     "slug": "iligan-connect",
     "scheme": "iliganconnect",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "icon": "./assets/iligan-connect-app-icon.png",
     "orientation": "default",
     "userInterfaceStyle": "light",
@@ -32,7 +32,7 @@
     },
     "android": {
       "package": "org.iligan.community",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "foregroundImage": "./assets/iligan-connect-app-icon.png",
         "backgroundColor": "#025F60"

@@ -52,6 +52,8 @@ const Community = memo(CommunityScreen);
 if (Platform.OS === "web") WebBrowser.maybeCompleteAuthSession();
 function formatAuthError(error: unknown, step: "sign-in" | "verification" | "resend" | "recovery" | "password" = "sign-in") {
   const detail = error instanceof Error ? error.message.toLowerCase() : "";
+  if (step === "sign-in" && /invalid login credentials|invalid credentials|email or password/.test(detail)) return "Email or password is incorrect.";
+  if (step === "sign-in" && /email not confirmed|email is not confirmed/.test(detail)) return "Confirm your email address before signing in.";
   if (detail.includes("terms")) return "New resident accounts must be created with email after accepting the current Terms and Conditions. Existing social accounts can still sign in.";
   if (detail.includes("rate limit") || detail.includes("too many requests")) return "Too many attempts. Wait a few minutes before trying again.";
   if (detail.includes("network") || detail.includes("fetch")) return "We could not reach the sign-in service. Check your connection and retry.";
@@ -400,6 +402,12 @@ export default function Home() {
                     barangays={q.data.barangays}
                     onOpenReport={openExploreReport}
                     onMapGestureActiveChange={setExploreMapGestureActive}
+                    onMapPageScroll={(delta) => {
+                      if (tab !== "Explore" || selected) return;
+                      const nextY = Math.max(0, exploreScrollY.current + delta);
+                      exploreScrollY.current = nextY;
+                      scroll.current?.scrollTo({ y: nextY, animated: false });
+                    }}
                     suspendExpandedMap={!!selected && reportReturnTab === "Explore"}
                     includeSamples={q.data.includeSamples}
                   />
@@ -667,6 +675,8 @@ function Auth({ initialError }: { initialError: string }) {
     [barangayPickerOpen, setBarangayPickerOpen] = useState(false),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
+    [confirmPassword, setConfirmPassword] = useState(""),
+    [confirmPasswordTouched, setConfirmPasswordTouched] = useState(false),
     [otp, setOtp] = useState(""),
     [resendSeconds, setResendSeconds] = useState(0),
     [message, setMessage] = useState(initialError),
@@ -718,6 +728,8 @@ function Auth({ initialError }: { initialError: string }) {
     setMessage("");
     setMessageIsError(false);
     setPassword("");
+    setConfirmPassword("");
+    setConfirmPasswordTouched(false);
     setOtp("");
     setResendSeconds(0);
     setShowPassword(false);
@@ -856,7 +868,7 @@ function Auth({ initialError }: { initialError: string }) {
                   <View style={{ gap: 11 }}>
                     <Text style={s.eyebrow}>PERSONAL DETAILS</Text>
                     <Field
-                      label="First name *" required minLength={1} hint="Use your name as it appears on your records."
+                      label="First name" required minLength={1} hint="Use your name as it appears on your records."
                       placeholder="First name"
                       value={firstName}
                       onChangeText={setFirstName}
@@ -874,7 +886,7 @@ function Auth({ initialError }: { initialError: string }) {
                       autoComplete="additional-name"
                     />
                     <Field
-                      label="Last name *" required minLength={1}
+                      label="Last name" required minLength={1}
                       error={fullName.length > 100 ? "Use no more than 100 characters across all name fields." : undefined}
                       placeholder="Last name"
                       value={lastName}
@@ -884,7 +896,7 @@ function Auth({ initialError }: { initialError: string }) {
                       autoComplete="family-name"
                     />
                     <Field
-                      label="Age *" required hint="Enter a whole number from 1 to 120."
+                      label="Age" required hint="Enter a whole number from 1 to 120."
                       placeholder="Age"
                       value={age}
                       onChangeText={(value) => setAge(value.slice(0, 3))}
@@ -948,6 +960,7 @@ function Auth({ initialError }: { initialError: string }) {
                         ? `Password (at least ${MIN_PASSWORD_LENGTH} characters)`
                         : "Password"
                     }
+                    required
                     hint={mode === "register" ? "Avoid reusing a password from another account." : undefined}
                     value={password}
                     onChangeText={setPassword}
@@ -973,6 +986,29 @@ function Auth({ initialError }: { initialError: string }) {
                     }
                   />
                 )}
+                {mode === "register" && <Field
+                  label="Confirm password"
+                  required
+                  hint="Enter the same password again."
+                  error={confirmPasswordTouched && !confirmPassword ? "Confirm your password." : confirmPassword && password !== confirmPassword ? "Passwords do not match." : undefined}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  onBlur={() => setConfirmPasswordTouched(true)}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="new-password"
+                  trailing={
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={showPassword ? "Hide passwords" : "Show passwords"}
+                      accessibilityState={{ selected: showPassword }}
+                      hitSlop={8}
+                      onPress={() => setShowPassword((visible) => !visible)}
+                      style={s.inputAction}
+                    ><Text style={s.inputActionText}>{showPassword ? "Hide" : "Show"}</Text></Pressable>
+                  }
+                />}
                 {mode === "register" && <View style={[s.card, { gap: 10, padding: 13, backgroundColor: "#f8fbfa" }]}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
                     <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="document-text-outline" size={19} color={colors.brand} /></View>
@@ -984,7 +1020,7 @@ function Auth({ initialError }: { initialError: string }) {
                   </Pressable>
                   <Pressable accessibilityRole="checkbox" accessibilityLabel="I have read and agree to the Terms and Conditions" accessibilityState={{ checked: termsAccepted, disabled: !termsRead }} disabled={!termsRead} onPress={() => setTermsAccepted((value) => !value)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, opacity: !termsRead ? 0.55 : pressed ? 0.78 : 1 }]}>
                     <View style={{ width: 23, height: 23, borderRadius: 6, borderWidth: 1.5, borderColor: termsAccepted ? colors.brand : "#9aadae", backgroundColor: termsAccepted ? colors.brand : "white", alignItems: "center", justifyContent: "center" }}>{termsAccepted && <Ionicons name="checkmark" size={16} color="white" />}</View>
-                    <Text style={{ flex: 1, color: colors.brandDark, fontSize: 13, lineHeight: 19 }}>I have read and agree to the Terms and Conditions.</Text>
+                    <Text style={{ flex: 1, color: colors.brandDark, fontSize: 13, lineHeight: 19 }}>I have read and agree to the Terms and Conditions.<Text style={{ color: "#b42318" }}> *</Text></Text>
                   </Pressable>
                   {!termsRead && <Text style={s.small}>Open the terms and scroll to the end to enable agreement.</Text>}
                 </View>}
@@ -1003,6 +1039,7 @@ function Auth({ initialError }: { initialError: string }) {
                     !email ||
                     (mode === "register" && (
                       password.length < MIN_PASSWORD_LENGTH ||
+                      !confirmPassword || password !== confirmPassword ||
                       !!namePartsProblem ||
                       !!ageProblem ||
                       !registeredBarangay ||
@@ -1015,7 +1052,7 @@ function Auth({ initialError }: { initialError: string }) {
                   }
                   loading={busy}
                   onPress={async () => {
-                    const problem = emailInputError(email) || (mode === "register" ? namePartsProblem || ageProblem || mobileInputError(mobile) || (!registeredBarangay || !signupBarangays.data?.some((item) => item.id === registeredBarangay) ? "Choose your registered barangay before creating an account." : "") || (!termsRead || !termsAccepted ? "Read and agree to the Terms and Conditions before creating an account." : "") : "") || (mode !== "reset" ? passwordInputError(password, mode === "register" ? MIN_PASSWORD_LENGTH : 1) : "");
+                    const problem = emailInputError(email) || (mode === "register" ? namePartsProblem || ageProblem || mobileInputError(mobile) || (password !== confirmPassword ? "Passwords do not match." : "") || (!registeredBarangay || !signupBarangays.data?.some((item) => item.id === registeredBarangay) ? "Choose your registered barangay before creating an account." : "") || (!termsRead || !termsAccepted ? "Read and agree to the Terms and Conditions before creating an account." : "") : "") || (mode !== "reset" ? passwordInputError(password, mode === "register" ? MIN_PASSWORD_LENGTH : 1) : "");
                     if (problem) { setMessage(problem); setMessageIsError(true); return; }
                     setBusy(true);
                     setMessage("");
@@ -1057,6 +1094,7 @@ function Auth({ initialError }: { initialError: string }) {
                                 password,
                               });
                         if (response.error) throw response.error;
+                        if (mode === "register") { setPassword(""); setConfirmPassword(""); setConfirmPasswordTouched(false); }
                         if (mode === "register" && !response.data.session) {
                           setMode("verify");
                           setEmail(email.trim().toLowerCase());

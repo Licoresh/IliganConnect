@@ -8,6 +8,7 @@ import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, P
 export { ILIGAN_MAP_BOUNDS };
 export type MapStyle = "map" | "terrain" | "satellite";
 export type MapBounds = typeof ILIGAN_MAP_BOUNDS;
+const MAP_GESTURE_HOLD_MS = 400;
 const EMPTY_POINTS: Point[] = [];
 export type Point = {
   id?: string;
@@ -38,6 +39,7 @@ export type MapProps = {
   height?: number;
   onExpand?: () => void;
   onGestureActiveChange?: (active: boolean) => void;
+  onPageScroll?: (delta: number) => void;
   mapStyle?: MapStyle;
   onMapStyleChange?: (style: MapStyle) => void;
   initialRegion?: Region;
@@ -119,6 +121,10 @@ export default function LocationMap({
 }: MapProps) {
   const map = useRef<MapView>(null);
   const lastBarangayTap = useRef(0);
+  const gestureStart = useRef({ x: 0, y: 0, at: 0 });
+  const gestureLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gestureLocked = useRef(false);
+  const pageScrollGesture = useRef(false);
   const defaultRegion: Region = { latitude: 8.228, longitude: 124.2452, latitudeDelta: 0.12, longitudeDelta: 0.12 };
   const currentRegion = useRef(initialRegion ?? defaultRegion);
   const [zoomLevel, setZoomLevel] = useState(() => mapZoomFromLongitudeDelta(currentRegion.current.longitudeDelta));
@@ -127,6 +133,42 @@ export default function LocationMap({
   const nextBase: MapStyle = base === "map" ? "terrain" : base === "terrain" ? "satellite" : "map";
   const baseName = base === "map" ? "Map" : base === "terrain" ? "Terrain" : "Satellite";
   const choosePoint = (next: Point) => onChoose?.(next);
+  const clearGestureLock = () => {
+    if (gestureLockTimer.current) clearTimeout(gestureLockTimer.current);
+    gestureLockTimer.current = null;
+  };
+  const lockMapGesture = () => {
+    clearGestureLock();
+    if (gestureLocked.current) return;
+    gestureLocked.current = true;
+    onGestureActiveChange?.(true);
+  };
+  const startMapTouch = (event: { nativeEvent: { pageX: number; pageY: number; touches?: unknown[] } }) => {
+    clearGestureLock();
+    gestureLocked.current = false;
+    pageScrollGesture.current = false;
+    gestureStart.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY, at: Date.now() };
+    onGestureActiveChange?.(false);
+    if ((event.nativeEvent.touches?.length ?? 0) > 1) lockMapGesture();
+    else gestureLockTimer.current = setTimeout(lockMapGesture, MAP_GESTURE_HOLD_MS);
+  };
+  const moveMapTouch = (event: { nativeEvent: { pageX: number; pageY: number } }) => {
+    if (gestureLocked.current || pageScrollGesture.current) return;
+    const dx = Math.abs(event.nativeEvent.pageX - gestureStart.current.x);
+    const dy = event.nativeEvent.pageY - gestureStart.current.y;
+    if (Date.now() - gestureStart.current.at < MAP_GESTURE_HOLD_MS && dy > 12 && dy > dx * 1.2) {
+      clearGestureLock();
+      pageScrollGesture.current = true;
+      return;
+    }
+    if (dx > 10 || Math.abs(dy) > 10) lockMapGesture();
+  };
+  const endMapTouch = () => {
+    clearGestureLock();
+    if (gestureLocked.current) onGestureActiveChange?.(false);
+    gestureLocked.current = false;
+    pageScrollGesture.current = false;
+  };
   const pointsKey = useMemo(() => points.map((p) => `${p.id}:${p.latitude}:${p.longitude}`).join("|"), [points]);
   const reportPoints = useMemo(() => points.filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180), [points]);
   const categoryClusters = useMemo(() => zoomBehavior === "barangay-gis" ? clusterReportsByCategory(reportPoints, zoomLevel) : [], [reportPoints, zoomLevel, zoomBehavior]);
@@ -209,9 +251,10 @@ export default function LocationMap({
         zoomEnabled
         pitchEnabled={false}
         rotateEnabled={false}
-        onTouchStart={() => onGestureActiveChange?.(true)}
-        onTouchEnd={() => onGestureActiveChange?.(false)}
-        onTouchCancel={() => onGestureActiveChange?.(false)}
+        onTouchStart={startMapTouch}
+        onTouchMove={moveMapTouch}
+        onTouchEnd={endMapTouch}
+        onTouchCancel={endMapTouch}
         mapType={base === "terrain" ? "terrain" : base === "satellite" ? "satellite" : "standard"}
         initialRegion={point ? { ...point, latitudeDelta: 0.02, longitudeDelta: 0.02 } : currentRegion.current}
         onRegionChangeComplete={(region) => { currentRegion.current = region; setZoomLevel(mapZoomFromLongitudeDelta(region.longitudeDelta)); onViewportChange?.(region); }}

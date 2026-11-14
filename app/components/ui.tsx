@@ -360,16 +360,17 @@ export function Field({
   ...props
 }: TextInputProps & { label: string; leading?: ReactNode; trailing?: ReactNode; hint?: string; minLength?: number; required?: boolean; inputRef?: Ref<TextInput>; error?: string }) {
   const [touched, setTouched] = useState(false);
+  const cleanLabel = label.replace(/\s*\*$/, "");
   const value = String(props.value ?? "");
   const error = externalError || (touched && !props.secureTextEntry ? textInputError(value, { min: minLength, max: props.maxLength, required }) || (value && props.keyboardType === "email-address" ? emailInputError(value) : "") : "");
   return (
     <View style={{ gap: 7 }}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={styles.fieldLabel}>{cleanLabel}{required && <Text style={{ color: "#b42318" }}> *</Text>}</Text>
       <View style={leading || trailing ? [styles.inputFrame, props.multiline && { alignItems: "flex-start" }, !!error && { borderColor: "#a93030" }] : undefined}>
         {leading && <View style={{ paddingLeft: 14, paddingTop: props.multiline ? 15 : 0, alignItems: "center", justifyContent: props.multiline ? "flex-start" : "center" }}>{leading}</View>}
         <TextInput
           ref={inputRef}
-          accessibilityLabel={label}
+          accessibilityLabel={`${cleanLabel}${required ? ", required" : ""}`}
           placeholderTextColor="#596f75"
           style={[
             styles.input,

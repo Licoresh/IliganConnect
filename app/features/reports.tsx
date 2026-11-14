@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { ActivityIndicator, BackHandler, Platform, Text, View, Image, Linking, Pressable, TextInput, Modal, ScrollView, Share, useWindowDimensions } from "react-native";
 import type { Region } from "react-native-maps";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { randomUUID } from "expo-crypto";
@@ -1024,6 +1026,7 @@ export function Explore({
   barangays,
   onOpenReport,
   onMapGestureActiveChange,
+  onMapPageScroll,
   suspendExpandedMap = false,
   includeSamples = false,
 }: {
@@ -1031,10 +1034,12 @@ export function Explore({
   barangays: Lookup[];
   onOpenReport: (report: Report) => void;
   onMapGestureActiveChange?: (active: boolean) => void;
+  onMapPageScroll?: (delta: number) => void;
   suspendExpandedMap?: boolean;
   includeSamples?: boolean;
 }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const safeArea = useSafeAreaInsets();
   const thumbnailWidth = windowWidth < 360 ? 76 : 92;
   const mapHeight = Math.max(330, Math.min(400, Math.round(windowHeight * 0.43)));
   const [category, setCategory] = useState(""),
@@ -1319,6 +1324,7 @@ export function Explore({
             locating={locating}
             onLocate={locateOnMap}
             onGestureActiveChange={onMapGestureActiveChange}
+            onPageScroll={onMapPageScroll}
             selectedPointId={selectedReportId ?? undefined}
             onPointPress={selectMapPoint}
             onExpand={expandMap}
@@ -1366,16 +1372,17 @@ export function Explore({
             <Text style={[s.small, { fontSize: 10 }]}>Boundary source: 2023 PSGC snapshot · indicative mapped boundaries</Text>
             {mapQuery.data?.length === 500 && <Text style={[s.small, { color: colors.muted }]}>Counts use the latest 500 published reports. Narrow the filters for more detail.</Text>}
           </View>}
-          {expandedMap && <Modal visible={!suspendExpandedMap} animationType="slide" onRequestClose={() => setExpandedMap(false)}>
-            <View style={{ flex: 1, backgroundColor: colors.paper, paddingTop: 8, paddingHorizontal: 10, paddingBottom: 10, gap: 8 }}>
+          {expandedMap && <Modal visible={!suspendExpandedMap} animationType="slide" statusBarTranslucent={false} navigationBarTranslucent={false} onRequestClose={() => setExpandedMap(false)}>
+            <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1, backgroundColor: colors.paper, paddingTop: 4, paddingHorizontal: 10, paddingBottom: 6, gap: 8 }}>
+              <StatusBar style="dark" />
               <View style={{ minHeight: 58, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <View><Text style={s.title}>{showBarangayMap ? "Barangay heatmap" : "Explore Iligan"}</Text><Text style={s.small}>{showBarangayMap ? `${mappedBarangayReportCount} mapped reports · tap a barangay` : `${mapPoints.length} map pins · ${mapReports.length - mapPoints.length} manual addresses`}</Text></View>
                 <Pressable accessibilityRole="button" accessibilityLabel="Close expanded map" onPress={() => setExpandedMap(false)} style={{ width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "white" }}><Ionicons name="close" size={23} color={colors.brandDark} /></Pressable>
               </View>
               <View style={{ flex: 1, minHeight: 0 }}>
-                <LocationMap points={mapPoints} height={Math.max(180, windowHeight - 92)} zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"} density={!showBarangayMap && density} showPoints={!showBarangayMap && showPins} onDensityCellPress={setDensityCellCount} selectedCellCount={densityCellCount} userPoint={currentLocation} locating={locating} onLocate={locateOnMap} selectedPointId={selectedReportId ?? undefined} onPointPress={(point) => { selectMapPoint(point); const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }} onGestureActiveChange={onMapGestureActiveChange} mapStyle={mapStyle} onMapStyleChange={setMapStyle} initialRegion={mapViewport.current} onViewportChange={setMapViewport} bounds={ILIGAN_MAP_BOUNDS} showBarangayBoundaries={showBarangayMap} barangayCounts={barangayCounts} barangayMetric={barangayMetric} onBarangayPress={selectBarangayOnMap} onMapBackgroundPress={() => setSelectedChoroplethName("")} selectedBarangayName={selectedChoroplethName} summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand} />
+                <LocationMap points={mapPoints} height={Math.max(180, windowHeight - safeArea.top - safeArea.bottom - 92)} zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"} density={!showBarangayMap && density} showPoints={!showBarangayMap && showPins} onDensityCellPress={setDensityCellCount} selectedCellCount={densityCellCount} userPoint={currentLocation} locating={locating} onLocate={locateOnMap} selectedPointId={selectedReportId ?? undefined} onPointPress={(point) => { selectMapPoint(point); const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }} onGestureActiveChange={onMapGestureActiveChange} mapStyle={mapStyle} onMapStyleChange={setMapStyle} initialRegion={mapViewport.current} onViewportChange={setMapViewport} bounds={ILIGAN_MAP_BOUNDS} showBarangayBoundaries={showBarangayMap} barangayCounts={barangayCounts} barangayMetric={barangayMetric} onBarangayPress={selectBarangayOnMap} onMapBackgroundPress={() => setSelectedChoroplethName("")} selectedBarangayName={selectedChoroplethName} summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand} />
               </View>
-            </View>
+            </SafeAreaView>
           </Modal>}
           {!showBarangayMap && !density && !showPins && <Text style={s.small}>Both layers are off. Turn on Pins or Heat to see reports.</Text>}
           {!showBarangayMap && !mapQuery.isPending && !mapQuery.error && !mapPoints.length && <View style={s.card}><Text style={s.title}>{mapReports.length ? "These reports use manual addresses" : "No reports match these map filters"}</Text><Text style={s.small}>{mapReports.length ? "Their barangay and address details are available in List. No map pins were provided." : "Try Any distance, All statuses, another barangay, or a wider date range."}</Text>{!!mapReports.length && <Button secondary title="View report list" onPress={() => setShowMap(false)} />}</View>}

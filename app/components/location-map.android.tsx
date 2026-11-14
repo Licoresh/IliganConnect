@@ -31,6 +31,7 @@ const pinGlyphs: Record<string, string> = {
   "alert-circle-outline": '<circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/>',
 };
 const pinCss = ".report-pin{position:relative;width:44px;height:52px;filter:drop-shadow(0 2px 3px #10263f99)} .report-pin__body{position:absolute;left:4px;top:0;width:36px;height:48px} .report-pin__glyph{position:absolute;left:13px;top:10px;width:18px;height:18px;fill:none;stroke:white;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}";
+const MAP_GESTURE_HOLD_MS = 400;
 
 function mapHtml(data: Record<string, unknown>) {
   const payload = JSON.stringify(data).replace(/</g, "\\u003c");
@@ -49,13 +50,21 @@ if(d.point)L.marker([d.point.latitude,d.point.longitude],{icon:L.divIcon({html:p
 if(d.userPoint)L.circleMarker([d.userPoint.latitude,d.userPoint.longitude],{radius:8,color:'#fff',weight:3,fillColor:'#1687d8',fillOpacity:1}).addTo(map);
 map.on('click',e=>{if(d.canChoose)send('choose',{latitude:e.latlng.lat,longitude:e.latlng.lng});else send('background')});
 map.on('moveend',()=>{const c=map.getCenter(),b=map.getBounds();send('viewport',{latitude:c.lat,longitude:c.lng,latitudeDelta:b.getNorth()-b.getSouth(),longitudeDelta:b.getEast()-b.getWest()})});
+const container=map.getContainer();let touchStartAt=0,touchStartX=0,touchStartY=0,lastTouchY=0,scrollIntent=false;
+container.addEventListener('touchstart',e=>{if(e.touches.length!==1){touchStartAt=0;return}const t=e.touches[0];touchStartAt=Date.now();touchStartX=t.clientX;touchStartY=lastTouchY=t.clientY;scrollIntent=false},{passive:true});
+container.addEventListener('touchmove',e=>{if(e.touches.length!==1||!touchStartAt)return;const t=e.touches[0],dx=t.clientX-touchStartX,dy=t.clientY-touchStartY;if(!scrollIntent&&Date.now()-touchStartAt<${MAP_GESTURE_HOLD_MS}&&Math.abs(dy)>12&&Math.abs(dy)>Math.abs(dx)*1.2){scrollIntent=true;map.dragging.disable();send('pageScrollStart')}if(scrollIntent){e.preventDefault();const delta=lastTouchY-t.clientY;if(Math.abs(delta)>0)send('pageScroll',{delta})}lastTouchY=t.clientY},{passive:false});
+const endTouch=()=>{if(scrollIntent){map.dragging.enable();send('pageScrollEnd')}touchStartAt=0;scrollIntent=false};container.addEventListener('touchend',endTouch,{passive:true});container.addEventListener('touchcancel',endTouch,{passive:true});
 window.mapCommand=(action,detail)=>{if(action==='zoom')map.zoomIn(detail);if(action==='center')map.setView([detail.latitude,detail.longitude],detail.zoom||15);};
 send('ready');}
 </script></body></html>`;
 }
 
-export default function LocationMap({ point, points = [], onChoose, onPointPress, onDensityCellPress, onLocate, locating, userPoint, density, showPoints = true, height = 300, onExpand, mapStyle, onMapStyleChange, initialRegion, onViewportChange, zoomBehavior = "issue-map", showBarangayBoundaries, barangayCounts = {}, onBarangayPress, onMapBackgroundPress, selectedBarangayName, barangayMetric = "density", summaryColor = colors.brand }: MapProps) {
+export default function LocationMap({ point, points = [], onChoose, onPointPress, onDensityCellPress, onLocate, locating, userPoint, density, showPoints = true, height = 300, onExpand, onGestureActiveChange, onPageScroll, mapStyle, onMapStyleChange, initialRegion, onViewportChange, zoomBehavior = "issue-map", showBarangayBoundaries, barangayCounts = {}, onBarangayPress, onMapBackgroundPress, selectedBarangayName, barangayMetric = "density", summaryColor = colors.brand }: MapProps) {
   const web = useRef<WebView>(null);
+  const gestureStart = useRef({ x: 0, y: 0, at: 0 });
+  const gestureLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gestureLocked = useRef(false);
+  const pageScrollGesture = useRef(false);
   const [style, setStyle] = useState<MapStyle>(mapStyle || "satellite");
   const [failed, setFailed] = useState(false);
   const base = mapStyle || style;
@@ -75,10 +84,52 @@ export default function LocationMap({ point, points = [], onChoose, onPointPress
   const cells = density && zoomBehavior === "issue-map" ? aggregateReportCells(validPoints).map(cell => ({ count: cell.count, color: cell.color, rings: cell.bounds.map(p => [p.latitude, p.longitude]) })) : [];
   const data = { center: point || region, zoom: point ? 16 : Math.max(9, Math.min(18, Math.round(Math.log2(360 / Math.max(region.longitudeDelta, .002))))), tile: tiles[base], credit: credits[base], points: validPoints.map(p => ({ id: p.id, latitude: p.latitude, longitude: p.longitude, color: p.color || categoryToneFor(p.categoryName || "").foreground, glyph: pinGlyphs[categoryIconFor(p.categoryName || "")] || pinGlyphs["alert-circle-outline"], title: `${categoryDisplayName(p.categoryName || "Community report")}: ${p.title || "Reported issue"}` })), point, userPoint, canChoose: !!onChoose, showPoints, gis: zoomBehavior === "barangay-gis", totals, groups, boundaries, cells, summaryColor };
   const html = useMemo(() => mapHtml(data), [JSON.stringify(data)]);
+  const clearGestureLock = () => {
+    if (gestureLockTimer.current) clearTimeout(gestureLockTimer.current);
+    gestureLockTimer.current = null;
+  };
+  const lockMapGesture = () => {
+    clearGestureLock();
+    if (gestureLocked.current) return;
+    gestureLocked.current = true;
+    onGestureActiveChange?.(true);
+  };
+  const startMapTouch = (event: { nativeEvent: { pageX: number; pageY: number; touches?: unknown[] } }) => {
+    clearGestureLock();
+    gestureLocked.current = false;
+    pageScrollGesture.current = false;
+    gestureStart.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY, at: Date.now() };
+    onGestureActiveChange?.(false);
+    if ((event.nativeEvent.touches?.length ?? 0) > 1) lockMapGesture();
+    else gestureLockTimer.current = setTimeout(lockMapGesture, MAP_GESTURE_HOLD_MS);
+  };
+  const moveMapTouch = (event: { nativeEvent: { pageX: number; pageY: number } }) => {
+    if (gestureLocked.current || pageScrollGesture.current) return;
+    const dx = Math.abs(event.nativeEvent.pageX - gestureStart.current.x);
+    const dy = event.nativeEvent.pageY - gestureStart.current.y;
+    if (Date.now() - gestureStart.current.at < MAP_GESTURE_HOLD_MS && dy > 12 && dy > dx * 1.2) {
+      clearGestureLock();
+      pageScrollGesture.current = true;
+      return;
+    }
+    if (dx > 10 || Math.abs(dy) > 10) lockMapGesture();
+  };
+  const endMapTouch = () => {
+    clearGestureLock();
+    if (gestureLocked.current) onGestureActiveChange?.(false);
+    gestureLocked.current = false;
+    pageScrollGesture.current = false;
+  };
+  const startPageScroll = () => {
+    clearGestureLock();
+    if (gestureLocked.current) onGestureActiveChange?.(false);
+    gestureLocked.current = false;
+    pageScrollGesture.current = true;
+  };
   const send = (action: string, detail?: unknown) => web.current?.injectJavaScript(`window.mapCommand&&window.mapCommand(${JSON.stringify(action)},${JSON.stringify(detail ?? null)});true;`);
-  const onMessage = (event: WebViewMessageEvent) => { try { const message = JSON.parse(event.nativeEvent.data); if (message.type === "choose") onChoose?.({ latitude: message.latitude, longitude: message.longitude }); if (message.type === "report") { const p = validPoints.find(x => x.id === message.id); if (p) onPointPress?.(p); } if (message.type === "barangay") onBarangayPress?.(message.name); if (message.type === "background") onMapBackgroundPress?.(); if (message.type === "cell") onDensityCellPress?.(message.count); if (message.type === "viewport") onViewportChange?.(message); } catch { /* Ignore malformed map messages. */ } };
+  const onMessage = (event: WebViewMessageEvent) => { try { const message = JSON.parse(event.nativeEvent.data); if (message.type === "choose") onChoose?.({ latitude: message.latitude, longitude: message.longitude }); if (message.type === "report") { const p = validPoints.find(x => x.id === message.id); if (p) onPointPress?.(p); } if (message.type === "barangay") onBarangayPress?.(message.name); if (message.type === "background") onMapBackgroundPress?.(); if (message.type === "cell") onDensityCellPress?.(message.count); if (message.type === "viewport") onViewportChange?.(message); if (message.type === "pageScrollStart") startPageScroll(); if (message.type === "pageScroll") onPageScroll?.(Number(message.delta) || 0); if (message.type === "pageScrollEnd") endMapTouch(); } catch { /* Ignore malformed map messages. */ } };
   return <View style={{ height, borderRadius: 18, overflow: "hidden", backgroundColor: "#e8f1ee" }}>
-    <WebView ref={web} source={{ html, baseUrl: "https://iliganconnect.local/" }} originWhitelist={["*"]} javaScriptEnabled onMessage={onMessage} onError={() => setFailed(true)} style={{ flex: 1 }} />
+    <WebView ref={web} source={{ html, baseUrl: "https://iliganconnect.local/" }} originWhitelist={["*"]} javaScriptEnabled nestedScrollEnabled scrollEnabled={false} onTouchStart={startMapTouch} onTouchMove={moveMapTouch} onTouchEnd={endMapTouch} onTouchCancel={endMapTouch} onMessage={onMessage} onError={() => setFailed(true)} style={{ flex: 1 }} />
     {failed && <View style={{ position: "absolute", inset: 0, alignItems: "center", justifyContent: "center", padding: 20, backgroundColor: "#e8f1ee" }}><Text style={{ color: colors.brandDark, textAlign: "center" }}>Map could not load. Check your connection and reopen this screen.</Text></View>}
     <View style={{ position: "absolute", top: 12, left: 12, borderRadius: 12, backgroundColor: "white", padding: 4, flexDirection: "row", gap: 2 }}>
       {(["map", "terrain", "satellite"] as const).map(value => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} onPress={() => { setStyle(value); onMapStyleChange?.(value); }} style={{ minHeight: 44, minWidth: 48, paddingHorizontal: 8, alignItems: "center", justifyContent: "center", borderRadius: 9, backgroundColor: base === value ? colors.brand : "white" }}><Text style={{ fontSize: 11, color: base === value ? "white" : colors.brandDark, fontWeight: "700" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text></Pressable>)}

@@ -47,8 +47,11 @@ export default function AppUpdateNotice() {
   return <Modal visible={!!available && available.version !== dismissedVersion} transparent animationType="fade" onRequestClose={dismiss}>
     <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 20, backgroundColor: "#071b27aa" }}>
       <View style={{ width: "100%", maxWidth: 380, padding: 20, gap: 13, borderRadius: 22, backgroundColor: "white", borderWidth: 1, borderColor: colors.line }}>
-        <View style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: colors.brandSoft }}><Ionicons name="download-outline" size={24} color={colors.brand} /></View>
-        <View style={{ gap: 5 }}><Text accessibilityRole="header" style={{ color: colors.brandDark, fontSize: 21, fontWeight: "800" }}>Update available</Text><Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>Iligan Connect v{available?.version} is ready. Download the APK, open it from your phone’s Downloads, and confirm the installation.</Text></View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: colors.brandSoft }}><Ionicons name="download-outline" size={24} color={colors.brand} /></View>
+          <Text accessibilityRole="header" style={{ flex: 1, color: colors.brandDark, fontSize: 21, fontWeight: "800" }}>Update available</Text>
+        </View>
+        <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 19 }}>Iligan Connect v{available?.version} is ready. Download the APK, open it from your phone’s Downloads, and confirm the installation.</Text>
         {openError ? <Text accessibilityRole="alert" style={{ color: "#a43d35", fontSize: 12 }}>{openError}</Text> : null}
         <Pressable accessibilityRole="button" accessibilityLabel="Download Iligan Connect update" onPress={() => void download()} style={({ pressed }) => ({ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 13, backgroundColor: colors.brand, opacity: pressed ? .8 : 1 })}><Ionicons name="open-outline" size={18} color="white" /><Text style={{ color: "white", fontSize: 14, fontWeight: "800" }}>Download update</Text></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Remind me later" onPress={dismiss} style={({ pressed }) => ({ minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 12, opacity: pressed ? .7 : 1 })}><Text style={{ color: colors.brand, fontSize: 13, fontWeight: "700" }}>Later</Text></Pressable>

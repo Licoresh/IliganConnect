@@ -8,7 +8,7 @@ import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, P
 export { ILIGAN_MAP_BOUNDS };
 export type MapStyle = "map" | "terrain" | "satellite";
 export type MapBounds = typeof ILIGAN_MAP_BOUNDS;
-const MAP_GESTURE_HOLD_MS = 400;
+const MAP_GESTURE_THRESHOLD = 12;
 const EMPTY_POINTS: Point[] = [];
 export type Point = {
   id?: string;
@@ -105,6 +105,7 @@ export default function LocationMap({
   height = 300,
   onExpand,
   onGestureActiveChange,
+  onPageScroll,
   mapStyle,
   onMapStyleChange,
   initialRegion,
@@ -121,10 +122,15 @@ export default function LocationMap({
 }: MapProps) {
   const map = useRef<MapView>(null);
   const lastBarangayTap = useRef(0);
-  const gestureStart = useRef({ x: 0, y: 0, at: 0 });
-  const gestureLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gestureStart = useRef({ x: 0, y: 0 });
+  const gestureLastY = useRef(0);
+  const gestureAxis = useRef<"pending" | "page" | "map">("pending");
   const gestureLocked = useRef(false);
-  const pageScrollGesture = useRef(false);
+  const [pageScrollActive, setPageScrollActive] = useState(false);
+  const pageScrollDelta = useRef(0);
+  const pageScrollFrame = useRef<number | null>(null);
+  const onPageScrollRef = useRef(onPageScroll);
+  onPageScrollRef.current = onPageScroll;
   const defaultRegion: Region = { latitude: 8.228, longitude: 124.2452, latitudeDelta: 0.12, longitudeDelta: 0.12 };
   const currentRegion = useRef(initialRegion ?? defaultRegion);
   const [zoomLevel, setZoomLevel] = useState(() => mapZoomFromLongitudeDelta(currentRegion.current.longitudeDelta));
@@ -133,41 +139,73 @@ export default function LocationMap({
   const nextBase: MapStyle = base === "map" ? "terrain" : base === "terrain" ? "satellite" : "map";
   const baseName = base === "map" ? "Map" : base === "terrain" ? "Terrain" : "Satellite";
   const choosePoint = (next: Point) => onChoose?.(next);
-  const clearGestureLock = () => {
-    if (gestureLockTimer.current) clearTimeout(gestureLockTimer.current);
-    gestureLockTimer.current = null;
+  const flushPageScroll = () => {
+    if (pageScrollFrame.current !== null) cancelAnimationFrame(pageScrollFrame.current);
+    pageScrollFrame.current = null;
+    const delta = pageScrollDelta.current;
+    pageScrollDelta.current = 0;
+    if (delta) onPageScrollRef.current?.(delta);
+  };
+  const queuePageScroll = (delta: number) => {
+    pageScrollDelta.current += delta;
+    if (pageScrollFrame.current === null) {
+      pageScrollFrame.current = requestAnimationFrame(() => {
+        pageScrollFrame.current = null;
+        const nextDelta = pageScrollDelta.current;
+        pageScrollDelta.current = 0;
+        if (nextDelta) onPageScrollRef.current?.(nextDelta);
+      });
+    }
   };
   const lockMapGesture = () => {
-    clearGestureLock();
     if (gestureLocked.current) return;
     gestureLocked.current = true;
+    gestureAxis.current = "map";
+    setPageScrollActive(false);
     onGestureActiveChange?.(true);
   };
   const startMapTouch = (event: { nativeEvent: { pageX: number; pageY: number; touches?: unknown[] } }) => {
-    clearGestureLock();
+    flushPageScroll();
     gestureLocked.current = false;
-    pageScrollGesture.current = false;
-    gestureStart.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY, at: Date.now() };
+    gestureAxis.current = "pending";
+    gestureStart.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
+    gestureLastY.current = event.nativeEvent.pageY;
+    setPageScrollActive(false);
     onGestureActiveChange?.(false);
     if ((event.nativeEvent.touches?.length ?? 0) > 1) lockMapGesture();
-    else gestureLockTimer.current = setTimeout(lockMapGesture, MAP_GESTURE_HOLD_MS);
   };
   const moveMapTouch = (event: { nativeEvent: { pageX: number; pageY: number } }) => {
-    if (gestureLocked.current || pageScrollGesture.current) return;
-    const dx = Math.abs(event.nativeEvent.pageX - gestureStart.current.x);
-    const dy = event.nativeEvent.pageY - gestureStart.current.y;
-    if (Date.now() - gestureStart.current.at < MAP_GESTURE_HOLD_MS && dy > 12 && dy > dx * 1.2) {
-      clearGestureLock();
-      pageScrollGesture.current = true;
+    if (gestureAxis.current === "page") {
+      queuePageScroll(gestureLastY.current - event.nativeEvent.pageY);
+      gestureLastY.current = event.nativeEvent.pageY;
       return;
     }
-    if (dx > 10 || Math.abs(dy) > 10) lockMapGesture();
+    if (gestureAxis.current !== "pending") return;
+    const dx = Math.abs(event.nativeEvent.pageX - gestureStart.current.x);
+    const dy = Math.abs(event.nativeEvent.pageY - gestureStart.current.y);
+    if (Math.max(dx, dy) < MAP_GESTURE_THRESHOLD) return;
+    if (onPageScroll && dy > dx * 1.15) {
+      gestureAxis.current = "page";
+      setPageScrollActive(true);
+      queuePageScroll(gestureLastY.current - event.nativeEvent.pageY);
+      gestureLastY.current = event.nativeEvent.pageY;
+      return;
+    }
+    if (dx > dy * 1.15) lockMapGesture();
+    else if (onPageScroll) {
+      gestureAxis.current = "page";
+      setPageScrollActive(true);
+      queuePageScroll(gestureLastY.current - event.nativeEvent.pageY);
+      gestureLastY.current = event.nativeEvent.pageY;
+    } else lockMapGesture();
   };
-  const endMapTouch = () => {
-    clearGestureLock();
+  const endMapTouch = (event?: { nativeEvent?: { touches?: unknown[] } }) => {
+    if ((event?.nativeEvent?.touches?.length ?? 0) > 0) return;
+    flushPageScroll();
+    setPageScrollActive(false);
     if (gestureLocked.current) onGestureActiveChange?.(false);
     gestureLocked.current = false;
-    pageScrollGesture.current = false;
+    gestureAxis.current = "pending";
   };
   const pointsKey = useMemo(() => points.map((p) => `${p.id}:${p.latitude}:${p.longitude}`).join("|"), [points]);
   const reportPoints = useMemo(() => points.filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180), [points]);
@@ -247,7 +285,7 @@ export default function LocationMap({
       <MapView
         ref={map}
         style={{ flex: 1 }}
-        scrollEnabled
+        scrollEnabled={!pageScrollActive}
         zoomEnabled
         pitchEnabled={false}
         rotateEnabled={false}

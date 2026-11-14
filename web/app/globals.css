@@ -700,7 +700,13 @@ meter::-webkit-meter-optimum-value {
 .map-data-popup .maplibregl-popup-close-button:hover { background: var(--paper); color: var(--ink); }
 .map-data-popup .maplibregl-popup-tip { border-top-color: white; border-bottom-color: white; }
 .map-popup-card { display: grid; gap: 8px; width: min(270px,calc(100vw - 80px)); padding: 17px; color: var(--ink); }
+.map-popup-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding-right: 28px; }
 .map-popup-eyebrow { color: var(--brand); font-size: 10px; font-weight: 800; letter-spacing: .09em; }
+.map-popup-drag-handle { display: grid; flex: 0 0 36px; width: 36px; min-height: 36px; place-items: center; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--muted); cursor: grab; touch-action: none; user-select: none; }
+.map-popup-drag-handle:hover,.map-popup-drag-handle.is-dragging { border-color: var(--brand); background: var(--paper); color: var(--brand); }
+.map-popup-drag-handle:active,.map-popup-drag-handle.is-dragging { cursor: grabbing; }
+.map-popup-drag-handle:focus-visible { outline: 3px solid #f5b840; outline-offset: 2px; }
+.map-popup-drag-handle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
 .map-popup-category { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .map-popup-category-icon { display: grid; width: 23px; height: 23px; place-items: center; border-radius: 7px; }
 .map-popup-category-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -3561,6 +3567,9 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-report-id code { min-width: 0; color: #193954; font-size: 12px; overflow-wrap: anywhere; }
 .meeting-form { display: grid; min-width: 0; gap: 12px; margin: 0; }
 .meeting-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.meeting-time-range { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 9px; }
+.meeting-time-separator { padding-bottom: 12px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.meeting-time-hint { grid-column: 1 / -1; margin-top: -2px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .meeting-mode-fieldset { display: grid; min-width: 0; gap: 8px; margin: 0; padding: 0; border: 0; }
 .meeting-mode-fieldset legend { margin-bottom: 2px; padding: 0; color: var(--ink); font-size: 12px; font-weight: 700; }
 .meeting-mode-fieldset legend b { color: #d94752; }
@@ -3641,6 +3650,8 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
   .meeting-section-heading h3 { font-size: 14px; }
   .meeting-section-heading p { font-size: 10px; }
   .meeting-form-grid { grid-template-columns: 1fr; gap: 10px; }
+  .meeting-time-range { gap: 7px; }
+  .meeting-time-separator { padding-bottom: 11px; }
   .meeting-mode-options { gap: 7px; }
   .meeting-mode-option { min-height: 54px; gap: 8px; padding: 8px; }
   .meeting-mode-option strong { font-size: 11px; }

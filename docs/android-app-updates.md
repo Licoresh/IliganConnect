@@ -13,8 +13,8 @@ For each release:
 
    ```json
    {
-     "version": "1.0.4",
-     "downloadUrl": "https://github.com/Licoresh/IliganConnect/releases/download/v1.0.4/Iligan-Connect-Resident.apk"
+     "version": "1.0.7",
+     "downloadUrl": "https://github.com/Licoresh/IliganConnect/releases/download/v1.0.7/Iligan-Connect-Resident.apk"
    }
    ```
 
@@ -22,13 +22,19 @@ The APK checks `https://github.com/Licoresh/IliganConnect/releases/latest/downlo
 
 ## Phone push notifications
 
-The app requests Android notification permission, registers the signed-in resident’s Expo push token, and stores it in `public.device_push_tokens`. Supabase sends a high-priority Expo push when it creates a resident notification. Push is sent only while the resident’s in-app notification preference is on. Android phone permission and the app preference must both be enabled.
+The app requests Android notification permission and sends alerts only when the signed-in resident’s in-app notification preference is on. With Firebase and Expo configured, Supabase sends a high-priority Expo push to the resident’s registered device token.
 
 Before push works in a standalone APK:
 
 1. Sign in to an Expo account and initialize/link this app with `eas init`; set its project UUID as `EXPO_PUBLIC_EAS_PROJECT_ID` for the APK build.
-2. Create the Firebase Android app for package `org.iligan.community`, download its `google-services.json`, and set `expo.android.googleServicesFile` in the Expo config.
+2. Create the Firebase Android app for package `org.iligan.community`, download its `google-services.json`, and set `GOOGLE_SERVICES_JSON` to that file's path when building. `app/app.config.ts` passes it to `expo.android.googleServicesFile`.
 3. Upload the Firebase Cloud Messaging V1 service-account key in Expo/EAS Android credentials. Keep the service-account JSON private and out of Git.
 4. Build and install a new APK, allow Android notifications, and send a test push to a registered device before publishing the release manifest.
 
-The project ID and Firebase credentials are not present in this workspace. The Profile phone-alert switch stores the resident's device preference and automatically registers its token when the project is connected. Until Expo and Firebase are configured, that switch cannot produce remote phone pop-ups; in-app notifications continue to work.
+The Expo project ID and Firebase credentials are not present in this workspace. Until they are configured, the app uses local phone notifications: it checks for updates every 30 seconds while open and schedules an Android background check with WorkManager when the app is not active. Android allows a minimum 15-minute interval, and the system can defer the work based on battery and network conditions. Force-stopping the app prevents background checks until it is opened again. The Profile switch turns on only after Android notification permission is granted; its message says that delivery may be delayed. Once an Expo project ID is bundled, local polling stops and the switch turns on only after a remote push token is registered.
+
+The `resident-phone-alerts` task is defined at module scope and registered only for an active resident with phone permission and notifications enabled. It polls the resident’s RLS-protected notification rows and stores a per-account cursor in secure storage, then schedules at most five new local banners per run. Supabase’s token table and push trigger are already configured; no device token was registered as of 2026-11-15.
+
+## Meeting schedule windows
+
+Staff choose the meeting date, start time, and end time in Philippine time. The database stores both instants in `meetings.starts_at` and `meetings.ends_at`, requires a positive window of at most 12 hours, and backfilled existing schedules to one hour. Resident meeting cards and meeting emails show the full time range. Calendar drafts use the same start and end values.

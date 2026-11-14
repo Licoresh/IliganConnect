@@ -100,7 +100,7 @@ async function readEvent(admin: ReturnType<typeof createClient>, row: OutboxRow,
     const [barangay, report, schedule] = await Promise.all([
       admin.from("barangays").select("name").eq("id", meeting.barangay_id).maybeSingle(),
       meeting.report_id ? admin.from("reports").select("title,is_demo").eq("id", meeting.report_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
-      admin.from("meetings").select("starts_at,venue,venue_type,meet_url").eq("request_id", meeting.id).maybeSingle(),
+      admin.from("meetings").select("starts_at,ends_at,venue,venue_type,meet_url").eq("request_id", meeting.id).maybeSingle(),
     ]);
     if (report.data?.is_demo) return null;
     if (schedule.error) throw new Error("meeting_schedule_lookup_failed");
@@ -113,7 +113,9 @@ async function readEvent(admin: ReturnType<typeof createClient>, row: OutboxRow,
       requestSummary: escapeEmailText(meeting.body, 500),
       status: escapeEmailText(meeting.status, 80),
       reason: escapeEmailText(meeting.decision_reason || "No reason was provided.", 500),
-      meetingTime: schedule.data?.starts_at ? escapeEmailText(new Date(schedule.data.starts_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }), 80) : "To be scheduled",
+      meetingTime: schedule.data?.starts_at && schedule.data.ends_at
+        ? escapeEmailText(`${new Date(schedule.data.starts_at).toLocaleDateString("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" })} · ${new Date(schedule.data.starts_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" })}–${new Date(schedule.data.ends_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" })} Philippine time`, 120)
+        : "To be scheduled",
       venueType: schedule.data?.venue_type === "online" ? "Online (Google Meet)" : "In person",
       venue: escapeEmailText(schedule.data?.venue_type === "online" && schedule.data.meet_url
         ? `Google Meet link: ${schedule.data.meet_url}`

@@ -26,7 +26,8 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as Crypto from "expo-crypto";
 import * as Notifications from "expo-notifications";
-import { getDevicePushPreference, registerDevicePushToken, removeDevicePushTokens, setDevicePushPreference } from "../lib/push-notifications";
+import { syncResidentBackgroundAlerts } from "../lib/background-alerts";
+import { expoProjectId, getDevicePushPreference, hasRegisteredDevicePushToken, registerDevicePushToken, removeDevicePushTokens, setDevicePushPreference } from "../lib/push-notifications";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, result, configured } from "../lib/client";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryIconFor, categoryToneFor, statusToneFor, categoryDisplayName } from "../components/ui";
@@ -122,15 +123,25 @@ export default function Home() {
   const sessionUser = useRef<string | null>(null);
   const scroll = useRef<ScrollView>(null);
   const exploreScrollY = useRef(0);
+  const mainScrollY = useRef(0);
+  const onMapPageScroll = useCallback((delta: number) => {
+    const nextY = Math.max(0, mainScrollY.current + delta);
+    mainScrollY.current = nextY;
+    if (tab === "Explore" && !selected) exploreScrollY.current = nextY;
+    scroll.current?.scrollTo({ y: nextY, animated: false });
+  }, [tab, selected]);
   const openExploreReport = useCallback((report: Report) => {
     setReportReturnTab("Explore");
     setSelected(report);
   }, []);
   useEffect(() => {
     if (reportReturnTab === "Explore" && (selected || tab === "Explore")) {
-      scroll.current?.scrollTo({ y: selected ? 0 : exploreScrollY.current, animated: false });
+      const nextY = selected ? 0 : exploreScrollY.current;
+      mainScrollY.current = nextY;
+      scroll.current?.scrollTo({ y: nextY, animated: false });
       return;
     }
+    mainScrollY.current = 0;
     scroll.current?.scrollTo({ y: 0, animated: false });
   }, [tab, selected?.id, reportReturnTab]);
   useEffect(() => {
@@ -364,7 +375,7 @@ export default function Home() {
           style={Platform.select({ web: { flex: 1, scrollPaddingBottom: 124 } })}
           ref={scroll}
           scrollEnabled={!(tab === "Explore" && !selected && exploreMapGestureActive)}
-          onScroll={(event) => { if (tab === "Explore" && !selected) exploreScrollY.current = event.nativeEvent.contentOffset.y; }}
+          onScroll={(event) => { mainScrollY.current = event.nativeEvent.contentOffset.y; if (tab === "Explore" && !selected) exploreScrollY.current = mainScrollY.current; }}
           scrollEventThrottle={16}
           contentContainerStyle={[s.scroll, tab === "Home" && { gap: 9, paddingTop: 12 }]}
           keyboardShouldPersistTaps="handled"
@@ -402,12 +413,7 @@ export default function Home() {
                     barangays={q.data.barangays}
                     onOpenReport={openExploreReport}
                     onMapGestureActiveChange={setExploreMapGestureActive}
-                    onMapPageScroll={(delta) => {
-                      if (tab !== "Explore" || selected) return;
-                      const nextY = Math.max(0, exploreScrollY.current + delta);
-                      exploreScrollY.current = nextY;
-                      scroll.current?.scrollTo({ y: nextY, animated: false });
-                    }}
+                    onMapPageScroll={onMapPageScroll}
                     suspendExpandedMap={!!selected && reportReturnTab === "Explore"}
                     includeSamples={q.data.includeSamples}
                   />
@@ -419,6 +425,7 @@ export default function Home() {
                     residentId={q.data.profile.id}
                     categoryName={q.data.categories.find((item) => item.id === selected.category_id)?.name ?? "Community report"}
                     barangayName={q.data.barangays.find((item) => item.id === selected.barangay_id)?.name ?? "Iligan City"}
+                    onMapPageScroll={onMapPageScroll}
                     backLabel={reportReturnTab === "Notifications" ? "Back to notifications" : reportReturnTab === "Explore" ? "Back to map" : "Back to reports"}
                     close={() => { setSelected(null); setTab(reportReturnTab); }}
                   />
@@ -430,6 +437,7 @@ export default function Home() {
                     barangays={q.data.barangays}
                     initialCategory={category}
                     initialBarangay={q.data.profile.barangay_id || ""}
+                    onMapPageScroll={onMapPageScroll}
                     onSaved={() => {
                       setTab("Home");
                       setPage(0);
@@ -1272,11 +1280,11 @@ function ProfileForm({
     if (Platform.OS === "web") return;
     let active = true;
     const refresh = () => {
-      void Promise.all([Notifications.getPermissionsAsync(), getDevicePushPreference(p.id)]).then(([permission, preference]) => {
+      void Promise.all([Notifications.getPermissionsAsync(), getDevicePushPreference(p.id), hasRegisteredDevicePushToken(p.id)]).then(([permission, preference, registered]) => {
         if (!active) return;
         setDeviceAlertsAllowed(permission.granted);
         setDeviceAlertsCanAsk(permission.canAskAgain);
-        setPhoneAlertsEnabled(permission.granted && preference !== false);
+        setPhoneAlertsEnabled(permission.granted && preference !== false && (registered || !expoProjectId()));
       }).catch(() => { if (active) { setDeviceAlertsAllowed(false); setPhoneAlertsEnabled(false); } });
     };
     refresh();
@@ -1412,7 +1420,12 @@ function ProfileForm({
     try {
       await result(db!.from("profiles").update({ notifications_enabled: value }).eq("id", p.id));
       setNotifications(value);
-      if (!value) await removeDevicePushTokens(p.id);
+      if (!value) {
+        await setDevicePushPreference(p.id, false);
+        setPhoneAlertsEnabled(false);
+        await removeDevicePushTokens(p.id).catch(() => undefined);
+        await syncResidentBackgroundAlerts(false);
+      }
       else if (deviceAlertsAllowed && phoneAlertsEnabled) void registerDevicePushToken(p.id).catch(() => undefined);
       await qc.invalidateQueries({ queryKey: ["home", p.id] });
       setMessage(value ? "Notifications are on." : "Notifications are off.");
@@ -1428,8 +1441,9 @@ function ProfileForm({
     try {
       if (!value) {
         await setDevicePushPreference(p.id, false);
-        await removeDevicePushTokens(p.id);
         setPhoneAlertsEnabled(false);
+        await removeDevicePushTokens(p.id).catch(() => undefined);
+        await syncResidentBackgroundAlerts(false);
         return;
       }
       let permissionGranted = deviceAlertsAllowed === true;
@@ -1451,10 +1465,21 @@ function ProfileForm({
         return;
       }
       await setDevicePushPreference(p.id, true);
+      const registration = await registerDevicePushToken(p.id);
+      if (registration !== "registered" && registration !== "not-configured") {
+        setMessage("Phone alerts are unavailable. Please try again.");
+        return;
+      }
+      if (!notifications) {
+        await result(db!.from("profiles").update({ notifications_enabled: true }).eq("id", p.id));
+        setNotifications(true);
+        await qc.invalidateQueries({ queryKey: ["home", p.id] });
+      }
       setPhoneAlertsEnabled(true);
-      if (notifications) void registerDevicePushToken(p.id).catch(() => undefined);
+      await syncResidentBackgroundAlerts(registration === "not-configured");
+      if (registration === "not-configured") setMessage("Phone alerts check for updates while the app is closed. Delivery may be delayed.");
     } catch {
-      setMessage("Could not update phone alerts. Please try again.");
+      setMessage("Phone alerts are unavailable. Please try again.");
     } finally { setNotificationBusy(false); }
   }
 

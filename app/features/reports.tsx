@@ -75,6 +75,7 @@ export function ReportReviewCard({
   latitude,
   longitude,
   photo,
+  onMapPageScroll,
 }: {
   category: string;
   problem: string;
@@ -88,6 +89,7 @@ export function ReportReviewCard({
   latitude: number | null;
   longitude: number | null;
   photo?: string | null;
+  onMapPageScroll?: (delta: number) => void;
 }) {
   const tone = categoryToneFor(category);
   return (
@@ -116,7 +118,7 @@ export function ReportReviewCard({
         <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 2 }}><View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="location" size={19} color={colors.brand} /></View><View style={{ flex: 1, gap: 2 }}><Text style={s.fieldLabel}>Issue location</Text><Text style={s.small}>{barangay || "Barangay not selected"} · Iligan City</Text></View><Ionicons name="checkmark-circle" size={20} color={colors.brand} /></View>
         {!!(purok || zone) && <Text style={s.body}>{[purok && `Purok: ${purok}`, zone && `Zone: ${zone}`].filter(Boolean).join(" · ")}</Text>}
         {!!locationAddress && <Text style={s.small}>{locationAddress}</Text>}
-        {hasReportCoordinates({ latitude, longitude }) ? <><LocationMap height={154} point={{ latitude: latitude!, longitude: longitude! }} /><Text style={s.small}>{latitude!.toFixed(5)}, {longitude!.toFixed(5)} · Check that the pin marks the issue.</Text></> : <Text style={s.small}>Manual address · No GPS coordinates shared.</Text>}
+        {hasReportCoordinates({ latitude, longitude }) ? <><LocationMap height={154} point={{ latitude: latitude!, longitude: longitude! }} onPageScroll={onMapPageScroll} /><Text style={s.small}>{latitude!.toFixed(5)}, {longitude!.toFixed(5)} · Check that the pin marks the issue.</Text></> : <Text style={s.small}>Manual address · No GPS coordinates shared.</Text>}
         <Text style={[s.small, { paddingHorizontal: 2 }]}>Specific address details are shared with authorized staff. Published reports show only an approximate location when a pin is available.</Text>
       </View>
     </>
@@ -129,6 +131,7 @@ export function ReportForm({
   onSaved,
   residentProfile,
   onEditProfile,
+  onMapPageScroll,
   initialCategory = "",
   initialBarangay = "",
 }: {
@@ -137,6 +140,7 @@ export function ReportForm({
   onSaved: () => void;
   residentProfile?: Profile;
   onEditProfile?: () => void;
+  onMapPageScroll?: (delta: number) => void;
   initialCategory?: string;
   initialBarangay?: string;
 }) {
@@ -627,7 +631,7 @@ export function ReportForm({
                   <View style={{ flex: 1, gap: 2 }}><Text style={[s.fieldLabel, { fontSize: 14 }]}>Place the issue pin</Text><Text style={s.small}>Tap the map to mark the exact spot.</Text></View>
                   {locationSource === "pin" && <View style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12, backgroundColor: "#e6f7f1" }}><Text style={{ color: colors.brand, fontSize: 10, fontWeight: "800" }}>PIN SET</Text></View>}
                 </View>
-                <LocationMap height={300} point={hasReportCoordinates(values) ? { latitude: values.latitude, longitude: values.longitude } : undefined} onChoose={(point) => { void chooseLocation(point, "pin"); }} bounds={ILIGAN_MAP_BOUNDS} />
+                <LocationMap height={300} point={hasReportCoordinates(values) ? { latitude: values.latitude, longitude: values.longitude } : undefined} onChoose={(point) => { void chooseLocation(point, "pin"); }} onPageScroll={onMapPageScroll} bounds={ILIGAN_MAP_BOUNDS} />
                 <Text style={[s.small, { paddingHorizontal: 4 }]}>Free location check: PSGC (2023) and © OpenStreetMap contributors. Boundaries are indicative; confirm or correct the barangay below.</Text>
               </View>
               <View style={[s.card, { gap: 10, padding: 14 }]}>
@@ -705,6 +709,7 @@ export function ReportForm({
               latitude={values.latitude}
               longitude={values.longitude}
               photo={photo}
+              onMapPageScroll={onMapPageScroll}
             />
           )}
           {step < 2 ? (
@@ -742,6 +747,7 @@ export function ReportTracking({
   backLabel = "Back to reports",
   categoryName = "Community report",
   barangayName = "Not specified",
+  onMapPageScroll,
 }: {
   report: Report;
   residentId: string;
@@ -749,6 +755,7 @@ export function ReportTracking({
   backLabel?: string;
   categoryName?: string;
   barangayName?: string;
+  onMapPageScroll?: (delta: number) => void;
 }) {
   const [message, setMessage] = useState(""),
     [moreOpen, setMoreOpen] = useState(false),
@@ -911,7 +918,7 @@ export function ReportTracking({
           {r.location_source === "gps" && r.location_accuracy != null && <Text style={s.small}>GPS accuracy: about ±{Math.round(r.location_accuracy)} m.</Text>}
           {hasReportCoordinates(r) && <Button secondary title="Open location in Maps" onPress={() => { void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${r.latitude},${r.longitude}`).catch(() => setMessage("Could not open Maps. Use the coordinates shown above.")); }} />}
         </View>
-        {hasReportCoordinates(r) && <LocationMap point={{ latitude: r.latitude, longitude: r.longitude, title: r.title, categoryName, color: categoryTone.foreground, subtitle: `${barangayName === "Not specified" ? "Iligan City" : barangayName} · ${r.resident_id ? "reported location" : "approximate location"}` }} height={Math.max(190, Math.min(320, Math.round(windowWidth * 0.62)))} bounds={ILIGAN_MAP_BOUNDS} />}
+        {hasReportCoordinates(r) && <LocationMap point={{ latitude: r.latitude, longitude: r.longitude, title: r.title, categoryName, color: categoryTone.foreground, subtitle: `${barangayName === "Not specified" ? "Iligan City" : barangayName} · ${r.resident_id ? "reported location" : "approximate location"}` }} height={Math.max(190, Math.min(320, Math.round(windowWidth * 0.62)))} onPageScroll={onMapPageScroll} bounds={ILIGAN_MAP_BOUNDS} />}
         <View style={{ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 13, backgroundColor: "white" }}><View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={19} color={colors.brand} /></View><View style={{ flex: 1, gap: 2 }}><Text style={s.fieldLabel}>Submitted · Philippine time</Text><Text style={s.small}>{new Date(r.created_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" })}</Text></View></View>
       </View>
 
@@ -1380,7 +1387,7 @@ export function Explore({
                 <Pressable accessibilityRole="button" accessibilityLabel="Close expanded map" onPress={() => setExpandedMap(false)} style={{ width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "white" }}><Ionicons name="close" size={23} color={colors.brandDark} /></Pressable>
               </View>
               <View style={{ flex: 1, minHeight: 0 }}>
-                <LocationMap points={mapPoints} height={Math.max(180, windowHeight - safeArea.top - safeArea.bottom - 92)} zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"} density={!showBarangayMap && density} showPoints={!showBarangayMap && showPins} onDensityCellPress={setDensityCellCount} selectedCellCount={densityCellCount} userPoint={currentLocation} locating={locating} onLocate={locateOnMap} selectedPointId={selectedReportId ?? undefined} onPointPress={(point) => { selectMapPoint(point); const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }} onGestureActiveChange={onMapGestureActiveChange} mapStyle={mapStyle} onMapStyleChange={setMapStyle} initialRegion={mapViewport.current} onViewportChange={setMapViewport} bounds={ILIGAN_MAP_BOUNDS} showBarangayBoundaries={showBarangayMap} barangayCounts={barangayCounts} barangayMetric={barangayMetric} onBarangayPress={selectBarangayOnMap} onMapBackgroundPress={() => setSelectedChoroplethName("")} selectedBarangayName={selectedChoroplethName} summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand} />
+                <LocationMap points={mapPoints} height={Math.max(180, windowHeight - safeArea.top - safeArea.bottom - 92)} zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"} density={!showBarangayMap && density} showPoints={!showBarangayMap && showPins} onDensityCellPress={setDensityCellCount} selectedCellCount={densityCellCount} userPoint={currentLocation} locating={locating} onLocate={locateOnMap} selectedPointId={selectedReportId ?? undefined} onPointPress={(point) => { selectMapPoint(point); const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }} mapStyle={mapStyle} onMapStyleChange={setMapStyle} initialRegion={mapViewport.current} onViewportChange={setMapViewport} bounds={ILIGAN_MAP_BOUNDS} showBarangayBoundaries={showBarangayMap} barangayCounts={barangayCounts} barangayMetric={barangayMetric} onBarangayPress={selectBarangayOnMap} onMapBackgroundPress={() => setSelectedChoroplethName("")} selectedBarangayName={selectedChoroplethName} summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand} />
               </View>
             </SafeAreaView>
           </Modal>}

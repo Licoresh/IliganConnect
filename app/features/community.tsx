@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, Image, Keyboard, Linking, Platform, Pressable, Text, TextInput, View, useWindowDimensions } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { textInputError, SHORT_REASON_LIMIT, characterLimitHint, Lookup, label, consultationPhase, normalizeGoogleMeetUrl } from "@community/shared";
+import { textInputError, SHORT_REASON_LIMIT, characterLimitHint, Lookup, label, consultationPhase, formatMeetingTimeRange, normalizeGoogleMeetUrl } from "@community/shared";
 import { db, result } from "../lib/client";
 import { styles as s, Button, Field, Choices, PhotoViewer, AppBackNavigation, colors, categoryIconFor, categoryToneFor } from "../components/ui";
 import { ListSkeleton } from "../components/loading";
@@ -131,8 +131,8 @@ export function Community({
         barangay_id: string; category_id: string | null; report_id: string | null; created_at: string; coordination_status: string;
       }[]>(requests) : [];
       const schedules = requestRows.length ? await result<{
-        request_id: string; starts_at: string; completed: boolean;
-      }[]>(db!.from("meetings").select("request_id,starts_at,completed").in("request_id", requestRows.map((item) => item.id))) : [];
+        request_id: string; starts_at: string; ends_at: string; completed: boolean;
+      }[]>(db!.from("meetings").select("request_id,starts_at,ends_at,completed").in("request_id", requestRows.map((item) => item.id))) : [];
       const invitedOffices = requestRows.length ? await result<{
         request_id: string; status: "pending" | "accepted" | "declined"; organizations: { name: string }[] | null;
       }[]>(db!.from("meeting_request_offices").select("request_id,status,organizations(name)").in("request_id", requestRows.map((item) => item.id))) : [];
@@ -342,7 +342,7 @@ export function Community({
               <Text style={[s.title, { fontSize: 18, lineHeight: 24 }]}>{r.title}</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}><Ionicons name="location-outline" size={15} color={colors.brand} /><Text style={s.small}>{barangays.find((item) => item.id === r.barangay_id)?.name ?? "Iligan City"}{categoryName ? ` · ${categoryName}` : ""}</Text></View>
               <Text style={[s.small, { color: colors.brandDark }]}>{state.detail}</Text>
-              {!!r.schedule && <View style={{ flexDirection: "row", alignItems: "center", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f0f8f6" }}><Ionicons name="calendar-outline" size={16} color={colors.brand} /><Text style={[s.small, { flex: 1, color: colors.brandDark, fontWeight: "700" }]}>{new Date(r.schedule.starts_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" })} · Philippine time</Text></View>}
+              {!!r.schedule && <View style={{ flexDirection: "row", alignItems: "center", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f0f8f6" }}><Ionicons name="calendar-outline" size={16} color={colors.brand} /><Text style={[s.small, { flex: 1, color: colors.brandDark, fontWeight: "700" }]}>{formatMeetingTimeRange(r.schedule.starts_at, r.schedule.ends_at)}</Text></View>}
               <Text style={s.body}>{r.body}</Text>
               {!!r.invitations.length && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7 }}><Ionicons name="people-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>Office replies: {acceptedInvitations} accepted · {waitingInvitations} awaiting · {declinedInvitations} declined</Text></View>}
               {r.decision_reason && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 10, borderRadius: 13, backgroundColor: "#f0f8f6" }}><Ionicons name="document-text-outline" size={17} color={colors.brand} style={{ marginTop: 2 }} /><Text style={[s.small, { flex: 1, color: colors.brandDark }]}><Text style={{ fontWeight: "800" }}>Decision: </Text>{r.decision_reason}</Text></View>}
@@ -700,6 +700,7 @@ function MeetingDetails({ requestId, requestStatus }: { requestId: string; reque
         id: string;
         venue: string;
         starts_at: string;
+        ends_at: string;
         outcome: string;
         completed: boolean;
         meet_url?: string | null;
@@ -759,7 +760,7 @@ function MeetingDetails({ requestId, requestStatus }: { requestId: string; reque
     <View style={{ gap: 10, padding: 12, borderRadius: 16, backgroundColor: "#f0f8f6", borderWidth: 1, borderColor: "#e1efeb" }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}><View style={{ width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#d9f3ed" }}><Ionicons name="calendar-outline" size={19} color={colors.brand} /></View><Text style={[s.eyebrow, { flex: 1, marginBottom: 0 }]}>{q.data.meeting.completed ? "MEETING COMPLETED" : "MEETING SCHEDULED"}</Text></View>
       <Text style={[s.title, { marginLeft: 45 }]}>{q.data.meeting.venue}</Text>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 9, marginLeft: 45 }}><Ionicons name="calendar-outline" size={17} color="#42617f" /><Text style={[s.body, { flex: 1 }]}>{new Date(q.data.meeting.starts_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" })} Philippine time</Text></View>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 9, marginLeft: 45 }}><Ionicons name="calendar-outline" size={17} color="#42617f" /><Text style={[s.body, { flex: 1 }]}>{formatMeetingTimeRange(q.data.meeting.starts_at, q.data.meeting.ends_at)}</Text></View>
       {!!meetUrl && <Pressable accessibilityRole="link" accessibilityLabel="Join the scheduled Google Meet" onPress={() => { void Linking.openURL(meetUrl).catch(() => Alert.alert("Could not open Google Meet", "Check your internet connection and try the link again.")); }} style={({ pressed }) => [{ minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.brand, marginLeft: 45 }, pressed && { opacity: 0.78 }]}><Ionicons name="videocam-outline" size={18} color="white" /><Text style={{ color: "white", fontSize: 13, fontWeight: "800" }}>Join Google Meet</Text></Pressable>}
       {!!participants.length && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, marginLeft: 45 }}><Ionicons name="people-outline" size={17} color="#42617f" style={{ marginTop: 2 }} /><Text style={[s.body, { flex: 1 }]}>{participants.join(" · ")}</Text></View>}
       {!!q.data.meeting.outcome && <View style={{ borderTopWidth: 1, borderTopColor: "#d8e8e4", paddingTop: 10, gap: 4 }}><Text style={[s.eyebrow, { fontSize: 10, letterSpacing: 1 }]}>MEETING OUTCOME</Text><Text style={s.body}>{q.data.meeting.outcome}</Text></View>}

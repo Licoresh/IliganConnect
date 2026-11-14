@@ -79,7 +79,7 @@ All rows below passed actual Supabase Auth and API tests. “Heatmap” means it
 | Pending and disabled staff | No administrative access | Auth succeeds; workspace denied | No private records/counts | Direct report, map and community requests denied |
 | Resident | Resident ownership/public projection | Auth succeeds; workspace denied | No administrative map records | Administrative role changes denied |
 
-These are labelled synthetic access profiles, not verified government arrangements. Credentials are in local gitignored `.env.demo.json` and `.env.rbac-demo.json`. Do not ship or publish those files. For a fresh disposable project, run `scripts/prepare-rbac-demo.mjs`, execute its generated `.env.rbac-demo.sql` through a trusted database connection, then apply `supabase/rbac-demo.sql`. Do not provision demo accounts into an operational deployment.
+These are labelled synthetic access profiles, not verified government arrangements. Credentials are in local gitignored `.env.demo.json` and `.env.rbac-demo.json`. RBAC passwords are randomly generated; any human-readable `*.password` values in an old account list are placeholders. The addresses use `.example.invalid`, so they cannot receive password-reset or notification emails. Do not ship or publish the credential files. For a fresh disposable project, run `scripts/prepare-rbac-demo.mjs`, execute its generated `.env.rbac-demo.sql` through a trusted database connection, then apply `supabase/rbac-demo.sql`. Do not provision demo accounts into an operational deployment.
 
 ## Verification and limitations
 

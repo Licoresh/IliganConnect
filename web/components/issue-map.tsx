@@ -56,6 +56,95 @@ function boundsForBoundary(feature: { geometry: { coordinates: number[][][] } })
   ];
 }
 
+function createPopupHeader(labelText: string) {
+  const header = document.createElement("div");
+  header.className = "map-popup-header";
+  const eyebrow = document.createElement("span");
+  eyebrow.className = "map-popup-eyebrow";
+  eyebrow.textContent = labelText;
+  const handle = document.createElement("button");
+  handle.className = "map-popup-drag-handle";
+  handle.type = "button";
+  handle.setAttribute("aria-label", "Move map popup");
+  handle.title = "Drag to move · use arrow keys";
+  handle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h.01M12 5h.01M16 5h.01M8 12h.01M12 12h.01M16 12h.01M8 19h.01M12 19h.01M16 19h.01"/></svg>';
+  header.append(eyebrow, handle);
+  return { header, handle };
+}
+
+function enablePopupDragging(map: maplibregl.Map, popup: maplibregl.Popup, handle: HTMLButtonElement) {
+  let drag: { pointerId: number; x: number; y: number; origin: { x: number; y: number } } | null = null;
+  let restoreMapPan = false;
+  const moveTo = (x: number, y: number) => {
+    const bounds = map.getContainer().getBoundingClientRect();
+    const edgeX = Math.min(8, bounds.width / 2);
+    const edgeY = Math.min(8, bounds.height / 2);
+    popup.setLngLat(map.unproject([
+      Math.max(edgeX, Math.min(bounds.width - edgeX, x)),
+      Math.max(edgeY, Math.min(bounds.height - edgeY, y)),
+    ]));
+  };
+  const finish = () => {
+    if (!drag) return;
+    drag = null;
+    handle.classList.remove("is-dragging");
+    if (restoreMapPan && !map.dragPan.isEnabled()) map.dragPan.enable();
+  };
+  handle.addEventListener("pointerdown", (event) => {
+    if (!event.isPrimary || event.button !== 0) return;
+    const location = popup.getLngLat();
+    if (!location) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const origin = map.project(location);
+    drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, origin };
+    restoreMapPan = map.dragPan.isEnabled();
+    if (restoreMapPan) map.dragPan.disable();
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add("is-dragging");
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    moveTo(drag.origin.x + event.clientX - drag.x, drag.origin.y + event.clientY - drag.y);
+  });
+  handle.addEventListener("pointerup", (event) => {
+    if (drag?.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    finish();
+  });
+  handle.addEventListener("pointercancel", finish);
+  handle.addEventListener("lostpointercapture", finish);
+  handle.addEventListener("keydown", (event) => {
+    const delta = event.shiftKey ? 24 : 12;
+    const directions: Record<string, [number, number]> = {
+      ArrowLeft: [-delta, 0],
+      ArrowRight: [delta, 0],
+      ArrowUp: [0, -delta],
+      ArrowDown: [0, delta],
+    };
+    const direction = directions[event.key];
+    const location = popup.getLngLat();
+    if (!direction || !location) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const point = map.project(location);
+    moveTo(point.x + direction[0], point.y + direction[1]);
+  });
+  popup.on("close", finish);
+}
+
+function createDraggableMapPopup(map: maplibregl.Map, location: maplibregl.LngLatLike, card: HTMLElement, handle: HTMLButtonElement) {
+  const popup = new maplibregl.Popup({ closeButton: true, offset: 12, maxWidth: "300px", className: "map-data-popup" })
+    .setLngLat(location)
+    .setDOMContent(card)
+    .addTo(map);
+  enablePopupDragging(map, popup, handle);
+  return popup;
+}
+
 export default function IssueMap({
   refs,
   initialBarangay = "",
@@ -655,9 +744,7 @@ export default function IssueMap({
         const density = Number(feature?.properties?.density ?? 0);
         const card = document.createElement("article");
         card.className = "map-popup-card";
-        const eyebrow = document.createElement("span");
-        eyebrow.className = "map-popup-eyebrow";
-        eyebrow.textContent = "BARANGAY REPORT SUMMARY";
+        const { header, handle } = createPopupHeader("BARANGAY REPORT SUMMARY");
         const title = document.createElement("strong");
         title.className = "map-popup-title";
         title.textContent = name;
@@ -678,11 +765,8 @@ export default function IssueMap({
             reportListHeading.current?.focus({ preventScroll: true });
           });
         });
-        card.append(eyebrow, title, note, button);
-        const popup = new maplibregl.Popup({ closeButton: true, offset: 12, maxWidth: "300px", className: "map-data-popup" })
-          .setLngLat(event.lngLat)
-          .setDOMContent(card)
-          .addTo(m);
+        card.append(header, title, note, button);
+        const popup = createDraggableMapPopup(m, event.lngLat, card, handle);
         barangayPopup.current = popup;
         popup.on("close", () => {
           if (barangayPopup.current === popup) barangayPopup.current = null;
@@ -702,17 +786,15 @@ export default function IssueMap({
         const count = Number(feature.properties?.count);
         const card = document.createElement("article");
         card.className = "map-popup-card";
-        const eyebrow = document.createElement("span");
-        eyebrow.className = "map-popup-eyebrow";
-        eyebrow.textContent = "HOTSPOT · 250 M CELL";
+        const { header, handle } = createPopupHeader("HOTSPOT · 250 M CELL");
         const title = document.createElement("strong");
         title.className = "map-popup-title";
         title.textContent = `${count} ${count === 1 ? "matching report" : "matching reports"}`;
         const note = document.createElement("p");
         note.className = "map-popup-note";
         note.textContent = "Count reflects the filters and reports loaded in this map view.";
-        card.append(eyebrow, title, note);
-        new maplibregl.Popup({ closeButton: true, offset: 12, maxWidth: "300px", className: "map-data-popup" }).setLngLat(event.lngLat).setDOMContent(card).addTo(m);
+        card.append(header, title, note);
+        createDraggableMapPopup(m, event.lngLat, card, handle);
       });
       m.addLayer(markersReady ? {
         id: "points",
@@ -742,9 +824,7 @@ export default function IssueMap({
         if (!f || f.geometry.type !== "Point") return;
         const node = document.createElement("article");
         node.className = "map-popup-card";
-        const eyebrow = document.createElement("span");
-        eyebrow.className = "map-popup-eyebrow";
-        eyebrow.textContent = "COMMUNITY REPORT";
+        const { header, handle } = createPopupHeader("COMMUNITY REPORT");
         const category = reportCategoryPresentation(String(f.properties.category_name || "Other"));
         const categoryLabel = document.createElement("span");
         categoryLabel.className = "map-popup-category";
@@ -769,11 +849,8 @@ export default function IssueMap({
         button.addEventListener("click", () =>
           setSelectedId(String(f.properties.id)),
         );
-        node.append(eyebrow, categoryLabel, title, status, button);
-        new maplibregl.Popup({ closeButton: true, offset: 12, maxWidth: "300px", className: "map-data-popup" })
-          .setLngLat(f.geometry.coordinates as [number, number])
-          .setDOMContent(node)
-          .addTo(m);
+        node.append(header, categoryLabel, title, status, button);
+        createDraggableMapPopup(m, f.geometry.coordinates as [number, number], node, handle);
       });
       m.on("mouseenter", "points", () => { m.getCanvas().style.cursor = "pointer"; });
       m.on("mousemove", "points", (e) => {

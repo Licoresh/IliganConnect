@@ -5,6 +5,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   slug: "iligan-connect",
   android: {
     ...config.android,
+    ...(process.env.GOOGLE_SERVICES_JSON
+      ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON }
+      : {}),
     config: {
       ...config.android?.config,
       ...(process.env.GOOGLE_MAPS_ANDROID_API_KEY

@@ -16,10 +16,31 @@ export function meetingDateTimeInput(value?: string | Date | null) {
   return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
 }
 
+export function meetingDateInput(value?: string | Date | null) {
+  return meetingDateTimeInput(value).slice(0, 10);
+}
+
+export function meetingTimeInput(value?: string | Date | null) {
+  return meetingDateTimeInput(value).slice(11, 16);
+}
+
 export function parseManilaDateTimeInput(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return null;
   const date = new Date(`${value}:00+08:00`);
   return Number.isFinite(date.getTime()) && meetingDateTimeInput(date) === value ? date : null;
+}
+
+export function formatMeetingTimeRange(startsAt: string | Date, endsAt: string | Date) {
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return "Schedule unavailable";
+  const date = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" });
+  const time = new Intl.DateTimeFormat("en-PH", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" });
+  const startDate = meetingDateInput(start);
+  const endDate = meetingDateInput(end);
+  return startDate === endDate
+    ? `${date.format(start)} · ${time.format(start)}–${time.format(end)} Philippine time`
+    : `${date.format(start)} ${time.format(start)} – ${date.format(end)} ${time.format(end)} Philippine time`;
 }
 
 export function normalizeGoogleMeetUrl(value: string) {
@@ -40,17 +61,19 @@ export function googleCalendarDraftUrl({
   details,
   venue,
   startsAt,
+  endsAt,
   meetUrl,
 }: {
   title: string;
   details: string;
   venue: string;
   startsAt: string | Date;
+  endsAt: string | Date;
   meetUrl?: string | null;
 }) {
   const start = new Date(startsAt);
-  if (!Number.isFinite(start.getTime())) return null;
-  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  const end = new Date(endsAt);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return null;
   const calendarTime = (date: Date) => date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const description = [details.trim(), meetUrl ? `Google Meet: ${meetUrl}` : "Add Google Meet in Calendar, save the event, then paste its link into Iligan Connect."].filter(Boolean).join("\n\n");
   const params = new URLSearchParams({

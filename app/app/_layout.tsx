@@ -6,7 +6,9 @@ import { AppState, Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import { db } from "../lib/client";
 import AppUpdateNotice from "../components/app-update";
-import { getDevicePushPreference, registerDevicePushToken, removeDevicePushTokens } from "../lib/push-notifications";
+import "../lib/background-alerts";
+import { expoProjectId, getDevicePushPreference, pollResidentAlerts, registerDevicePushToken, removeDevicePushTokens } from "../lib/push-notifications";
+import { syncResidentBackgroundAlerts } from "../lib/background-alerts";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -70,6 +72,43 @@ function ResidentPushRegistration() {
   }, []);
   return null;
 }
+
+function ResidentForegroundAlerts() {
+  useEffect(() => {
+    if (Platform.OS === "web" || !db) return;
+    const client = db;
+    let stopped = false;
+    let polling = false;
+    let taskEnabled: boolean | null = null;
+
+    const poll = async () => {
+      if (stopped || polling || AppState.currentState !== "active") return;
+      polling = true;
+      try {
+        const enabled = await pollResidentAlerts();
+        const shouldRunBackground = enabled && !expoProjectId();
+        if (shouldRunBackground !== taskEnabled) {
+          await syncResidentBackgroundAlerts(shouldRunBackground);
+          taskEnabled = shouldRunBackground;
+        }
+      } catch {
+        // Foreground alerts retry on the next poll; they never block the app.
+      } finally {
+        polling = false;
+      }
+    };
+    if (Platform.OS === "android") void Notifications.setNotificationChannelAsync("community-alerts", { name: "Community alerts", importance: Notifications.AndroidImportance.HIGH, sound: "default" });
+    void poll();
+    const interval = setInterval(() => void poll(), 30000);
+    const foreground = AppState.addEventListener("change", state => { if (state === "active") void poll(); });
+    const { data: { subscription } } = client.auth.onAuthStateChange(() => {
+      taskEnabled = null;
+      setTimeout(() => { if (!stopped) void poll(); }, 0);
+    });
+    return () => { stopped = true; clearInterval(interval); foreground.remove(); subscription.unsubscribe(); void syncResidentBackgroundAlerts(false); };
+  }, []);
+  return null;
+}
 export default function Layout() {
   const [client] = useState(
     () =>
@@ -98,6 +137,7 @@ export default function Layout() {
       <QueryClientProvider client={client}>
         <Stack screenOptions={{ headerShown: false }} />
         <ResidentPushRegistration />
+        <ResidentForegroundAlerts />
         <AppUpdateNotice />
       </QueryClientProvider>
     </SafeAreaProvider>

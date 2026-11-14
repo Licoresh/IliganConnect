@@ -11,6 +11,8 @@ import {
   BackHandler,
   KeyboardAvoidingView,
   Platform,
+  AppState,
+  Linking as NativeLinking,
   Switch,
   RefreshControl,
   useWindowDimensions,
@@ -23,6 +25,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as Crypto from "expo-crypto";
+import * as Notifications from "expo-notifications";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, result, configured } from "../lib/client";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryIconFor, categoryToneFor, statusToneFor, categoryDisplayName } from "../components/ui";
@@ -1144,6 +1147,8 @@ function ProfileForm({
     [phone, setPhone] = useState(p.phone || ""),
     [barangay, setBarangay] = useState(p.barangay_id || ""),
     [notifications, setNotifications] = useState(p.notifications_enabled),
+    [deviceAlertsAllowed, setDeviceAlertsAllowed] = useState<boolean | null>(null),
+    [deviceAlertsCanAsk, setDeviceAlertsCanAsk] = useState(true),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [notificationBusy, setNotificationBusy] = useState(false),
@@ -1158,6 +1163,13 @@ function ProfileForm({
   const qc = useQueryClient();
   const writeLock = useRef(false);
   const photoLock = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const refresh = () => { void Notifications.getPermissionsAsync().then(permission => { setDeviceAlertsAllowed(permission.granted); setDeviceAlertsCanAsk(permission.canAskAgain); }).catch(() => setDeviceAlertsAllowed(false)); };
+    refresh();
+    const subscription = AppState.addEventListener("change", state => { if (state === "active") refresh(); });
+    return () => subscription.remove();
+  }, []);
   const auth = useQuery({
     queryKey: ["profile-auth", p.id],
     queryFn: async () => {
@@ -1294,6 +1306,25 @@ function ProfileForm({
     } finally { setNotificationBusy(false); }
   }
 
+  async function allowDeviceAlerts() {
+    if (notificationBusy || deviceAlertsAllowed) return;
+    setNotificationBusy(true);
+    setMessage("");
+    try {
+      if (!deviceAlertsCanAsk) {
+        await NativeLinking.openSettings();
+        return;
+      }
+      if (Platform.OS === "android") await Notifications.setNotificationChannelAsync("community-updates", { name: "Community updates", importance: Notifications.AndroidImportance.DEFAULT });
+      const permission = await Notifications.requestPermissionsAsync();
+      setDeviceAlertsAllowed(permission.granted);
+      setDeviceAlertsCanAsk(permission.canAskAgain);
+      setMessage(permission.granted ? "Phone notification permission allowed." : "Phone notifications are off. You can allow them in your phone settings.");
+    } catch {
+      setMessage("Could not open phone notification settings. Please try again.");
+    } finally { setNotificationBusy(false); }
+  }
+
   async function confirmSignOut() {
     if (signOutBusy) return;
     setSignOutBusy(true);
@@ -1342,7 +1373,7 @@ function ProfileForm({
         <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Edit profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, borderRadius: 12, borderWidth: 1, borderColor: "#44cbb7", opacity: photoBusy ? 0.6 : pressed ? 0.75 : 1 }]}><Ionicons name="camera-outline" size={17} color="#b8fff3" /><Text numberOfLines={1} style={{ color: "white", fontSize: 11, fontWeight: "700" }}>{photoBusy ? "Saving" : "Edit photo"}</Text></Pressable>
       </View>
 
-      {message && <View accessibilityRole="alert" style={{ flexDirection: "row", gap: 7, alignItems: "flex-start", padding: 10, borderRadius: 13, backgroundColor: /updated|removed|up to date|are on|are off/i.test(message) ? "#eff9f5" : "#fff2f0" }}><Ionicons name={/updated|removed|up to date|are on|are off/i.test(message) ? "checkmark-circle-outline" : "alert-circle-outline"} size={18} color={/updated|removed|up to date|are on|are off/i.test(message) ? colors.brand : "#a43d35"} /><Text style={{ flex: 1, color: /updated|removed|up to date|are on|are off/i.test(message) ? colors.brand : "#a43d35", fontSize: 12, lineHeight: 17 }}>{message}</Text></View>}
+      {message && <View accessibilityRole="alert" style={{ flexDirection: "row", gap: 7, alignItems: "flex-start", padding: 10, borderRadius: 13, backgroundColor: /updated|removed|up to date|are on|are off|allowed/i.test(message) ? "#eff9f5" : "#fff2f0" }}><Ionicons name={/updated|removed|up to date|are on|are off|allowed/i.test(message) ? "checkmark-circle-outline" : "alert-circle-outline"} size={18} color={/updated|removed|up to date|are on|are off|allowed/i.test(message) ? colors.brand : "#a43d35"} /><Text style={{ flex: 1, color: /updated|removed|up to date|are on|are off|allowed/i.test(message) ? colors.brand : "#a43d35", fontSize: 12, lineHeight: 17 }}>{message}</Text></View>}
 
       <View style={{ gap: 8 }}>
         <View style={{ minHeight: 38, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="person-circle-outline" size={21} color={colors.brand} /><Text style={[s.title, { flex: 1, marginBottom: 0 }]}>Personal details</Text><Pressable accessibilityRole="button" accessibilityLabel={editing ? "Cancel profile editing" : "Edit personal details"} onPress={() => { setMessage(""); if (editing) { setFirstName(p.first_name || ""); setMiddleName(p.middle_name || ""); setLastName(p.last_name || ""); setAge(p.age == null ? "" : String(p.age)); setPhone(p.phone || ""); setBarangay(p.barangay_id || ""); } setEditing(!editing); }} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 12, borderRadius: 13, backgroundColor: "#e8f7f3" }, pressed && { opacity: 0.75 }]}><Ionicons name={editing ? "close-outline" : "create-outline"} size={17} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>{editing ? "Cancel" : "Edit"}</Text></Pressable></View>
@@ -1373,7 +1404,12 @@ function ProfileForm({
             <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={s.fieldLabel}>In-app updates</Text><Text style={s.small}>Report, community, meeting and official announcement updates.</Text></View>
             <View pointerEvents="none" aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{Platform.OS === "web" ? <View style={{ width: 40, height: 20, borderRadius: 10, backgroundColor: notifications ? "#08756b" : colors.line, alignItems: notifications ? "flex-end" : "flex-start" }}><View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: notifications ? colors.brand : "#f6fbfa" }} /></View> : <Switch accessible={false} disabled={notificationBusy} value={notifications} trackColor={{ false: colors.line, true: "#08756b" }} thumbColor={notifications ? colors.brand : "#f6fbfa"} />}</View>
           </Pressable>
-          <Text style={[s.small, { paddingHorizontal: 8 }]}>Email and push alerts are not configured for this account yet.</Text>
+          {Platform.OS !== "web" && <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 8, borderTopWidth: 1, borderTopColor: colors.line }}>
+            <View style={{ width: 42, height: 42, borderRadius: 15, backgroundColor: "#e1f5f1", alignItems: "center", justifyContent: "center" }}><Ionicons name="phone-portrait-outline" size={20} color={colors.brand} /></View>
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={s.fieldLabel}>Phone alerts</Text><Text style={s.small}>{deviceAlertsAllowed ? "Allowed in your phone settings" : "Allow this app to show notifications"}</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel={deviceAlertsAllowed ? "Phone notifications allowed" : deviceAlertsCanAsk ? "Allow phone notifications" : "Open phone notification settings"} disabled={notificationBusy || deviceAlertsAllowed === true} onPress={() => void allowDeviceAlerts()} style={({ pressed }) => ({ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 11, backgroundColor: deviceAlertsAllowed ? colors.brandSoft : colors.brand, opacity: notificationBusy ? .6 : pressed ? .8 : 1 })}><Text style={{ color: deviceAlertsAllowed ? colors.brand : "white", fontSize: 12, fontWeight: "800" }}>{deviceAlertsAllowed ? "Allowed" : deviceAlertsCanAsk ? "Allow" : "Settings"}</Text></Pressable>
+          </View>}
+          <Text style={[s.small, { paddingHorizontal: 8 }]}>In-app updates work now. Phone alert delivery will be available after setup is complete.</Text>
         </View>
       </View>
 

@@ -1253,10 +1253,10 @@ export function Explore({
         ))}
       </View>
       <View style={{ gap: 4 }}>
-        <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 58, paddingVertical: 8 }]}>
+        <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 52, paddingHorizontal: 12, paddingVertical: 4 }]}>
           <Ionicons name="search" size={20} color={colors.muted} />
-          <TextInput maxLength={200} accessibilityLabel="Search public reports" placeholder="Search public reports" placeholderTextColor={colors.muted} value={search} onChangeText={(v) => { setSearch(v); setDensityCellCount(null); setPage(0); }} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 48, color: colors.brandDark, fontSize: 16 }} />
-          {!!search && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => { setSearch(""); setAppliedSearch(""); setDensityCellCount(null); setPage(0); }} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }}><Ionicons name="close-circle" size={19} color={colors.muted} /></Pressable>}
+          <TextInput maxLength={200} accessibilityLabel="Search public reports" placeholder="Search public reports" placeholderTextColor={colors.muted} value={search} onChangeText={(v) => { setSearch(v); setDensityCellCount(null); setPage(0); }} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 44, color: colors.brandDark, fontSize: 15 }} />
+          {!!search && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => { setSearch(""); setAppliedSearch(""); setDensityCellCount(null); setPage(0); }} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}><Ionicons name="close-circle" size={19} color={colors.muted} /></Pressable>}
         </View>
         <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16, paddingHorizontal: 12 }}>Try ‘pothole’, ‘streetlight’, or a barangay</Text>
       </View>
@@ -1279,14 +1279,14 @@ export function Explore({
           onChange={(v) => { setBarangay(v); setDensityCellCount(null); setPage(0); }}
         />
       </View>
-      <View style={[s.card, { gap: 12, borderColor: "#d8f0eb", shadowOpacity: 0.06, shadowRadius: 12 }]}>
+      <View style={[s.card, { gap: 8, padding: 10, borderColor: "#d8f0eb", shadowOpacity: 0.06, shadowRadius: 12 }]}>
         <View style={[s.row, { flexWrap: "nowrap", justifyContent: "space-between", alignItems: "center" }]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Filter reports" accessibilityHint="Shows or hides report status and date filters" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((value) => !value)} style={{ minHeight: 48, flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 9 }}>
-            <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="options" size={18} color={colors.brand} /></View>
-            <Text style={[s.title, { fontSize: 16, lineHeight: 20, flexShrink: 1 }]}>Filter reports</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Filter reports" accessibilityHint="Shows or hides report status and date filters" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((value) => !value)} style={{ minHeight: 48, flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="options" size={17} color={colors.brand} /></View>
+            <Text style={[s.title, { fontSize: 15, lineHeight: 20, flexShrink: 1 }]}>Filter reports</Text>
             <Ionicons name={filtersOpen ? "chevron-up" : "chevron-down"} size={17} color={colors.muted} />
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Clear all report filters" disabled={!hasActiveFilters} onPress={() => { setCategory(""); setBarangay(""); setSearch(""); setAppliedSearch(""); setMapStatus("active"); setRecentOnly(false); setNearbyRadius("0"); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 4, opacity: hasActiveFilters ? 1 : 0.48 }, pressed && hasActiveFilters && { opacity: 0.72 }]}><Ionicons name="refresh" size={17} color={colors.muted} /><Text style={[s.small, { fontSize: 12, fontWeight: "600" }]}>Clear all</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Clear all report filters" disabled={!hasActiveFilters} onPress={() => { setCategory(""); setBarangay(""); setSearch(""); setAppliedSearch(""); setMapStatus("active"); setRecentOnly(false); setNearbyRadius("0"); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} style={({ pressed }) => [{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 4, opacity: hasActiveFilters ? 1 : 0.48 }, pressed && hasActiveFilters && { opacity: 0.72 }]}><Ionicons name="refresh" size={17} color={colors.muted} /><Text style={[s.small, { fontSize: 12, fontWeight: "600" }]}>Clear all</Text></Pressable>
         </View>
         {filtersOpen && <>
           <View style={{ flexDirection: "row", gap: 8 }}>
@@ -1312,8 +1312,8 @@ export function Explore({
         <>
           {mapQuery.error && <View style={s.card}><Text style={s.error}>Could not refresh map reports.</Text><Button secondary title="Retry map" loading={mapQuery.isFetching} onPress={() => void mapQuery.refetch()} /></View>}
           {!showBarangayMap && <>
-            <View style={{ gap: 12, marginBottom: 12 }}>
-              <View><Text accessibilityLiveRegion="polite" style={[s.body, { fontSize: 14, fontWeight: "700" }]}>{mapQuery.isFetching ? "Updating…" : `${mapPoints.length} mapped reports`}</Text><Text numberOfLines={2} style={s.small}>{mapScope}</Text>{mapReports.length > mapPoints.length && <Text style={s.small}>{mapReports.length - mapPoints.length} reports use manual addresses without map pins. Open List to view them.</Text>}</View>
+            <View style={{ gap: 10, marginBottom: 10 }}>
+              <View style={{ minWidth: 0, flexDirection: "row", alignItems: "baseline", gap: 6 }}><Text numberOfLines={1} accessibilityLiveRegion="polite" style={[s.body, { flexShrink: 0, fontSize: 13, fontWeight: "700" }]}>{mapQuery.isFetching ? "Updating…" : `${mapPoints.length} mapped reports`}</Text><Text numberOfLines={1} style={[s.small, { flex: 1, minWidth: 0, fontSize: 11 }]}>{mapScope}</Text></View>{mapReports.length > mapPoints.length && <Text style={s.small}>{mapReports.length - mapPoints.length} reports use manual addresses without map pins. Open List to view them.</Text>}
               <View style={{ flexDirection: "row", gap: 10 }}>
                 {([[showPins, setShowPins, "Pins", "location"], [density, setDensity, "Heatmap", "layers"]] as const).map(([enabled, setEnabled, title, icon]) => <Pressable key={title} accessibilityRole="checkbox" accessibilityLabel={`${title === "Pins" ? "Report pins" : title} layer`} accessibilityState={{ checked: enabled }} aria-checked={enabled} {...(Platform.OS === "web" ? { onKeyDown: (event: KeyboardEvent<HTMLElement>) => { if (event.key === " ") { event.preventDefault(); if (!event.repeat) { setEnabled(!enabled); if (title === "Heatmap") setDensityCellCount(null); } } } } : {})} onPress={() => { setEnabled(!enabled); if (title === "Heatmap") setDensityCellCount(null); }} style={({ pressed }) => [{ flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 12, borderWidth: 1, borderColor: enabled ? colors.brand : colors.line, paddingHorizontal: 10, paddingVertical: 10, backgroundColor: enabled ? colors.brandSoft : "white" }, pressed && { opacity: 0.78 }]}><Ionicons name={icon} size={18} color={enabled ? colors.brand : colors.muted} /><Text style={{ color: enabled ? colors.brand : colors.muted, fontSize: 13, fontWeight: "700" }}>{title}</Text><Ionicons name={enabled ? "checkmark-circle" : "ellipse-outline"} size={17} color={enabled ? colors.brand : colors.muted} /></Pressable>)}
               </View>

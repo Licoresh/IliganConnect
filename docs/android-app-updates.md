@@ -13,8 +13,8 @@ For each release:
 
    ```json
    {
-     "version": "1.0.7",
-     "downloadUrl": "https://github.com/Licoresh/IliganConnect/releases/download/v1.0.7/Iligan-Connect-Resident.apk"
+     "version": "1.0.8",
+     "downloadUrl": "https://github.com/Licoresh/IliganConnect/releases/download/v1.0.8/Iligan-Connect-Resident.apk"
    }
    ```
 

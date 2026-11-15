@@ -1253,9 +1253,9 @@ export function Explore({
         ))}
       </View>
       <View style={{ gap: 4 }}>
-        <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 52, paddingHorizontal: 12, paddingVertical: 4 }]}>
+        <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 48, paddingHorizontal: 12, paddingVertical: 2 }]}>
           <Ionicons name="search" size={20} color={colors.muted} />
-          <TextInput maxLength={200} accessibilityLabel="Search public reports" placeholder="Search public reports" placeholderTextColor={colors.muted} value={search} onChangeText={(v) => { setSearch(v); setDensityCellCount(null); setPage(0); }} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 44, color: colors.brandDark, fontSize: 15 }} />
+          <TextInput maxLength={200} accessibilityLabel="Search public reports" placeholder="Search public reports" placeholderTextColor={colors.muted} value={search} onChangeText={(v) => { setSearch(v); setDensityCellCount(null); setPage(0); }} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 40, color: colors.brandDark, fontSize: 15 }} />
           {!!search && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => { setSearch(""); setAppliedSearch(""); setDensityCellCount(null); setPage(0); }} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}><Ionicons name="close-circle" size={19} color={colors.muted} /></Pressable>}
         </View>
         <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16, paddingHorizontal: 12 }}>Try ‘pothole’, ‘streetlight’, or a barangay</Text>
@@ -1279,10 +1279,10 @@ export function Explore({
           onChange={(v) => { setBarangay(v); setDensityCellCount(null); setPage(0); }}
         />
       </View>
-      <View style={[s.card, { gap: 8, padding: 10, borderColor: "#d8f0eb", shadowOpacity: 0.06, shadowRadius: 12 }]}>
+      <View style={[s.card, { gap: 6, padding: 8, borderColor: "#d8f0eb", shadowOpacity: 0.06, shadowRadius: 12 }]}>
         <View style={[s.row, { flexWrap: "nowrap", justifyContent: "space-between", alignItems: "center" }]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Filter reports" accessibilityHint="Shows or hides report status and date filters" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((value) => !value)} style={{ minHeight: 48, flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <View style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="options" size={17} color={colors.brand} /></View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Filter reports" accessibilityHint="Shows or hides report status and date filters" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((value) => !value)} style={{ minHeight: 44, flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ width: 30, height: 30, borderRadius: 10, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="options" size={16} color={colors.brand} /></View>
             <Text style={[s.title, { fontSize: 15, lineHeight: 20, flexShrink: 1 }]}>Filter reports</Text>
             <Ionicons name={filtersOpen ? "chevron-up" : "chevron-down"} size={17} color={colors.muted} />
           </Pressable>

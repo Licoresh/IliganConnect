@@ -43,8 +43,8 @@ export function ResidentsManagement({ barangays, active }: { barangays: Lookup[]
     </div>
     {message && <p className="success" role="status">{message}</p>}
     {q.isPending ? <p role="status">Loading residents…</p> : q.error ? <div role="alert"><p className="error">Residents could not be loaded. {q.error.message}</p><button className="secondary" onClick={() => void q.refetch()}>Retry</button></div> :
-      q.data?.items.length ? <div className="table-scroll"><table><thead><tr><th>Name</th><th>Contact</th><th>Registered barangay</th><th>Status</th><th>Profile</th></tr></thead><tbody>{q.data.items.map(r => <tr key={r.id}>
-        <th scope="row">{r.display_name}{r.age != null && <small className="record-meta">Age {r.age}</small>}</th><td data-label="Contact">{r.email || "Email unavailable"}{r.phone && <small className="record-meta">{r.phone}</small>}</td>
+      q.data?.items.length ? <div className="table-scroll"><table><thead><tr><th scope="col">Name</th><th scope="col">Age</th><th scope="col">Contact</th><th scope="col">Registered barangay</th><th scope="col">Status</th><th scope="col">Profile</th></tr></thead><tbody>{q.data.items.map(r => <tr key={r.id}>
+        <th scope="row">{r.display_name}</th><td data-label="Age">{r.age ?? "Not recorded"}</td><td data-label="Contact">{r.email || "Email unavailable"}{r.phone && <small className="record-meta">{r.phone}</small>}</td>
         <td data-label="Registered barangay">{barangays.find(b => b.id === r.barangay_id)?.name || "Not registered"}</td><td data-label="Account status">{r.account_status}</td>
         <td><button className="secondary" onClick={() => { setSelected(r); setError(""); setPhoneError(""); setPhoneTouched(false); }}>Manage<span className="sr-only"> {r.display_name}</span></button></td>
       </tr>)}</tbody></table></div> : <p className="empty">No residents match these filters.</p>}

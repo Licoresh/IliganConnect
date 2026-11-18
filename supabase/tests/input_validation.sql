@@ -7,19 +7,37 @@ declare
   report_id uuid:=gen_random_uuid(); walk_in_report_id uuid:=gen_random_uuid();
   consultation_id uuid:=gen_random_uuid(); comment_id uuid:=gen_random_uuid();
   request_id uuid:=gen_random_uuid(); meeting_id uuid:=gen_random_uuid(); action_id uuid:=gen_random_uuid(); announcement_id uuid:=gen_random_uuid();
-  area uuid; category uuid; problem text; latitude double precision; longitude double precision;
+  area uuid; category uuid; organization_id uuid; problem text; latitude double precision; longitude double precision;
   bad record; denied boolean; target uuid; tests integer:=0;
 begin
   select id, extensions.st_y(extensions.st_pointonsurface(boundary)), extensions.st_x(extensions.st_pointonsurface(boundary))
     into area, latitude, longitude from public.barangays where name='Poblacion' and boundary is not null;
   select c.id,p.code into category,problem from public.report_categories c join public.report_problem_types p on p.category_id=c.id
     where c.active and p.code<>'other' order by c.name,p.sort_order limit 1;
+  select id into organization_id from public.organizations order by name limit 1;
+  assert organization_id is not null,'No organization is available for the responsibility-input check';
   insert into auth.users(id,email) values(resident,resident::text||'@example.invalid'),(administrator,administrator::text||'@example.invalid');
   update public.profiles set role='admin' where id=administrator;
   update public.profiles set barangay_id=area where id=resident;
   perform set_config('request.jwt.claim.sub',resident::text,true);
   set local role authenticated;
   perform public.submit_report(report_id,category,area,'Rollback input validation','A transaction-only report to verify input validation safely.',8.22947578,124.23688253,'',problem);
+  denied:=false;
+  begin perform * from public.public_report_page(null,null,repeat('x',161),0,'all',false);
+  exception when invalid_parameter_value then denied:=true;end;
+  assert denied,'The public report page accepted an oversized search string';tests:=tests+1;
+  denied:=false;
+  begin perform * from public.public_report_filter_counts(null,null,repeat('x',161),false);
+  exception when invalid_parameter_value then denied:=true;end;
+  assert denied,'Public report counts accepted an oversized search string';tests:=tests+1;
+  denied:=false;
+  begin perform * from public.public_report_page(null,null,'',100001,'all',false);
+  exception when invalid_parameter_value then denied:=true;end;
+  assert denied,'The public report page accepted an excessive offset';tests:=tests+1;
+  denied:=false;
+  begin perform * from public.public_report_page(null,null,repeat('x',161),0);
+  exception when invalid_parameter_value then denied:=true;end;
+  assert denied,'The legacy public report page accepted an oversized search string';tests:=tests+1;
   update public.profiles set first_name=U&'Jos\00E9',middle_name='O’Connor',last_name='Cruz' where id=resident;
   assert (select display_name from public.profiles where id=resident)=U&'Jos\00E9 O’Connor Cruz','Legitimate Unicode name rejected';
   assert private.valid_person_name('Ma. Cristina',2,100),'A Filipino abbreviated name was rejected';
@@ -76,11 +94,11 @@ begin
     ('meetings','starts_at','12000-01-01','timestamptz'),('meetings','outcome',repeat('x',2001),'text'),
     ('meeting_action_items','description',repeat(U&'\200B',10),'text'),('meeting_action_items','due_at','infinity','date'),
     ('announcements','kind',repeat('x',81),'text'),('announcements','publish_at','infinity','timestamptz'),
-    ('announcements','body',repeat('x',10001),'text')
+    ('announcements','body',repeat('x',10001),'text'),('organizations','responsibilities',repeat('x',2001),'text')
   ) inputs(table_name,column_name,value,cast_type) loop
     target:=case bad.table_name when 'profiles' then resident when 'reports' then report_id when 'consultations' then consultation_id
       when 'consultation_comments' then comment_id when 'meeting_requests' then request_id when 'meetings' then meeting_id
-      when 'meeting_action_items' then action_id when 'announcements' then announcement_id end;
+      when 'meeting_action_items' then action_id when 'announcements' then announcement_id when 'organizations' then organization_id end;
     denied:=false;
     begin
       execute format('update public.%I set %I=$1::%s where id=$2',bad.table_name,bad.column_name,bad.cast_type) using bad.value,target;
@@ -108,8 +126,8 @@ begin
     update public.comment_flags f set reason=repeat('r',501) where f.comment_id=target and f.user_id=resident;
   exception when check_violation then denied:=true;end;
   assert denied,'A 501-character comment flag was accepted';tests:=tests+1;
-  assert tests=37,'Invalid-value test count changed';
+  assert tests=42,'Invalid-value test count changed';
   raise notice '% invalid-value attempts rejected; Unicode, literal markup and multiline inputs preserved',tests;
 end $tests$;
 rollback;
-select 'PASS: 37 invalid values rejected; Unicode names, valid direct email queueing, 500-character reasons and authenticated valid inputs accepted; all fixtures rolled back' as result;
+select 'PASS: 42 invalid values rejected; Unicode names, valid direct email queueing, 500-character reasons and authenticated valid inputs accepted; all fixtures rolled back' as result;

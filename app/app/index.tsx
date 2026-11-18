@@ -1004,6 +1004,7 @@ function Auth({ initialError }: { initialError: string }) {
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   onBlur={() => setConfirmPasswordTouched(true)}
+                  maxLength={1024}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   autoCorrect={false}

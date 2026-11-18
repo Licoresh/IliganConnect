@@ -31,7 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { db, result } from "../lib/client";
-import { formatMeetingTimeRange, googleCalendarDraftUrl, label, meetingDateInput, meetingTimeInput, normalizeGoogleMeetUrl, parseManilaDateTimeInput, Profile, UUID_PATTERN, SHORT_REASON_LIMIT, characterLimitHint } from "@community/shared";
+import { formatMeetingTimeRange, googleCalendarDraftUrl, label, meetingDateInput, meetingTimeInput, meetingDateTimeInput, normalizeGoogleMeetUrl, parseManilaDateTimeInput, Profile, UUID_PATTERN, SHORT_REASON_LIMIT, characterLimitHint } from "@community/shared";
 import type { References } from "./workspace";
 import { useAccess } from "./access-context";
 import { canCreate } from "../lib/access";
@@ -66,10 +66,7 @@ type Comment = {
   created_at: string;
 };
 const localDate = (value?: string) => {
-  const d = value ? new Date(value) : new Date();
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
+  return meetingDateTimeInput(value);
 };
 function useSave() {
   const qc = useQueryClient();
@@ -506,6 +503,29 @@ export function Community({
             onSubmit={async (e) => {
               e.preventDefault();
               const f = new FormData(e.currentTarget);
+              const dateTime = (name: string) => {
+                const raw = f.get(name);
+                const parsed = typeof raw === "string" ? parseManilaDateTimeInput(raw) : null;
+                if (parsed) return parsed;
+                const field = e.currentTarget.elements.namedItem(name);
+                if (field instanceof HTMLInputElement) {
+                  field.setCustomValidity("Choose a valid date and time.");
+                  field.reportValidity();
+                }
+                return null;
+              };
+              const opensAt = table === "consultations" ? dateTime("opens") : null;
+              const closesAt = table === "consultations" ? dateTime("closes") : null;
+              const publishAt = table === "announcements" ? dateTime("publish") : null;
+              if ((table === "consultations" && (!opensAt || !closesAt)) || (table === "announcements" && !publishAt)) return;
+              if (opensAt && closesAt && closesAt <= opensAt) {
+                const field = e.currentTarget.elements.namedItem("closes");
+                if (field instanceof HTMLInputElement) {
+                  field.setCustomValidity("Closing time must be later than opening time.");
+                  field.reportValidity();
+                }
+                return;
+              }
               const payload: Record<string, unknown> = {
                 title: f.get("title"),
                 body: f.get("body"),
@@ -516,15 +536,11 @@ export function Community({
                 ...(table === "consultations"
                   ? {
                       report_id: f.get("report") || null,
-                      opens_at: new Date(String(f.get("opens"))).toISOString(),
-                      closes_at: new Date(
-                        String(f.get("closes")),
-                      ).toISOString(),
+                      opens_at: opensAt!.toISOString(),
+                      closes_at: closesAt!.toISOString(),
                     }
                   : {
-                      publish_at: new Date(
-                        String(f.get("publish")),
-                      ).toISOString(),
+                      publish_at: publishAt!.toISOString(),
                       kind: f.get("kind"),
                     }),
                 ...(table === "announcements" && editing === "new"
@@ -628,8 +644,8 @@ export function Community({
                     <div><h3>Schedule</h3><p>Set the opening and closing dates for this consultation.</p></div>
                   </div>
                   <div className="consultation-edit-grid">
-                    <label className="consultation-edit-field"><span className="consultation-edit-field-label"><span>Opens <b>*</b></span></span><input required type="datetime-local" name="opens" defaultValue={localDate(editing === "new" ? undefined : editing.opens_at)} /></label>
-                    <label className="consultation-edit-field"><span className="consultation-edit-field-label"><span>Closes <b>*</b></span></span><input required type="datetime-local" name="closes" defaultValue={localDate(editing === "new" ? new Date(Date.now() + 30 * 86400000).toISOString() : editing.closes_at)} /></label>
+                    <label className="consultation-edit-field"><span className="consultation-edit-field-label"><span>Opens <b>*</b></span></span><input required type="datetime-local" name="opens" defaultValue={localDate(editing === "new" ? undefined : editing.opens_at)} onInput={(event) => event.currentTarget.setCustomValidity("")} /></label>
+                    <label className="consultation-edit-field"><span className="consultation-edit-field-label"><span>Closes <b>*</b></span></span><input required type="datetime-local" name="closes" defaultValue={localDate(editing === "new" ? new Date(Date.now() + 30 * 86400000).toISOString() : editing.closes_at)} onInput={(event) => event.currentTarget.setCustomValidity("")} /></label>
                   </div>
                 </section>
               </div>
@@ -686,7 +702,7 @@ export function Community({
                 </label>
                 <label>
                   Publication date
-                  <input required name="publish" type="datetime-local" defaultValue={localDate(editing === "new" ? undefined : editing.publish_at)} />
+                  <input required name="publish" type="datetime-local" defaultValue={localDate(editing === "new" ? undefined : editing.publish_at)} onInput={(event) => event.currentTarget.setCustomValidity("")} />
                 </label>
                 <p className="fine">Published items become visible at this date. Immediate and scheduled publication send in-app updates once to eligible subscribers. Scheduled delivery is checked every minute.</p>
               </>

@@ -481,6 +481,8 @@ export function Administration({
             <label>
               Search staff accounts
               <input
+                type="search"
+                maxLength={160}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Name or account identifier"

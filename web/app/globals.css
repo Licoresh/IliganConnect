@@ -2735,7 +2735,6 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-status.approved, .meeting-status.completed { background: #e3f6ed; color: #11794d; }
 .meeting-status.scheduled { background: #e8f2ff; color: #2868b5; }
 .meeting-status.declined { background: #fff0ee; color: #a83d37; }
-.meeting-status.not-invited, .meeting-status.invitation-checking, .meeting-status.invitation-unavailable { background: #edf2f6; color: #5c7185; }
 .meeting-card h3 { display: -webkit-box; overflow: hidden; margin: 0 0 6px; color: var(--ink); font-size: 14px; font-weight: 700; line-height: 1.35; letter-spacing: -.15px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .meeting-card-body { display: -webkit-box; overflow: hidden; margin: 0 0 11px; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .meeting-card-meta { display: grid; gap: 7px; margin-bottom: 11px; color: #647c8e; font-size: 10px; }

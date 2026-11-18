@@ -205,14 +205,26 @@ export function Community({
     setEditing(row);
   };
   const q = useQuery({
-    queryKey: ["community", table, searchTerm, status, barangay, dateRange, sort, page],
+    queryKey: ["community", profile.id, table, searchTerm, status, barangay, dateRange, sort, page, officeIds],
+    enabled: table !== "meeting_requests" || profile.role !== "office" || memberships.isSuccess || memberships.isError,
     refetchInterval: 60000,
     queryFn: async () => {
+      let invitedRequestIds: string[] | null = null;
+      if (table === "meeting_requests" && profile.role === "office") {
+        if (memberships.error) throw memberships.error;
+        if (!officeIds.length) return [];
+        const invitations = await result<{ request_id: string }[]>(
+          db!.from("meeting_request_offices").select("request_id").in("organization_id", officeIds),
+        );
+        invitedRequestIds = [...new Set(invitations.map((invitation) => invitation.request_id))];
+        if (!invitedRequestIds.length) return [];
+      }
       let query = db!
         .from(table)
         .select(columns)
         .order("created_at", { ascending: sort === "oldest" })
         .range(page * 20, page * 20 + 19);
+      if (invitedRequestIds) query = query.in("id", invitedRequestIds);
       if (searchTerm) query = query.ilike("title", `%${searchTerm}%`);
       if (status === "unavailable" && table === "meeting_requests") query = query.eq("coordination_status", status);
       else if (status) query = query.eq("status", status);
@@ -267,6 +279,7 @@ export function Community({
           onRetry={() => {
             void q.refetch();
             void queryClient.invalidateQueries({ queryKey: ["meeting-request-schedules"] });
+            void queryClient.invalidateQueries({ queryKey: ["meeting-request-office-invitations"] });
           }}
           onPageChange={setPage}
           onOpen={setSelected}
@@ -772,13 +785,13 @@ function MeetingRequestsView({
       ),
   });
   const invitationsQuery = useQuery({
-    queryKey: ["meeting-request-office-invitations", requestIds, officeIds],
-    enabled: requestIds.length > 0,
+    queryKey: ["meeting-request-office-invitations", requestIds, isOffice, officeIds],
+    enabled: requestIds.length > 0 && (!isOffice || officeIds.length > 0),
     queryFn: () => {
       let query = db!.from("meeting_request_offices")
         .select("request_id,organization_id,status")
         .in("request_id", requestIds);
-      if (officeIds.length) query = query.in("organization_id", officeIds);
+      if (isOffice) query = query.in("organization_id", officeIds);
       return result<{ request_id: string; organization_id: string; status: string }[]>(query);
     },
   });
@@ -791,14 +804,23 @@ function MeetingRequestsView({
   const scheduleByRequest = new Map(
     (meetings.data ?? []).map((meeting) => [meeting.request_id, meeting]),
   );
-  const upcoming = (meetings.data ?? [])
+  const invitationCheckPending = isOffice && officeIds.length > 0 && invitationsQuery.isPending;
+  const invitationCheckFailed = isOffice && !!invitationsQuery.error;
+  const visibleRows = isOffice
+    ? invitationCheckPending || invitationCheckFailed || !officeIds.length
+      ? []
+      : rows.filter((row) => (invitationByRequest.get(row.id)?.length ?? 0) > 0)
+    : rows;
+  const visibleRequestIds = new Set(visibleRows.map((row) => row.id));
+  const visibleMeetings = (meetings.data ?? []).filter((meeting) => visibleRequestIds.has(meeting.request_id));
+  const summaryLoading = loading || invitationCheckPending || invitationCheckFailed;
+  const upcoming = visibleMeetings
     .filter((meeting) => !meeting.completed && new Date(meeting.starts_at).getTime() >= Date.now())
-    .filter((meeting) => !isOffice || (invitationByRequest.get(meeting.request_id)?.length ?? 0) > 0)
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
     .slice(0, 4);
-  const pending = rows.filter((row) => row.status === "pending" && (!isOffice || (invitationByRequest.get(row.id) ?? []).some((invitation) => invitation.status === "pending"))).length;
-  const approved = rows.filter((row) => row.status === "approved").length;
-  const completed = (meetings.data ?? []).filter((meeting) => meeting.completed).length;
+  const pending = visibleRows.filter((row) => row.status === "pending" && (!isOffice || (invitationByRequest.get(row.id) ?? []).some((invitation) => invitation.status === "pending"))).length;
+  const approved = visibleRows.filter((row) => row.status === "approved").length;
+  const completed = visibleMeetings.filter((meeting) => meeting.completed).length;
   const formatDate = (value: string) =>
     new Date(value).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" });
   const statusFor = (row: Row) => {
@@ -806,10 +828,7 @@ function MeetingRequestsView({
     if (schedule?.completed) return { key: "completed", label: "Completed" };
     if (schedule) return { key: "scheduled", label: "Scheduled" };
     if (row.status === "pending" && isOffice) {
-      if (invitationsQuery.isPending) return { key: "invitation-checking", label: "Checking invitation" };
-      if (invitationsQuery.error) return { key: "invitation-unavailable", label: "Invitation unavailable" };
       const officeInvitations = invitationByRequest.get(row.id) ?? [];
-      if (!officeInvitations.length) return { key: "not-invited", label: "Not invited" };
       if (officeInvitations.every((invitation) => invitation.status === "declined")) return { key: "declined", label: "Invitation declined" };
       if (officeInvitations.some((invitation) => invitation.status === "pending")) return { key: "invitation-pending", label: "Invitation pending" };
       return { key: "awaiting-barangay", label: "Awaiting barangay" };
@@ -823,22 +842,21 @@ function MeetingRequestsView({
   const statusIcon = (key: string) =>
     key === "approved" || key === "completed" ? <CheckCircle2 size={15} />
       : key === "scheduled" ? <CalendarDays size={15} />
-        : key === "declined" ? <Check size={15} />
-          : key === "not-invited" ? <Eye size={15} /> : <Clock3 size={15} />;
+        : key === "declined" ? <Check size={15} /> : <Clock3 size={15} />;
 
   return (
     <section className="meeting-workspace" aria-label="Meeting request workspace">
       <div className="meeting-metrics" aria-label="Meeting request summary">
         {[
-          { title: "Total requests", count: rows.length, note: "In these results", icon: <Users />, tone: "teal" },
+          { title: "Total requests", count: visibleRows.length, note: "In these results", icon: <Users />, tone: "teal" },
           { title: "Approved", count: approved, note: "Ready to coordinate", icon: <CheckCircle2 />, tone: "green" },
           { title: isOffice ? "Pending invitations" : "Pending review", count: pending, note: isOffice ? "Awaiting your office" : "Awaiting a decision", icon: <Clock3 />, tone: "amber" },
-          { title: "Scheduled", count: (meetings.data ?? []).filter((meeting) => !meeting.completed).length, note: "Dates confirmed", icon: <CalendarDays />, tone: "blue" },
+          { title: "Scheduled", count: visibleMeetings.filter((meeting) => !meeting.completed).length, note: "Dates confirmed", icon: <CalendarDays />, tone: "blue" },
           { title: "Completed", count: completed, note: "Meeting held", icon: <Check />, tone: "green" },
         ].map((metric) => (
           <article className="meeting-metric" key={metric.title}>
             <span className={`meeting-metric-icon ${metric.tone}`}>{metric.icon}</span>
-            <div><span>{metric.title}</span><strong>{loading ? "—" : metric.count}</strong><small>{metric.note}</small></div>
+            <div><span>{metric.title}</span><strong>{summaryLoading ? "—" : metric.count}</strong><small>{metric.note}</small></div>
           </article>
         ))}
       </div>
@@ -856,9 +874,9 @@ function MeetingRequestsView({
       </div>
 
       <div className="meeting-results-heading">
-        <div><h2>Meeting requests</h2><p>{loading ? "Loading requests…" : `${rows.length} ${rows.length === 1 ? "request" : "requests"} in these results`}</p></div>
+        <div><h2>Meeting requests</h2><p>{loading || invitationCheckPending ? "Loading requests…" : invitationCheckFailed ? "Invitations could not be checked" : `${visibleRows.length} ${visibleRows.length === 1 ? "request" : "requests"} in these results`}</p></div>
         <div className="meeting-results-actions">
-          <button className="secondary meeting-refresh" onClick={onRetry} disabled={loading}><RefreshCw size={15} /> Refresh</button>
+          <button className="secondary meeting-refresh" onClick={onRetry} disabled={loading || invitationCheckPending}><RefreshCw size={15} /> Refresh</button>
           <div className="meeting-view-toggle" aria-label="Request layout">
             <button className={view === "grid" ? "active" : ""} onClick={() => setView("grid")} aria-label="Grid view" aria-pressed={view === "grid"}><LayoutGrid size={17} /></button>
             <button className={view === "list" ? "active" : ""} onClick={() => setView("list")} aria-label="List view" aria-pressed={view === "list"}><List size={18} /></button>
@@ -866,17 +884,19 @@ function MeetingRequestsView({
         </div>
       </div>
 
-      {error ? (
-        <section className="panel meeting-empty" role="alert"><MessageSquare /><h3>Meeting requests could not load</h3><p>{error.message}</p><button onClick={onRetry}><RefreshCw size={15} /> Try again</button></section>
+      {error || invitationCheckFailed ? (
+        <section className="panel meeting-empty" role="alert"><MessageSquare /><h3>{invitationCheckFailed && !error ? "Meeting invitations could not load" : "Meeting requests could not load"}</h3><p>{error?.message ?? "Your office invitations could not be checked. Refresh and try again."}</p><button onClick={onRetry}><RefreshCw size={15} /> Try again</button></section>
       ) : loading ? (
         <div className="meeting-layout"><div className={`meeting-request-grid ${view === "list" ? "is-list" : ""}`} aria-label="Loading meeting requests">{[0, 1, 2].map((item) => <div className="meeting-card meeting-card-skeleton" key={item}><span /><span /><span /><span /></div>)}</div><aside className="meeting-rail"><div className="meeting-card meeting-card-skeleton"><span /><span /><span /></div><div className="meeting-card meeting-card-skeleton"><span /><span /><span /></div></aside></div>
-      ) : !rows.length ? (
-        <section className="panel meeting-empty"><CalendarPlus /><h3>No meeting requests found</h3><p>Try changing the search or filters to see more requests.</p></section>
+      ) : invitationCheckPending ? (
+        <section className="panel meeting-empty" role="status" aria-busy="true"><Clock3 /><h3>Checking invitations</h3><p>Meeting requests appear here after the barangay invites your office.</p></section>
+      ) : !visibleRows.length ? (
+        <section className="panel meeting-empty"><CalendarPlus /><h3>{isOffice ? "No meeting invitations found" : "No meeting requests found"}</h3><p>{isOffice ? "Requests appear here after the barangay invites your office." : "Try changing the search or filters to see more requests."}</p></section>
       ) : (
         <div className="meeting-layout">
           <div className="meeting-primary">
             <div className={`meeting-request-grid ${view === "list" ? "is-list" : ""}`}>
-              {rows.map((row) => {
+              {visibleRows.map((row) => {
                 const status = statusFor(row);
                 const schedule = scheduleByRequest.get(row.id);
                 const officeInvitations = invitationByRequest.get(row.id) ?? [];
@@ -910,13 +930,13 @@ function MeetingRequestsView({
             <section className="panel meeting-rail-panel">
               <div className="meeting-rail-heading"><span className="meeting-rail-icon"><CalendarDays size={18} /></span><div><h3>Upcoming meetings</h3><p>Confirmed dates and venues</p></div></div>
               {meetings.isPending ? <p className="meeting-rail-empty">Loading schedules…</p> : meetings.error ? <p className="meeting-rail-error">Meeting schedules are unavailable.</p> : !upcoming.length ? <p className="meeting-rail-empty">No upcoming meetings scheduled.</p> : upcoming.map((meeting) => {
-                const request = rows.find((row) => row.id === meeting.request_id);
+                const request = visibleRows.find((row) => row.id === meeting.request_id);
                 return <button className="meeting-upcoming" key={meeting.id} onClick={() => request && onOpen(request.id)} disabled={!request}><span className="meeting-date-tile"><strong>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { day: "2-digit", timeZone: "Asia/Manila" })}</strong><small>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { month: "short", timeZone: "Asia/Manila" }).toUpperCase()}</small></span><span className="meeting-upcoming-copy"><strong>{request?.title ?? "Meeting request"}</strong><small>{meetingTimeInput(meeting.starts_at)}–{meetingTimeInput(meeting.ends_at)} · {refs.barangays.find((item) => item.id === request?.barangay_id)?.name ?? "Barangay"}</small></span><ChevronRight size={16} /></button>;
               })}
             </section>
             <section className="panel meeting-rail-panel">
               <div className="meeting-rail-heading"><span className="meeting-rail-icon clock"><Clock3 size={18} /></span><div><h3>Recent requests</h3><p>Latest resident submissions</p></div></div>
-              {[...rows].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 4).map((row) => <button className="meeting-recent" key={row.id} onClick={() => onOpen(row.id)}><span className={`meeting-recent-dot ${statusFor(row).key}`} /><span><strong>{row.title}</strong><small>{statusFor(row).label} · {formatDate(row.created_at)}</small></span><ChevronRight size={15} /></button>)}
+              {[...visibleRows].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 4).map((row) => <button className="meeting-recent" key={row.id} onClick={() => onOpen(row.id)}><span className={`meeting-recent-dot ${statusFor(row).key}`} /><span><strong>{row.title}</strong><small>{statusFor(row).label} · {formatDate(row.created_at)}</small></span><ChevronRight size={15} /></button>)}
             </section>
           </aside>
         </div>

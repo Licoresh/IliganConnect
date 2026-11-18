@@ -1079,6 +1079,13 @@ export default function IssueMap({
   const selectedBarangayCategoryLegend = selectedBarangayGis && (showCategoryBreakdown || showIndividualBarangayPins && showMarkers) && <div className={overview ? "overview-map-category-legend" : "map-legend map-marker-legend"} aria-label={showCategoryBreakdown ? "Category total colors" : "Report pin colors by category"}>
     <strong>{showCategoryBreakdown ? "Category total colors:" : "Report pin colors:"}</strong>{selectedBarangayLegendItems.length ? selectedBarangayLegendItems.map((item) => <ReportCategoryLabel key={item.id} name={item.name} compact className="map-report-category" />) : <span>No mapped reports in this area.</span>}
   </div>;
+  const mapResultCount = invalidDates
+    ? "Check the date range"
+    : mode === "barangays"
+      ? selectedBarangayGis
+        ? q.isFetching ? `Loading ${selectedBarangayName} reports…` : `${selectedBarangayCount} matching reports · ${mapReports.length} mapped reports · ${selectedBarangayName}`
+        : gis.isPending ? "Loading barangay totals…" : gis.error ? "Barangay totals unavailable" : `${Object.values(reportCountsByBarangay).reduce((sum, count) => sum + count, 0)} permitted reports · totals by assigned barangay`
+      : q.isFetching ? "Loading reports…" : `${mapReports.length} ${officeView ? officeMapScope === "ready" ? "ready for action" : "category reports" : showSavedLocations ? "saved locations" : "mapped reports"}${outOfScopeMapReports ? ` · ${outOfScopeMapReports} need location review` : ""}`;
   return (
     <div className={`issue-map${compact ? " compact" : ""}${overview ? " overview-map" : ""}`}>
       {!overview && <div className="dashboard-brief overview-scope map-authorized-area">
@@ -1111,7 +1118,7 @@ export default function IssueMap({
         }}>
           <strong><SlidersHorizontal size={15} aria-hidden="true" />Filter geographic data</strong>
           <div className="overview-map-filter-fields">
-            <label>Category<select value={overviewCategory} onChange={(event) => setOverviewCategory(event.target.value)}><option value="">All permitted categories</option>{officeMapCategories.map((item) => <option key={item.id} value={item.id}>{reportCategoryPresentation(item.name).label}</option>)}</select></label>
+            <label>Category<select value={overviewCategory} onChange={(event) => setOverviewCategory(event.target.value)}><option value="">{officeView ? "All permitted categories" : "All categories"}</option>{officeMapCategories.map((item) => <option key={item.id} value={item.id}>{reportCategoryPresentation(item.name).label}</option>)}</select></label>
             {(!officeView || officeMapScope === "category") && <label>Status<select value={overviewState} onChange={(event) => setOverviewState(event.target.value)}><option value="">All statuses</option>{mapStatusOptions.map((status) => <option key={status} value={status}>{label(status)}</option>)}</select></label>}
             <label>Date range<select value={overviewDateRange} onChange={(event) => setOverviewDateRange(event.target.value)}><option value="all">All time</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="custom">Custom dates</option></select></label>
             <button type="submit"><SlidersHorizontal size={14} aria-hidden="true" />Apply filters</button>
@@ -1119,7 +1126,28 @@ export default function IssueMap({
           {overviewDateRange === "custom" && <div className="overview-map-custom-dates"><label>From<input type="date" value={overviewSince} max={overviewUntil || undefined} onChange={(event) => setOverviewSince(event.target.value)} /></label><label>Through<input type="date" value={overviewUntil} min={overviewSince || undefined} onChange={(event) => setOverviewUntil(event.target.value)} /></label></div>}
         </form>
       </div>
-      {overview ? <>
+      {overview ? officeView ? <div className="map-page-toolbar overview-map-office-toolbar">
+        <div className="overview-map-view-tabs" role="group" aria-label="Geographic view">
+          {(["map", "barangays", "list"] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value} className={mode === value ? "active" : ""} onClick={() => setMode(value)}>{value === "map" ? "Issue map" : value === "barangays" ? "Barangay GIS" : "Report list"}</button>)}
+        </div>
+        <label className="office-map-scope-control">Map scope<select aria-label="Office map scope" value={officeMapScope} onChange={(event) => { setOfficeMapScope(event.target.value as "ready" | "category"); setOverviewState(""); setState(""); }}><option value="ready">Ready for action</option><option value="category">All category reports</option></select></label>
+        <span className="map-page-result-count" role="status">{mapResultCount}</span>
+        <div className="map-page-actions">
+          <button type="button" className="secondary" onClick={() => {
+            if (canChangeBarangay && mapScopeId) { selectBarangay(""); return; }
+            map.current?.fitBounds(mapScopeFeature
+              ? boundsForBoundary(mapScopeFeature)
+              : [[ILIGAN_MAP_BOUNDS.southWest.longitude, ILIGAN_MAP_BOUNDS.southWest.latitude], [ILIGAN_MAP_BOUNDS.northEast.longitude, ILIGAN_MAP_BOUNDS.northEast.latitude]],
+              { padding: mapScopeFeature ? (compact ? 32 : 52) : 28, maxZoom: mapScopeFeature ? mapFitMaxZoom : undefined, duration: 360 },
+            );
+          }}>Reset map</button>
+          {mode === "map" && <button type="button" className="secondary" disabled={!mapReports.length} onClick={() => {
+            const resultBounds = new maplibregl.LngLatBounds();
+            mapReports.forEach((report) => resultBounds.extend([report.longitude, report.latitude]));
+            map.current?.fitBounds(resultBounds, { padding: 45, maxZoom: 16, duration: 360 });
+          }}>Fit results</button>}
+        </div>
+      </div> : <>
         <div className="overview-map-view-tabs" role="group" aria-label="Geographic view">
           {(["map", "barangays", "list"] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value} className={mode === value ? "active" : ""} onClick={() => setMode(value)}>{value === "map" ? "Issue map" : value === "barangays" ? "Barangay GIS" : "Report list"}</button>)}
         </div>
@@ -1130,7 +1158,7 @@ export default function IssueMap({
         </div>}
         {officeView && <label className="office-map-scope-control">Map scope<select aria-label="Office map scope" value={officeMapScope} onChange={(event) => { setOfficeMapScope(event.target.value as "ready" | "category"); setOverviewState(""); setState(""); }}><option value="ready">Ready for action</option><option value="category">All category reports</option></select></label>}
         <span className="map-page-result-count" role="status">
-          {invalidDates ? "Check the date range" : mode === "barangays" ? selectedBarangayGis ? q.isFetching ? `Loading ${selectedBarangayName} reports…` : `${selectedBarangayCount} matching reports · ${mapReports.length} mapped reports · ${selectedBarangayName}` : gis.isPending ? "Loading barangay totals…" : gis.error ? "Barangay totals unavailable" : `${Object.values(reportCountsByBarangay).reduce((sum, count) => sum + count, 0)} permitted reports · totals by assigned barangay` : q.isFetching ? "Loading reports…" : `${mapReports.length} ${officeView ? officeMapScope === "ready" ? "ready for action" : "category reports" : showSavedLocations ? "saved locations" : "mapped reports"}${outOfScopeMapReports ? ` · ${outOfScopeMapReports} need location review` : ""}`}
+          {mapResultCount}
         </span>
         <div className="map-page-actions">
           <button type="button" className="secondary" onClick={() => {

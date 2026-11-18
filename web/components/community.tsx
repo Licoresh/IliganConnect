@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Eye,
   FileText,
   Flag,
   LayoutGrid,
@@ -245,6 +246,7 @@ export function Community({
         <MeetingRequestsView
           rows={q.data ?? []}
           refs={refs}
+          isOffice={profile.role === "office"}
           search={search}
           setSearch={(value) => { setSearch(value); setPage(0); }}
           barangay={barangay}
@@ -670,7 +672,7 @@ export function Community({
           close={() => setSelected(null)}
           className={table === "consultations" ? "discussion-detail-dialog" : table === "meeting_requests" ? "meeting-details-dialog" : undefined}
           icon={table === "consultations" ? <MessageSquare size={22} /> : table === "meeting_requests" ? <CalendarDays size={22} /> : undefined}
-          description={table === "consultations" ? "Review the consultation and follow the community discussion." : table === "meeting_requests" ? "Review and manage the meeting details." : undefined}
+          description={table === "consultations" ? "Review the consultation and follow the community discussion." : table === "meeting_requests" ? profile.role === "office" ? "View meeting details, respond to invitations, and follow actions assigned to your office." : "Review the request and manage its meeting details." : undefined}
         >
           {target.isPending ? <p className="empty">Opening update…</p> : target.error ? (
             <div role="alert" className="error">
@@ -682,7 +684,7 @@ export function Community({
           ) : table === "consultations" ? (
             <Discussion row={selected} manage={canManage(selected)} />
           ) : table === "meeting_requests" ? (
-            <Meeting row={selected} refs={refs} manage={canManage(selected)}
+            <Meeting row={selected} refs={refs} isOffice={profile.role === "office"} manage={profile.role !== "office" && canManage(selected)} manageSchedule={profile.role === "barangay" && canManage(selected)}
               canInvite={profile.role === "admin" || (profile.role === "barangay" && profile.barangay_id === selected.barangay_id)}
               officeIds={officeIds} />
           ) : (
@@ -710,6 +712,7 @@ type MeetingSchedule = {
 function MeetingRequestsView({
   rows,
   refs,
+  isOffice,
   search,
   setSearch,
   barangay,
@@ -733,6 +736,7 @@ function MeetingRequestsView({
 }: {
   rows: Row[];
   refs: References;
+  isOffice: boolean;
   search: string;
   setSearch: (value: string) => void;
   barangay: string;
@@ -769,13 +773,14 @@ function MeetingRequestsView({
   });
   const invitationsQuery = useQuery({
     queryKey: ["meeting-request-office-invitations", requestIds, officeIds],
-    enabled: requestIds.length > 0 && officeIds.length > 0,
-    queryFn: () => result<{ request_id: string; organization_id: string; status: string }[]>(
-      db!.from("meeting_request_offices")
+    enabled: requestIds.length > 0,
+    queryFn: () => {
+      let query = db!.from("meeting_request_offices")
         .select("request_id,organization_id,status")
-        .in("request_id", requestIds)
-        .in("organization_id", officeIds),
-    ),
+        .in("request_id", requestIds);
+      if (officeIds.length) query = query.in("organization_id", officeIds);
+      return result<{ request_id: string; organization_id: string; status: string }[]>(query);
+    },
   });
   const invitationByRequest = new Map<string, { organization_id: string; status: string }[]>();
   for (const invitation of invitationsQuery.data ?? []) {
@@ -788,9 +793,10 @@ function MeetingRequestsView({
   );
   const upcoming = (meetings.data ?? [])
     .filter((meeting) => !meeting.completed && new Date(meeting.starts_at).getTime() >= Date.now())
+    .filter((meeting) => !isOffice || (invitationByRequest.get(meeting.request_id)?.length ?? 0) > 0)
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
     .slice(0, 4);
-  const pending = rows.filter((row) => row.status === "pending").length;
+  const pending = rows.filter((row) => row.status === "pending" && (!isOffice || (invitationByRequest.get(row.id) ?? []).some((invitation) => invitation.status === "pending"))).length;
   const approved = rows.filter((row) => row.status === "approved").length;
   const completed = (meetings.data ?? []).filter((meeting) => meeting.completed).length;
   const formatDate = (value: string) =>
@@ -799,6 +805,15 @@ function MeetingRequestsView({
     const schedule = scheduleByRequest.get(row.id);
     if (schedule?.completed) return { key: "completed", label: "Completed" };
     if (schedule) return { key: "scheduled", label: "Scheduled" };
+    if (row.status === "pending" && isOffice) {
+      if (invitationsQuery.isPending) return { key: "invitation-checking", label: "Checking invitation" };
+      if (invitationsQuery.error) return { key: "invitation-unavailable", label: "Invitation unavailable" };
+      const officeInvitations = invitationByRequest.get(row.id) ?? [];
+      if (!officeInvitations.length) return { key: "not-invited", label: "Not invited" };
+      if (officeInvitations.every((invitation) => invitation.status === "declined")) return { key: "declined", label: "Invitation declined" };
+      if (officeInvitations.some((invitation) => invitation.status === "pending")) return { key: "invitation-pending", label: "Invitation pending" };
+      return { key: "awaiting-barangay", label: "Awaiting barangay" };
+    }
     return row.status === "approved"
       ? { key: "approved", label: "Approved" }
       : row.status === "declined"
@@ -808,7 +823,8 @@ function MeetingRequestsView({
   const statusIcon = (key: string) =>
     key === "approved" || key === "completed" ? <CheckCircle2 size={15} />
       : key === "scheduled" ? <CalendarDays size={15} />
-        : key === "declined" ? <Check size={15} /> : <Clock3 size={15} />;
+        : key === "declined" ? <Check size={15} />
+          : key === "not-invited" ? <Eye size={15} /> : <Clock3 size={15} />;
 
   return (
     <section className="meeting-workspace" aria-label="Meeting request workspace">
@@ -816,7 +832,7 @@ function MeetingRequestsView({
         {[
           { title: "Total requests", count: rows.length, note: "In these results", icon: <Users />, tone: "teal" },
           { title: "Approved", count: approved, note: "Ready to coordinate", icon: <CheckCircle2 />, tone: "green" },
-          { title: "Pending review", count: pending, note: "Awaiting a decision", icon: <Clock3 />, tone: "amber" },
+          { title: isOffice ? "Pending invitations" : "Pending review", count: pending, note: isOffice ? "Awaiting your office" : "Awaiting a decision", icon: <Clock3 />, tone: "amber" },
           { title: "Scheduled", count: (meetings.data ?? []).filter((meeting) => !meeting.completed).length, note: "Dates confirmed", icon: <CalendarDays />, tone: "blue" },
           { title: "Completed", count: completed, note: "Meeting held", icon: <Check />, tone: "green" },
         ].map((metric) => (
@@ -834,7 +850,7 @@ function MeetingRequestsView({
           <input maxLength={200} placeholder="Search meeting requests, offices, or keywords…" value={search} onChange={(event) => setSearch(event.target.value)} />
         </label>
         <label><span>Barangay</span><select value={barangay} onChange={(event) => setBarangay(event.target.value)}><option value="">All visible</option>{refs.barangays.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label><span>Status</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option><option value="pending">Pending review</option><option value="approved">Approved</option><option value="declined">Declined</option></select></label>
+        <label><span>Status</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{!isOffice && <option value="pending">Pending review</option>}<option value="approved">Approved</option><option value="declined">Declined</option></select></label>
         <label><span>Date range</span><select value={dateRange} onChange={(event) => setDateRange(event.target.value)}><option value="all">All time</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></label>
         <label><span>Sort by</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
       </div>
@@ -883,7 +899,7 @@ function MeetingRequestsView({
                     </div>}
                     {schedule && <div className="meeting-schedule"><CalendarDays size={16} /><div><strong>{formatMeetingTimeRange(schedule.starts_at, schedule.ends_at)}</strong><span>{schedule.venue}</span></div>{meetingLink && <a className="meeting-join-link" href={meetingLink} target="_blank" rel="noreferrer"><Link2 size={14} aria-hidden="true" />Join Google Meet</a>}</div>}
                     {row.decision_reason && <p className="meeting-decision">{row.decision_reason}</p>}
-                    <button className="meeting-review" onClick={() => onOpen(row.id)}><FileText size={16} /> {pendingOfficeInvitation ? "Respond to invitation" : "Review & follow up"} <ChevronRight size={17} /></button>
+                    <button className="meeting-review" onClick={() => onOpen(row.id)}><FileText size={16} /> {isOffice ? pendingOfficeInvitation ? "Respond to invitation" : "View meeting" : "Review & follow up"} <ChevronRight size={17} /></button>
                   </article>
                 );
               })}
@@ -1027,13 +1043,17 @@ function Discussion({ row, manage }: { row: Row; manage: boolean }) {
 function Meeting({
   row,
   refs,
+  isOffice,
   manage,
+  manageSchedule,
   canInvite,
   officeIds,
 }: {
   row: Row;
   refs: References;
+  isOffice: boolean;
   manage: boolean;
+  manageSchedule: boolean;
   canInvite: boolean;
   officeIds: string[];
 }) {
@@ -1065,8 +1085,8 @@ function Meeting({
               {
                 id: string;
                 description: string;
-                organization_id: string;
-                due_at: string;
+                organization_id: string | null;
+                due_at: string | null;
                 completed: boolean;
               }[]
             >(
@@ -1085,7 +1105,10 @@ function Meeting({
   }, [meeting?.id, meeting?.venue_type, meeting?.meet_url]);
   const meetingLink = normalizeGoogleMeetUrl(meeting?.meet_url || "");
   const invitations = q.data?.invitations || [];
-  const ownInvitations = officeIds.length ? invitations.filter((invitation) => officeIds.includes(invitation.organization_id)) : invitations;
+  const ownInvitations = isOffice && officeIds.length ? invitations.filter((invitation) => officeIds.includes(invitation.organization_id)) : invitations;
+  const acceptedOfficeIds = ownInvitations.filter((invitation) => invitation.status === "accepted").map((invitation) => invitation.organization_id);
+  const canEditOfficeActions = isOffice && acceptedOfficeIds.length > 0;
+  const canEditActionItem = (item: { organization_id: string | null }) => manage || (canEditOfficeActions && !!item.organization_id && acceptedOfficeIds.includes(item.organization_id));
   const requestOpen = row.status === "pending" || row.status === "approved";
   const availableOrganizations = refs.organizations.filter(
     (organization) => {
@@ -1095,15 +1118,16 @@ function Meeting({
     },
   );
   return (
-    <div className="meeting-detail-workspace">
+    <div className={`meeting-detail-workspace${isOffice ? " is-office-view" : ""}`}>
       {q.isPending ? <p className="meeting-feedback">Loading meeting details…</p> : null}
       {q.error && <p role="alert" className="meeting-feedback error">{q.error.message}</p>}
       {message && <p role={failed ? "alert" : "status"} className={`meeting-feedback ${failed ? "error" : "success"}`}>{message}</p>}
+      {(isOffice || manage && !manageSchedule) && <p className="meeting-office-view-note"><Eye size={15} aria-hidden="true" />{isOffice ? "Meeting details are managed by the barangay. You can respond to your invitation and update action items assigned to an office you have accepted for." : "The assigned barangay manages the venue and schedule. You can review the request, invitations, and agreed actions."}</p>}
 
       <section className="meeting-section meeting-overview">
         <div className="meeting-overview-main">
           <span className={`meeting-detail-status ${meeting?.completed ? "is-complete" : meeting ? "is-scheduled" : ""}`}>
-            {meeting?.completed ? "Completed" : meeting ? "Scheduled" : label(row.status)}
+            {meeting?.completed ? "Completed" : meeting ? "Scheduled" : isOffice && row.status === "pending" ? q.data ? !ownInvitations.length ? "Not invited" : ownInvitations.every((invitation) => invitation.status === "declined") ? "Invitation declined" : ownInvitations.some((invitation) => invitation.status === "pending") ? "Invitation pending" : "Awaiting barangay" : "Checking invitation" : label(row.status)}
           </span>
           <p>{row.body}</p>
           {meeting && <div className="meeting-overview-place"><MapPin size={16} aria-hidden="true" /><div><strong>{meeting.venue_type === "online" ? "Online meeting" : "Meeting venue"}</strong><span>{meeting.venue_type === "online" ? "Google Meet" : meeting.venue}</span></div></div>}
@@ -1146,7 +1170,7 @@ function Meeting({
         </section>
       )}
 
-      {manage && row.status === "approved" && (
+      {manageSchedule && row.status === "approved" && (
         <form className="meeting-section meeting-details-form" key={meeting?.id || "new"} onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
@@ -1283,24 +1307,39 @@ function Meeting({
           <section className="meeting-section">
             <div className="meeting-section-heading">
               <span className="meeting-section-icon"><CheckCircle2 size={20} /></span>
-              <div><h3>Agreed action items</h3><p>Track decisions, owners, and follow-up dates.</p></div>
+              <div><h3>Agreed action items</h3><p>{isOffice ? canEditOfficeActions ? "View all agreed actions and update items assigned to your accepted office." : "View the recorded actions. Editing is available after your office accepts an invitation and receives an assigned action." : "Track decisions, owners, and follow-up dates."}</p></div>
             </div>
             {q.data?.actions.length ? <div className="meeting-action-list">{q.data.actions.map((a) => (
               <article className="meeting-action-item" key={a.id}>
                 <span className={`meeting-action-state ${a.completed ? "is-complete" : ""}`} aria-hidden="true"><Check size={16} /></span>
                 <div className="meeting-action-copy"><strong>{a.description}</strong><span>{refs.organizations.find((o) => o.id === a.organization_id)?.name || "Unassigned"}<i>·</i>{a.due_at ? new Date(`${a.due_at}T00:00:00`).toLocaleDateString() : "No target date"}</span></div>
                 <span className={`meeting-action-badge ${a.completed ? "is-complete" : ""}`}>{a.completed ? "Completed" : "Open"}</span>
-                {manage && <button type="button" className="meeting-action-toggle" disabled={busy} onClick={() => void run(db!.from("meeting_action_items").update({ completed: !a.completed }).eq("id", a.id))}>{a.completed ? "Reopen" : "Mark complete"}</button>}
+                {canEditActionItem(a) && <button type="button" className="meeting-action-toggle" disabled={busy} onClick={() => void run(db!.from("meeting_action_items").update({ completed: !a.completed }).eq("id", a.id))}>{a.completed ? "Reopen" : "Mark complete"}</button>}
+                {canEditActionItem(a) && <details className="meeting-action-edit"><summary>Edit action</summary><form className="meeting-form" onSubmit={async (event) => {
+                  event.preventDefault();
+                  const fields = new FormData(event.currentTarget);
+                  const description = String(fields.get("description") || "").trim();
+                  if (description.length < 5) return;
+                  await run(db!.from("meeting_action_items").update({ description, due_at: fields.get("due") || null }).eq("id", a.id));
+                }}>
+                  <label className="meeting-field"><span>Agreed action</span><textarea name="description" required minLength={5} maxLength={2000} defaultValue={a.description} /></label>
+                  <label className="meeting-field"><span>Target date</span><input name="due" type="date" defaultValue={a.due_at || ""} /></label>
+                  <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Save action"}</button></div>
+                </form></details>}
               </article>
             ))}</div> : <p className="meeting-empty">No agreed actions recorded yet.</p>}
             {manage && <form className="meeting-form meeting-action-form" onSubmit={async (e) => {
               e.preventDefault();
               const form = e.currentTarget;
               const f = new FormData(form);
-              if (await run(db!.from("meeting_action_items").insert({ meeting_id: meeting.id, description: f.get("description"), organization_id: f.get("office") || null, due_at: f.get("due") || null }))) form.reset();
+              const organizationId = String(f.get("office") || "");
+              if (await run(db!.from("meeting_action_items").insert({ meeting_id: meeting.id, description: f.get("description"), organization_id: organizationId || null, due_at: f.get("due") || null }))) form.reset();
             }}>
               <label className="meeting-field"><span>Agreed action</span><textarea name="description" required minLength={5} maxLength={2000} placeholder="Write the agreed action, decision, or finding…" /></label>
-              <div className="meeting-form-grid"><label className="meeting-field"><span>Responsible office</span><select name="office"><option value="">Unassigned</option>{refs.organizations.filter(o => (o as { active?: boolean }).active !== false).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label><label className="meeting-field"><span>Target date</span><input name="due" type="date" /></label></div>
+              <div className="meeting-form-grid">
+                <label className="meeting-field"><span>Responsible office</span><select name="office"><option value="">Unassigned</option>{refs.organizations.filter((organization) => (organization as { active?: boolean }).active !== false).map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label>
+                <label className="meeting-field"><span>Target date</span><input name="due" type="date" /></label>
+              </div>
               <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Record follow-up action"}</button></div>
             </form>}
           </section>

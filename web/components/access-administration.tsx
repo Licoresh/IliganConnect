@@ -187,10 +187,7 @@ export function AccessAdministration({ refs }: { refs: References }) {
                   <span>
                     {refs.barangays.find((b) => b.id === r.barangay_id)?.name ||
                       "All barangays"}{" "}
-                    ·{" "}
-                    {r.assignment_only
-                      ? "Assigned reports only"
-                      : "All matching reports"}
+                    · Category reports are read-only; actions require assignment
                   </span>
                   <small>
                     {[
@@ -296,7 +293,7 @@ export function AccessAdministration({ refs }: { refs: References }) {
               </select>
             </label>
             <label>
-              Report access
+              Linked report access for meetings
               <select
                 name="access"
                 defaultValue={
@@ -307,10 +304,11 @@ export function AccessAdministration({ refs }: { refs: References }) {
                   Only reports assigned to this organization
                 </option>
                 <option value="coverage">
-                  All matching category reports in this coverage
+                  All matching reports in this category coverage
                 </option>
               </select>
             </label>
+            <p className="fine">Category reports are available for reference. This setting limits which reports may be linked to office meetings; case actions still require assignment.</p>
             <fieldset className="office-permission-checks"><legend>Permissions</legend><p>Select the actions this office can perform for this category.</p>
             {(
               [

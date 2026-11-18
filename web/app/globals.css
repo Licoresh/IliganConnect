@@ -2739,6 +2739,13 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-card-meta { display: grid; gap: 7px; margin-bottom: 11px; color: #647c8e; font-size: 10px; }
 .meeting-card-meta span { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .meeting-card-meta svg { flex: 0 0 auto; color: var(--brand); }
+.meeting-office-invitations { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.meeting-invitation-status { display: inline-flex; min-width: 0; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid #dbe8e7; border-radius: 8px; background: #f7fbfa; color: #58707d; font-size: 10px; line-height: 1.3; }
+.meeting-invitation-status strong { color: #27465a; font-weight: 650; }
+.meeting-invitation-status.pending { border-color: #f1dbad; background: #fff8e9; color: #8a5a0a; }
+.meeting-invitation-status.accepted { border-color: #cae9d8; background: #effaf4; color: #17734e; }
+.meeting-invitation-status.declined { border-color: #f0d5d1; background: #fff6f4; color: #a0443c; }
+.meeting-invitation-error { color: #a0443c; font-size: 10px; }
 .meeting-schedule { display: flex; flex-wrap: wrap; gap: 9px; margin: 0 0 11px; padding: 9px; border: 1px solid #d9efea; border-radius: 10px; background: #f3fbf8; color: var(--brand); }
 .meeting-schedule > svg { flex: 0 0 auto; margin-top: 1px; }
 .meeting-schedule > div { display: grid; min-width: 0; gap: 2px; }
@@ -2757,6 +2764,7 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-request-grid.is-list .meeting-card h3 { grid-column: 1; grid-row: 2; margin: 0; }
 .meeting-request-grid.is-list .meeting-card-body { grid-column: 1; grid-row: 3; margin: 0; }
 .meeting-request-grid.is-list .meeting-card-meta { grid-column: 2; grid-row: 1 / span 3; margin: 0; }
+.meeting-request-grid.is-list .meeting-office-invitations { grid-column: 2; grid-row: 4; margin: 0; }
 .meeting-request-grid.is-list .meeting-schedule, .meeting-request-grid.is-list .meeting-decision { grid-column: 2; margin: 0; }
 .meeting-request-grid.is-list .meeting-review { grid-column: 3; grid-row: 1 / span 3; }
 .meeting-rail { display: grid; align-content: start; gap: 12px; }
@@ -4614,6 +4622,48 @@ main#main, main#main.overview-main, main#main.reports-main { width: 100%; max-wi
 .duplicate-queue-status { margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .reports-table .duplicate-queue-indicator { min-width: 48px; min-height: 48px; max-width: 100%; justify-content: flex-start; gap: 6px; margin-top: 8px; padding: 7px 9px; border: 1px solid #ead5a9; border-radius: 8px; background: #fff8e9; color: #765314; font-size: 12px; font-weight: 600; line-height: 1.5; text-align: left; }
 .reports-table .duplicate-queue-indicator:hover:not(:disabled) { background: #fff1cf; border-color: #cfac64; }
+
+.office-category-reports { padding: clamp(16px, 2vw, 24px); }
+.office-category-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.office-category-intro strong { color: var(--ink); font-size: 14px; }
+.office-category-intro p { max-width: 760px; margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.office-category-intro > button { flex: 0 0 auto; }
+.office-category-filters { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(145px, 1fr)); align-items: end; gap: 12px; margin-bottom: 14px; }
+.office-category-filters > label:not(.search-field) { display: grid; min-width: 0; gap: 6px; color: var(--ink); font-size: 11px; font-weight: 600; }
+.office-category-filters select { width: 100%; min-width: 0; }
+.office-category-reports .results-heading { margin: 0 0 10px; }
+.office-category-table { width: 100%; min-width: 720px; }
+.office-category-table th:first-child { width: 34%; }
+.office-category-table th:nth-child(2) { width: 23%; }
+.office-category-table th:nth-child(3) { width: 13%; }
+.office-category-table th:nth-child(4) { width: 18%; }
+.office-category-table th:nth-child(5) { width: 12%; }
+.office-category-table .report-title { justify-content: flex-start; gap: 8px; }
+.office-category-table .report-title svg { margin-left: auto; }
+.office-category-summary { display: -webkit-box; overflow: hidden; max-width: 44ch; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--muted); }
+.office-category-location { display: block; margin-bottom: 5px; color: var(--ink); font-weight: 550; }
+.office-category-empty { display: grid; justify-items: center; gap: 6px; padding: 44px 20px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); text-align: center; }
+.office-category-empty strong { color: var(--ink); }
+.office-category-empty span { max-width: 520px; font-size: 12px; line-height: 1.55; }
+.office-map-scope-control { display: grid; grid-template-columns: auto minmax(150px, 220px); align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.office-map-scope-control select { min-width: 0; height: 38px; }
+@media (max-width: 850px) {
+  .office-category-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .office-category-filters > .search-field { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+  .office-category-reports { padding: 14px; }
+  .office-category-intro { align-items: stretch; flex-direction: column; gap: 10px; }
+  .office-category-intro > button { align-self: flex-start; }
+  .office-category-filters { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .office-category-filters > .search-field { grid-column: auto; }
+  .office-map-scope-control { grid-template-columns: minmax(0, 1fr); flex: 1 1 100%; gap: 5px; }
+  .office-map-scope-control select { width: 100%; }
+  .table-scroll .office-category-table { min-width: 0; }
+  .table-scroll .office-category-table tbody tr { grid-template-columns: minmax(0, 1fr) auto; }
+  .table-scroll .office-category-table tbody td:nth-child(3) { grid-column: 2; justify-self: end; }
+  .table-scroll .office-category-table tbody td:nth-child(4), .table-scroll .office-category-table tbody td:nth-child(5) { grid-column: 1 / -1; }
+}
 .duplicate-queue-indicator svg { flex: 0 0 auto; }
 .duplicate-queue-indicator span { min-width: 0; overflow-wrap: anywhere; }
 

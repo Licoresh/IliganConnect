@@ -161,6 +161,7 @@ export default function IssueMap({
   hideReportList?: boolean;
 }) {
   const access = useAccess();
+  const officeView = access.profile.role === "office";
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null),
     barangayPopup = useRef<maplibregl.Popup | null>(null),
@@ -191,6 +192,7 @@ export default function IssueMap({
     [base, setBase] = useState<"map" | "terrain" | "satellite">("satellite"),
     [barangayMetric, setBarangayMetric] = useState<"count" | "density">("count"),
     [showSavedLocations, setShowSavedLocations] = useState(false),
+    [officeMapScope, setOfficeMapScope] = useState<"ready" | "category">("ready"),
     [category, setCategory] = useState(""),
     [barangay, setBarangay] = useState(initialBarangay),
     [state, setState] = useState(""),
@@ -273,7 +275,7 @@ export default function IssueMap({
         ILIGAN_MAP_BOUNDS.northEast.latitude,
       ]
     : bounds;
-  const mapFilters = [category, mapScopeId, state, since, until, permissionFingerprint(access)];
+  const mapFilters = [category, mapScopeId, state, since, until, officeMapScope, permissionFingerprint(access)];
   const q = useQuery<Report[]>({
     enabled: !invalidDates,
     queryKey: [
@@ -283,24 +285,34 @@ export default function IssueMap({
     ],
     // Retain the view during viewport requests, but never across filters or access changes.
     placeholderData: (previous, previousQuery) => mapFilters.every((filter, index) => previousQuery?.queryKey[index + 2] === filter) ? previous : undefined,
-    queryFn: ({ signal }) =>
-      result<Report[]>(
-        db!.rpc("map_reports", {
+    queryFn: async ({ signal }) => {
+      const mapArgs = {
           west: queryBounds[0],
           south: queryBounds[1],
           east: queryBounds[2],
           north: queryBounds[3],
           category: category || null,
           barangay: mapScopeId || null,
-          report_state: state || null,
-          office: null,
           since: philippineDateBoundary(since),
           until: philippineDateBoundary(until, true),
           verified_only: false,
           unresolved_only: false,
           recurring_only: false,
-        }).abortSignal(signal),
-      ),
+      };
+      if (officeView && officeMapScope === "ready") {
+        const organizations = access.organizations.filter((organization) => organization.active);
+        const responses = await Promise.all(organizations.flatMap((organization) => ["assigned", "scheduled", "in_progress"].map((reportState) =>
+          result<Report[]>(db!.rpc("map_reports", { ...mapArgs, report_state: reportState, office: organization.id }).abortSignal(signal)),
+        )));
+        return [...new Map(responses.flat().map((report) => [report.id, report])).values()]
+          .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 1000);
+      }
+      return result<Report[]>(db!.rpc("map_reports", {
+        ...mapArgs,
+        report_state: state || null,
+        office: null,
+      }).abortSignal(signal));
+    },
   });
   const selectedMapReport = q.data?.find((report) => report.id === selectedId);
   const linkedReport = useQuery({
@@ -312,27 +324,57 @@ export default function IssueMap({
   const gis = useQuery({
     enabled: mode === "barangays" && !invalidDates,
     queryKey: ["map-barangay-counts", category, mapScopeId, state, since, until, permissionFingerprint(access)],
-    queryFn: ({ signal }) => result<{ barangay_id: string; barangay_name: string; report_count: number }[]>(db!.rpc("map_barangay_counts", {
-      p_category: category || null,
-      p_barangay: mapScopeId || null,
-      p_report_state: state || null,
-      p_since: philippineDateBoundary(since),
-      p_until: philippineDateBoundary(until, true),
-      p_verified_only: false,
-      p_unresolved_only: false,
-      p_office: null,
-      p_recurring_only: false,
-    }).abortSignal(signal)),
+    queryFn: async ({ signal }) => {
+      if (officeView && officeMapScope === "ready") {
+        const organizations = access.organizations.filter((organization) => organization.active);
+        const responses = await Promise.all(organizations.flatMap((organization) => ["assigned", "scheduled", "in_progress"].map((reportState) =>
+          result<{ barangay_id: string; barangay_name: string; report_count: number }[]>(db!.rpc("map_barangay_counts", {
+            p_category: category || null, p_barangay: mapScopeId || null, p_report_state: reportState,
+            p_since: philippineDateBoundary(since), p_until: philippineDateBoundary(until, true),
+            p_verified_only: false, p_unresolved_only: false, p_office: organization.id, p_recurring_only: false,
+          }).abortSignal(signal)),
+        )));
+        const totals = new Map<string, { barangay_id: string; barangay_name: string; report_count: number }>();
+        responses.flat().forEach((row) => {
+          const current = totals.get(row.barangay_id) || { ...row, report_count: 0 };
+          current.report_count += Number(row.report_count);
+          totals.set(row.barangay_id, current);
+        });
+        return [...totals.values()].sort((a, b) => b.report_count - a.report_count || a.barangay_name.localeCompare(b.barangay_name));
+      }
+      return result<{ barangay_id: string; barangay_name: string; report_count: number }[]>(db!.rpc("map_barangay_counts", {
+        p_category: category || null, p_barangay: mapScopeId || null, p_report_state: state || null,
+        p_since: philippineDateBoundary(since), p_until: philippineDateBoundary(until, true),
+        p_verified_only: false, p_unresolved_only: false, p_office: null, p_recurring_only: false,
+      }).abortSignal(signal));
+    },
   });
   const gisCategoryCounts = useQuery<BarangayCategoryCount[]>({
     enabled: showBarangayCategoryBreakdown && !invalidDates,
-    queryKey: ["map-barangay-category-counts", mapScopeId, state, since, until, permissionFingerprint(access)],
-    queryFn: ({ signal }) => result<BarangayCategoryCount[]>(db!.rpc("map_barangay_category_counts", {
-      p_barangay: mapScopeId || null,
-      p_report_state: state || null,
-      p_since: philippineDateBoundary(since),
-      p_until: philippineDateBoundary(until, true),
-    }).abortSignal(signal)),
+    queryKey: ["map-barangay-category-counts", mapScopeId, state, since, until, officeMapScope, permissionFingerprint(access)],
+    queryFn: async ({ signal }) => {
+      if (officeView && officeMapScope === "ready") {
+        const organizations = access.organizations.filter((organization) => organization.active);
+        const responses = await Promise.all(organizations.flatMap((organization) => ["assigned", "scheduled", "in_progress"].map((reportState) =>
+          result<BarangayCategoryCount[]>(db!.rpc("map_barangay_category_counts", {
+            p_barangay: mapScopeId || null, p_report_state: reportState,
+            p_since: philippineDateBoundary(since), p_until: philippineDateBoundary(until, true), p_office: organization.id,
+          }).abortSignal(signal)),
+        )));
+        const totals = new Map<string, BarangayCategoryCount>();
+        responses.flat().forEach((row) => {
+          const key = `${row.barangay_id}:${row.category_id}`;
+          const current = totals.get(key) || { ...row, report_count: 0 };
+          current.report_count = Number(current.report_count) + Number(row.report_count);
+          totals.set(key, current);
+        });
+        return [...totals.values()];
+      }
+      return result<BarangayCategoryCount[]>(db!.rpc("map_barangay_category_counts", {
+        p_barangay: mapScopeId || null, p_report_state: state || null,
+        p_since: philippineDateBoundary(since), p_until: philippineDateBoundary(until, true),
+      }).abortSignal(signal));
+    },
   });
   const showCategoryBreakdown = showBarangayCategoryBreakdown && !!gisCategoryCounts.data;
   const showGisTotals = mode === "barangays" && !showCategoryBreakdown && !!gis.data &&
@@ -1005,6 +1047,10 @@ export default function IssueMap({
       ? "Iligan City · all barangays"
       : access.organizations.length ? `${organizationScope} · authorized areas` : "Authorized areas";
   const selectedCategoryName = refs.categories.find((item) => item.id === category)?.name;
+  const officeMapCategories = officeView
+    ? refs.categories.filter((item) => access.rules.some((rule) => rule.enabled && rule.category_id === item.id && access.organizations.some((organization) => organization.active && organization.id === rule.organization_id)))
+    : refs.categories;
+  const mapStatusOptions = statuses.filter((item) => !["rejected", "duplicate"].includes(item));
   const selectedBarangayCount = reportCountsByBarangay[barangayMapKey(selectedBarangayName)] ?? 0;
   const gisMapCaption = selectedBarangayGis
     ? category
@@ -1065,8 +1111,8 @@ export default function IssueMap({
         }}>
           <strong><SlidersHorizontal size={15} aria-hidden="true" />Filter geographic data</strong>
           <div className="overview-map-filter-fields">
-            <label>Category<select value={overviewCategory} onChange={(event) => setOverviewCategory(event.target.value)}><option value="">All categories</option>{refs.categories.map((item) => <option key={item.id} value={item.id}>{reportCategoryPresentation(item.name).label}</option>)}</select></label>
-            <label>Status<select value={overviewState} onChange={(event) => setOverviewState(event.target.value)}><option value="">All statuses</option>{statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}</select></label>
+            <label>Category<select value={overviewCategory} onChange={(event) => setOverviewCategory(event.target.value)}><option value="">All permitted categories</option>{officeMapCategories.map((item) => <option key={item.id} value={item.id}>{reportCategoryPresentation(item.name).label}</option>)}</select></label>
+            {(!officeView || officeMapScope === "category") && <label>Status<select value={overviewState} onChange={(event) => setOverviewState(event.target.value)}><option value="">All statuses</option>{mapStatusOptions.map((status) => <option key={status} value={status}>{label(status)}</option>)}</select></label>}
             <label>Date range<select value={overviewDateRange} onChange={(event) => setOverviewDateRange(event.target.value)}><option value="all">All time</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="custom">Custom dates</option></select></label>
             <button type="submit"><SlidersHorizontal size={14} aria-hidden="true" />Apply filters</button>
           </div>
@@ -1082,8 +1128,9 @@ export default function IssueMap({
         {!hideReportList && <div className="overview-map-view-tabs" role="group" aria-label="Geographic view">
           {(["map", "barangays"] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value} className={mode === value ? "active" : ""} onClick={() => setMode(value)}>{value === "map" ? "Issue map" : "Barangay GIS"}</button>)}
         </div>}
+        {officeView && <label className="office-map-scope-control">Map scope<select aria-label="Office map scope" value={officeMapScope} onChange={(event) => { setOfficeMapScope(event.target.value as "ready" | "category"); setOverviewState(""); setState(""); }}><option value="ready">Ready for action</option><option value="category">All category reports</option></select></label>}
         <span className="map-page-result-count" role="status">
-          {invalidDates ? "Check the date range" : mode === "barangays" ? selectedBarangayGis ? q.isFetching ? `Loading ${selectedBarangayName} reports…` : `${selectedBarangayCount} matching reports · ${mapReports.length} mapped reports · ${selectedBarangayName}` : gis.isPending ? "Loading barangay totals…" : gis.error ? "Barangay totals unavailable" : `${Object.values(reportCountsByBarangay).reduce((sum, count) => sum + count, 0)} permitted reports · totals by assigned barangay` : q.isFetching ? "Loading reports…" : `${mapReports.length} ${showSavedLocations ? "saved locations" : "mapped reports"}${outOfScopeMapReports ? ` · ${outOfScopeMapReports} need location review` : ""}`}
+          {invalidDates ? "Check the date range" : mode === "barangays" ? selectedBarangayGis ? q.isFetching ? `Loading ${selectedBarangayName} reports…` : `${selectedBarangayCount} matching reports · ${mapReports.length} mapped reports · ${selectedBarangayName}` : gis.isPending ? "Loading barangay totals…" : gis.error ? "Barangay totals unavailable" : `${Object.values(reportCountsByBarangay).reduce((sum, count) => sum + count, 0)} permitted reports · totals by assigned barangay` : q.isFetching ? "Loading reports…" : `${mapReports.length} ${officeView ? officeMapScope === "ready" ? "ready for action" : "category reports" : showSavedLocations ? "saved locations" : "mapped reports"}${outOfScopeMapReports ? ` · ${outOfScopeMapReports} need location review` : ""}`}
         </span>
         <div className="map-page-actions">
           <button type="button" className="secondary" onClick={() => {
@@ -1295,6 +1342,7 @@ export default function IssueMap({
           refs={refs}
           close={() => setSelectedId("")}
           onOpenLinked={setSelectedId}
+          readOnly={officeView && officeMapScope === "category"}
         />
       )}
     </div>

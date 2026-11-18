@@ -168,6 +168,7 @@ export function Community({
           .eq("user_id", profile.id),
       ),
   });
+  const officeIds = profile.role === "office" ? (memberships.data || []).map((membership) => membership.organization_id) : [];
   const announcementOrganizations = access.organizations.filter((organization) =>
     organization.active && access.rules.some((rule) => rule.organization_id === organization.id && rule.enabled),
   );
@@ -260,6 +261,7 @@ export function Community({
           hasNext={(q.data?.length ?? 0) === 20}
           loading={q.isPending}
           error={q.error}
+          officeIds={officeIds}
           onRetry={() => {
             void q.refetch();
             void queryClient.invalidateQueries({ queryKey: ["meeting-request-schedules"] });
@@ -682,7 +684,7 @@ export function Community({
           ) : table === "meeting_requests" ? (
             <Meeting row={selected} refs={refs} manage={canManage(selected)}
               canInvite={profile.role === "admin" || (profile.role === "barangay" && profile.barangay_id === selected.barangay_id)}
-              officeIds={profile.role === "office" ? (memberships.data || []).map((membership) => membership.organization_id) : []} />
+              officeIds={officeIds} />
           ) : (
             <Announcement
               row={selected}
@@ -724,6 +726,7 @@ function MeetingRequestsView({
   hasNext,
   loading,
   error,
+  officeIds,
   onRetry,
   onPageChange,
   onOpen,
@@ -746,6 +749,7 @@ function MeetingRequestsView({
   hasNext: boolean;
   loading: boolean;
   error: Error | null;
+  officeIds: string[];
   onRetry: () => void;
   onPageChange: (value: number) => void;
   onOpen: (id: string) => void;
@@ -763,6 +767,22 @@ function MeetingRequestsView({
           .order("starts_at"),
       ),
   });
+  const invitationsQuery = useQuery({
+    queryKey: ["meeting-request-office-invitations", requestIds, officeIds],
+    enabled: requestIds.length > 0 && officeIds.length > 0,
+    queryFn: () => result<{ request_id: string; organization_id: string; status: string }[]>(
+      db!.from("meeting_request_offices")
+        .select("request_id,organization_id,status")
+        .in("request_id", requestIds)
+        .in("organization_id", officeIds),
+    ),
+  });
+  const invitationByRequest = new Map<string, { organization_id: string; status: string }[]>();
+  for (const invitation of invitationsQuery.data ?? []) {
+    const current = invitationByRequest.get(invitation.request_id) ?? [];
+    current.push(invitation);
+    invitationByRequest.set(invitation.request_id, current);
+  }
   const scheduleByRequest = new Map(
     (meetings.data ?? []).map((meeting) => [meeting.request_id, meeting]),
   );
@@ -843,6 +863,8 @@ function MeetingRequestsView({
               {rows.map((row) => {
                 const status = statusFor(row);
                 const schedule = scheduleByRequest.get(row.id);
+                const officeInvitations = invitationByRequest.get(row.id) ?? [];
+                const pendingOfficeInvitation = officeInvitations.some((invitation) => invitation.status === "pending");
                 const barangayName = refs.barangays.find((item) => item.id === row.barangay_id)?.name ?? "Barangay not specified";
                 const meetingLink = normalizeGoogleMeetUrl(schedule?.meet_url || "");
                 return (
@@ -851,9 +873,17 @@ function MeetingRequestsView({
                     <h3>{row.title}</h3>
                     <p className="meeting-card-body">{row.body}</p>
                     <div className="meeting-card-meta"><span><MapPin size={15} />{barangayName}</span><span><CalendarDays size={15} />Requested {formatDate(row.created_at)}</span></div>
+                    {officeIds.length > 0 && (invitationsQuery.isPending || invitationsQuery.error || officeInvitations.length > 0) && <div className="meeting-office-invitations" aria-live="polite">
+                      {invitationsQuery.isPending ? <span className="muted">Checking your office invitation…</span> : invitationsQuery.error ? <span className="meeting-invitation-error">Invitation status unavailable</span> : officeInvitations.map((invitation) => (
+                        <span className={`meeting-invitation-status ${invitation.status}`} key={invitation.organization_id}>
+                          <strong>{refs.organizations.find((item) => item.id === invitation.organization_id)?.name ?? "Your office"}</strong>
+                          <span>{invitation.status === "pending" ? "Reply needed" : label(invitation.status)}</span>
+                        </span>
+                      ))}
+                    </div>}
                     {schedule && <div className="meeting-schedule"><CalendarDays size={16} /><div><strong>{formatMeetingTimeRange(schedule.starts_at, schedule.ends_at)}</strong><span>{schedule.venue}</span></div>{meetingLink && <a className="meeting-join-link" href={meetingLink} target="_blank" rel="noreferrer"><Link2 size={14} aria-hidden="true" />Join Google Meet</a>}</div>}
                     {row.decision_reason && <p className="meeting-decision">{row.decision_reason}</p>}
-                    <button className="meeting-review" onClick={() => onOpen(row.id)}><FileText size={16} /> Review &amp; follow up <ChevronRight size={17} /></button>
+                    <button className="meeting-review" onClick={() => onOpen(row.id)}><FileText size={16} /> {pendingOfficeInvitation ? "Respond to invitation" : "Review & follow up"} <ChevronRight size={17} /></button>
                   </article>
                 );
               })}
@@ -1055,6 +1085,7 @@ function Meeting({
   }, [meeting?.id, meeting?.venue_type, meeting?.meet_url]);
   const meetingLink = normalizeGoogleMeetUrl(meeting?.meet_url || "");
   const invitations = q.data?.invitations || [];
+  const ownInvitations = officeIds.length ? invitations.filter((invitation) => officeIds.includes(invitation.organization_id)) : invitations;
   const requestOpen = row.status === "pending" || row.status === "approved";
   const availableOrganizations = refs.organizations.filter(
     (organization) => {
@@ -1201,13 +1232,15 @@ function Meeting({
         </form>
       )}
 
-      {q.data && (canInvite || invitations.length > 0) && (
+      {q.data && (canInvite || officeIds.length > 0 || invitations.length > 0) && (
           <section className="meeting-section">
             <div className="meeting-section-heading">
               <span className="meeting-section-icon"><Users size={20} /></span>
-              <div><h3>Office invitations</h3><p>{row.coordination_status === "unavailable" ? "All invited offices declined." : "Offices can accept or decline their invitation."}</p></div>
+              <div><h3>{officeIds.length && !canInvite ? "Your office invitation" : "Office invitations"}</h3><p>{officeIds.length && !canInvite
+                ? "Accept to confirm participation or decline. A reason is optional."
+                : row.coordination_status === "unavailable" ? "All invited offices declined." : "Offices can accept or decline their invitation."}</p></div>
             </div>
-            {invitations.length ? <div className="meeting-participant-list">{invitations.map((p) => (
+            {ownInvitations.length ? <div className="meeting-participant-list">{ownInvitations.map((p) => (
               <div className="meeting-participant" key={p.organization_id}>
                 <span className="meeting-participant-icon"><Users size={17} /></span>
                 <div className="meeting-invitation-copy">
@@ -1234,7 +1267,7 @@ function Meeting({
                 </div>
                 {canInvite && p.status === "pending" && <button type="button" className="meeting-remove" aria-label="Withdraw office invitation" disabled={busy} onClick={() => void run(db!.rpc("remove_meeting_office_invitation", { p_request: row.id, p_organization: p.organization_id }))}><X size={17} /></button>}
               </div>
-            ))}</div> : <p className="meeting-empty">No offices have been invited yet.</p>}
+            ))}</div> : <p className="meeting-empty">{officeIds.length && !canInvite ? "Your office has not been invited to this meeting." : "No offices have been invited yet."}</p>}
             {canInvite && requestOpen && <form className="meeting-add-office" onSubmit={(e) => {
               e.preventDefault();
               const organizationId = new FormData(e.currentTarget).get("office");

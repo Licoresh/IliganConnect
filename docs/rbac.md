@@ -40,7 +40,8 @@ Office action permissions continue to require the explicit assignment plus the m
 Organization names grant no permissions. Administration → Office responsibilities & permissions configures:
 
 - Category and optional barangay coverage.
-- Assignment-only access or access to all matching reports in that coverage.
+- Read-only visibility into reports matching enabled category and barangay coverage. Office action queues contain only reports assigned to that office, grouped as **Ready for action** and **Resolved**.
+- `assignment_only` controls which reports may be linked to office meetings; it does not grant case actions. Review, progress/resolution and referral permissions remain separate, and case actions require the report to be assigned to that office.
 - Review/verification/rejection/reopening, progress/resolution and referral permissions independently.
 - Enabled/draft state and approval notes.
 - Consultation management/official responses, meeting coordination and announcement publication capabilities.
@@ -56,6 +57,8 @@ Community publication and management additionally require organization capabilit
 ## Shared dashboard and heatmap
 
 Every approved administrative role receives **Issue Mapping & Heatmap** in navigation and an embedded heatmap on Overview. The same component provides density, clustered markers, list and barangay summary modes, with category/barangay/office/status/date/verified/unresolved/recurrence filters. Filter inputs can narrow results; they cannot enlarge database permissions.
+
+Office maps have two scopes: **Ready for action** shows only assigned, scheduled and ongoing reports routed to the office; **All category reports** shows matching reports in the office's enabled category and geographic coverage and supports status filtering. The latter is read-only. Offices also receive a separate **Category reports** page for barangay-managed, reviewed reports in the same approved coverage; it has no action, private-note, or reporter-contact controls. Reporter names and contact details remain masked there. Routed reports move into the assigned office's action queue.
 
 Report RLS uses `private.report_access`; private evidence and history use the same report authorization. `map_reports`, `geographic_analytics`, `dashboard_counts`, `barangay_summary` and recurrence queries execute with caller RLS. Administrative aggregates reject resident participation through a staff predicate. Received/unverified records, verified issues, recurrence candidates and excluded duplicate/rejected records are identified separately. Map density caps at 1,000 records per viewport; analytics aggregate in PostgreSQL.
 

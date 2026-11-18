@@ -9,7 +9,7 @@ import { DuplicateReview, type DuplicateCandidateOption } from "./duplicate-revi
 import { DuplicateMainProgress, LinkedDuplicateReports } from "./linked-duplicates";
 import { validateImageFile } from "../lib/images";
 import type { References } from "./workspace";
-import { reportAction } from "../lib/access";
+import { permissionFingerprint, reportAction } from "../lib/access";
 import { Dialog } from "./dialog";
 import { downloadCsv, philippineDateBoundary } from "../lib/export";
 import { useDebouncedValue } from "../lib/use-debounced-value";
@@ -50,25 +50,43 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
   onOpenReport: (id: string, queue: string) => void; onCloseReport: () => void;
 }) {
   const access = useAccess();
+  const officeView = access.profile.role === "office";
+  const officeOrganizationIds = officeView ? access.organizations.filter((organization) => organization.active).map((organization) => organization.id) : [];
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [page, setPage] = useState(0),
     [status, setStatus] = useState(""), [search, setSearch] = useState(initialSearch),
     [category, setCategory] = useState(""), [barangay, setBarangay] = useState(initialBarangay),
     [office, setOffice] = useState(""), [since, setSince] = useState(""), [until, setUntil] = useState(""),
-    [sort, setSort] = useState("newest"), [queue, setQueue] = useState(initialQueue),
+    [sort, setSort] = useState("newest"), [queue, setQueue] = useState(officeView ? initialQueue === "resolved" ? "resolved" : "ready" : initialQueue),
     [activeCaseStage, setActiveCaseStage] = useState<"ongoing" | "forwarded">("ongoing");
   const term = useDebouncedValue(search.trim());
   const invalidDates = !!(since && until && since > until);
   const target = useQuery({
-    queryKey: ["notification-report", initialRecordId], enabled: !!initialRecordId,
-    queryFn: () => result<Report | null>(db!.from("reports").select("*").eq("id", initialRecordId).maybeSingle()),
+    queryKey: ["notification-report", initialRecordId, officeOrganizationIds, permissionFingerprint(access)], enabled: !!initialRecordId,
+    queryFn: async () => {
+      let query = db!.from("reports").select("*").eq("id", initialRecordId);
+      if (officeView) query = officeOrganizationIds.length
+        ? query.in("organization_id", officeOrganizationIds).in("status", ["assigned", "scheduled", "in_progress", "resolved"])
+        : query.eq("id", "00000000-0000-0000-0000-000000000000");
+      return result<Report | null>(query.maybeSingle());
+    },
   });
   const selected = target.data;
   const queueCounts = useQuery({
-    queryKey: ["report-queue-counts"],
+    queryKey: ["report-queue-counts", officeView, officeOrganizationIds, permissionFingerprint(access)],
     staleTime: 30_000,
     queryFn: async () => {
       const base = () => db!.from("reports").select("id", { count: "exact", head: true });
+      if (officeView) {
+        if (!officeOrganizationIds.length) return { ready: 0, resolved: 0 };
+        const responses = await Promise.all([
+          base().in("organization_id", officeOrganizationIds).in("status", ["assigned", "scheduled", "in_progress"]),
+          base().in("organization_id", officeOrganizationIds).eq("status", "resolved"),
+        ]);
+        const failed = responses.find((response) => response.error);
+        if (failed?.error) throw new Error(failed.error.message);
+        return { ready: responses[0].count ?? 0, resolved: responses[1].count ?? 0 };
+      }
       const responses = await Promise.all([
         base(),
         base().in("status", ["submitted", "under_review"]),
@@ -86,11 +104,16 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
     },
   });
   const q = useQuery({
-    queryKey: ["reports", page, status, term, category, barangay, office, since, until, sort, queue, queue === "active" ? activeCaseStage : ""],
+    queryKey: ["reports", page, status, term, category, barangay, office, since, until, sort, queue, queue === "active" ? activeCaseStage : "", officeOrganizationIds],
     enabled: !invalidDates,
     queryFn: async () => {
       let query = db!.from("reports").select("*", { count: "exact" });
-      if (status) query = query.eq("status", status);
+      if (officeView) {
+        query = officeOrganizationIds.length
+          ? query.in("organization_id", officeOrganizationIds)
+          : query.eq("id", "00000000-0000-0000-0000-000000000000");
+        query = queue === "resolved" ? query.eq("status", "resolved") : query.in("status", ["assigned", "scheduled", "in_progress"]);
+      } else if (status) query = query.eq("status", status);
       else if (queue === "review") query = query.in("status", ["submitted", "under_review"]);
       else if (queue === "route") query = query.eq("status", "verified");
       else if (queue === "active") query = activeCaseStage === "forwarded"
@@ -104,6 +127,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
       if (office) query = query.eq("organization_id", office);
       if (since) query = query.gte("created_at", philippineDateBoundary(since)!);
       if (until) query = query.lt("created_at", philippineDateBoundary(until, true)!);
+      if (sort === "status") query = query.order("status", { ascending: true });
       if (sort === "severity" || sort === "urgency") query = query.order(sort, { ascending: false, nullsFirst: false });
       const { data, count, error } = await query.order("created_at", { ascending: sort === "oldest" })
         .order("id").range(page * 20, page * 20 + 19);
@@ -127,10 +151,13 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
   }, [q.data]);
   const clear = () => {
     setSearch(""); setStatus(""); setCategory(""); setBarangay(""); setOffice("");
-    setSince(""); setUntil(""); setQueue("all"); setActiveCaseStage("ongoing"); setSort("newest"); setPage(0);
+    setSince(""); setUntil(""); setQueue(officeView ? "ready" : "all"); setActiveCaseStage("ongoing"); setSort("newest"); setPage(0);
   };
-  const filtered = !!(search || status || category || barangay || office || since || until || queue !== "all");
-  const reportQueues = [
+  const filtered = !!(search || status || category || barangay || office || since || until || queue !== (officeView ? "ready" : "all"));
+  const reportQueues = officeView ? [
+    ["ready", "Ready for action", Send],
+    ["resolved", "Resolved", CircleCheck],
+  ] as const : [
     ["all", "All reports", FileText],
     ["review", "Needs review", Clock3],
     ["route", "Ready for action", Send],
@@ -148,21 +175,21 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
       <section className="report-workspace panel">
         <div className="mobile-report-queue">
           <label className="sr-only" htmlFor="mobile-report-queue">Report queue</label>
-          <select id="mobile-report-queue" value={status ? "custom" : queue} onChange={(event) => { setQueue(event.target.value); if (event.target.value === "active") setActiveCaseStage("ongoing"); setStatus(""); setPage(0); }}>
-            {status && <option value="custom" disabled>Custom status: {label(status)}</option>}
+          <select id="mobile-report-queue" value={!officeView && status ? "custom" : queue} onChange={(event) => { setQueue(event.target.value); if (event.target.value === "active") setActiveCaseStage("ongoing"); setStatus(""); setPage(0); }}>
+            {!officeView && status && <option value="custom" disabled>Custom status: {label(status)}</option>}
             {reportQueues.map(([id, name]) => <option key={id} value={id}>{name}{queueCounts.data ? ` (${queueCounts.data[id]})` : ""}</option>)}
           </select>
         </div>
         <div className="queue-tabs" aria-label="Report queues">
           {reportQueues.map(([id, name, Icon]) => (
-            <button key={id} aria-pressed={queue === id && !status} className={queue === id && !status ? "active" : ""}
+            <button key={id} aria-pressed={queue === id && (officeView || !status)} className={queue === id && (officeView || !status) ? "active" : ""}
               onClick={() => { setQueue(id); if (id === "active") setActiveCaseStage("ongoing"); setStatus(""); setPage(0); }}>
               <Icon size={16} aria-hidden="true" /><span>{name}</span>
               {queueCounts.data && <span className="queue-count" aria-hidden="true">{queueCounts.data[id]}</span>}
             </button>
           ))}
         </div>
-        {queue === "active" && !status && <div className="active-case-stages" aria-label="Active case stage">
+        {!officeView && queue === "active" && !status && <div className="active-case-stages" aria-label="Active case stage">
           <div className="active-case-stages-copy"><strong>Active cases</strong><span>Choose the current handoff stage.</span></div>
           <div className="active-case-stage-tabs" role="group" aria-label="Filter active cases">
             <button type="button" aria-pressed={activeCaseStage === "ongoing"} className={activeCaseStage === "ongoing" ? "active" : ""} onClick={() => { setActiveCaseStage("ongoing"); setPage(0); }}>
@@ -179,22 +206,22 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
               onChange={(e) => { setSearch(e.target.value); setPage(0); }} /></label>
           <label className="sort-field"><ListFilter size={16} aria-hidden="true" /><span className="sr-only">Sort reports</span>
             <select value={sort} onChange={(e) => { setSort(e.target.value); setPage(0); }}>
-              <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="severity">Highest assessed severity</option><option value="urgency">Highest assessed urgency</option>
+              <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="status">Status, then newest</option><option value="severity">Highest assessed severity</option><option value="urgency">Highest assessed urgency</option>
             </select></label>
         </div>
         <details className="report-filter-panel">
           <summary><SlidersHorizontal size={16} aria-hidden="true" /><strong>Refine results</strong><span className="muted">Category, location, office &amp; date</span><ChevronDown className="filter-chevron" size={16} aria-hidden="true" /></summary>
           <div className="toolbar">
             {[
-              { name: "Category", items: refs.categories, value: category, set: setCategory },
-              { name: "Barangay", items: refs.barangays, value: barangay, set: setBarangay },
-              { name: "Assigned office", items: refs.organizations, value: office, set: setOffice },
+              { name: "Category", items: officeView ? refs.categories.filter((item) => access.rules.some((rule) => rule.enabled && rule.category_id === item.id && officeOrganizationIds.includes(rule.organization_id))) : refs.categories, value: category, set: setCategory },
+              { name: "Barangay", items: refs.barangays.filter((item) => !officeView || access.rules.some((rule) => rule.enabled && officeOrganizationIds.includes(rule.organization_id) && (!rule.barangay_id || rule.barangay_id === item.id))), value: barangay, set: setBarangay },
+              { name: "Assigned office", items: officeView ? refs.organizations.filter((item) => officeOrganizationIds.includes(item.id)) : refs.organizations, value: office, set: setOffice },
             ].map((f) => <label key={f.name}>{f.name}<select value={f.value} onChange={(e) => { f.set(e.target.value); setPage(0); }}>
               <option value="">All permitted</option>{f.items.map((x) => <option key={x.id} value={x.id}>{f.name === "Category" ? reportCategoryPresentation(x.name).label : x.name}</option>)}
             </select></label>)}
-            <label>Status<select value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }}>
+            {!officeView && <label>Status<select value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }}>
               <option value="">Current queue</option>{statuses.map((s) => <option key={s} value={s}>{label(s)}</option>)}
-            </select></label>
+            </select></label>}
             <label>Submitted from<input type="date" value={since} max={until || undefined} onChange={(e) => { setSince(e.target.value); setPage(0); }} /></label>
             <label>Submitted through<input type="date" value={until} min={since || undefined} onChange={(e) => { setUntil(e.target.value); setPage(0); }} /></label>
           </div>
@@ -236,7 +263,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
               <td data-label="Location"><span className="report-location"><MapPin size={13} aria-hidden="true" /><strong>{refs.barangays.find((b) => b.id === r.barangay_id)?.name}</strong></span>
                 {reportLocalAddress(r) && <small className="record-meta">{reportLocalAddress(r)}</small>}
                 <ReportCategoryLabel name={category} compact className="report-category" /></td>
-              <td data-label={walkIn ? "Reporter" : "Resident"}>{person?.resident_name || (residents.error ? "Details unavailable" : "Loading…")}<small className="record-meta">{walkIn ? `Walk-in · Recorded by ${person?.created_by_name || "barangay staff"}` : refs.barangays.find(b => b.id === person?.registered_barangay_id)?.name || "Barangay not recorded"}</small></td><td data-label="Status"><span className={"badge " + r.status}>{reportStatusLabel(r.status)}</span></td>
+              <td data-label={walkIn ? "Reporter" : "Resident"}>{person?.resident_name || (residents.isPending ? "Loading…" : residents.error ? "Details unavailable" : walkIn ? "Walk-in report" : "Resident")}<small className="record-meta">{walkIn ? `Walk-in · Recorded by ${person?.created_by_name || "barangay staff"}` : refs.barangays.find(b => b.id === person?.registered_barangay_id)?.name || "Barangay not recorded"}</small></td><td data-label="Status"><span className={"badge " + r.status}>{reportStatusLabel(r.status)}</span></td>
               <td data-label="Office">{refs.organizations.find((o) => o.id === r.organization_id)?.name || "Barangay team"}</td>
               <td className="report-received" data-label="Received"><time dateTime={r.created_at}>{new Date(r.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" })}</time><button className="report-open" aria-label={`Open report: ${r.title}`} onClick={() => onOpenReport(r.id, queue)}><ChevronRight size={17} aria-hidden="true" /></button></td>
             </tr>;
@@ -262,11 +289,13 @@ export function ReportDetail({
   refs,
   close,
   onOpenLinked,
+  readOnly = false,
 }: {
   report: Report;
   refs: References;
   close: () => void;
   onOpenLinked?: (id: string) => void;
+  readOnly?: boolean;
 }) {
   const qc = useQueryClient();
   const access = useAccess();
@@ -277,7 +306,7 @@ export function ReportDetail({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   type WorkspaceStep = "review" | "action" | "details" | "notes";
-  const [activeStep, setActiveStep] = useState<WorkspaceStep>(reviewPending ? "review" : "action");
+  const [activeStep, setActiveStep] = useState<WorkspaceStep>(readOnly ? "details" : reviewPending ? "review" : "action");
   const [actionMode, setActionMode] = useState<"status" | "progress">("status");
   const [walkInPin, setWalkInPin] = useState<WalkInPin>(() => hasReportCoordinates(r) ? { latitude: r.latitude, longitude: r.longitude } : null);
   const [editingWalkInPin, setEditingWalkInPin] = useState(false);
@@ -333,7 +362,7 @@ export function ReportDetail({
           const { data, error } = await db!.storage.from("report-evidence").createSignedUrls(files.map((file) => file.path), 3600);
           return files.map((file, index) => ({ ...file, url: error ? null : data[index]?.signedUrl }));
         })(),
-        result<{ id: string; body: string; created_at: string }[]>(
+        readOnly ? Promise.resolve([]) : result<{ id: string; body: string; created_at: string }[]>(
           db!
             .from("report_internal_notes")
             .select("id,body,created_at")
@@ -359,18 +388,18 @@ export function ReportDetail({
   const availableStatuses: readonly Status[] = r.status === "scheduled"
     ? scheduleDayReached ? [...transitions.scheduled, "scheduled"] : ["scheduled", "duplicate"]
     : transitions[r.status];
-  const nextStatuses = availableStatuses.filter(s => !barangayReadOnly && canCompleteBarangayReview && q.data?.permissions[reportAction(s)] &&
+  const nextStatuses = availableStatuses.filter(s => !readOnly && !barangayReadOnly && canCompleteBarangayReview && q.data?.permissions[reportAction(s)] &&
     (s !== "assigned" || !reviewPending || q.data?.permissions.review) &&
     (s !== "duplicate" || duplicateCandidates.length > 0) &&
     !(r.status === "verified" && s === "in_progress" && (r.organization_id || !["admin", "barangay"].includes(access.profile.role))));
-  const canRouteFromReview = r.status === "verified" && !r.organization_id &&
+  const canRouteFromReview = !readOnly && r.status === "verified" && !r.organization_id &&
     (access.profile.role === "admin" || (access.profile.role === "barangay" && access.profile.barangay_id === r.barangay_id)) &&
     nextStatuses.includes("assigned");
   const stepStatuses = reviewPending
     ? activeStep === "review" ? nextStatuses : []
     : activeStep === "review" ? canRouteFromReview ? nextStatuses.filter(s => s === "assigned" || s === "duplicate") : []
       : activeStep === "action" ? nextStatuses.filter(s => s !== "assigned") : [];
-  const canRecordProgress = !barangayReadOnly && !reviewPending && !!q.data?.permissions.update && ["scheduled", "in_progress"].includes(r.status);
+  const canRecordProgress = !readOnly && !barangayReadOnly && !reviewPending && !!q.data?.permissions.update && ["scheduled", "in_progress"].includes(r.status);
   const progressOnly = activeStep === "action" && canRecordProgress && (actionMode === "progress" || !stepStatuses.length);
   const selectedStatus = stepStatuses.includes(status as typeof r.status) ? status : stepStatuses[0] || "";
   const routeDecisionOnly = !reviewPending && activeStep === "review" && selectedStatus === "assigned";
@@ -491,9 +520,11 @@ export function ReportDetail({
   const reviewComplete = !reviewPending && (!!reviewRecord || !!r.verified_at || ["rejected", "duplicate"].includes(r.status));
   const workspaceSteps = [
     { id: "details" as const, title: "Report details", detail: "Location, context and photos", icon: MapPin, state: "available", disabled: false },
-    { id: "review" as const, title: "Review & route", detail: reviewPending ? "Matches, ratings and decision" : canRouteFromReview ? "Review recorded · route if needed" : reviewComplete ? "Barangay review recorded" : "Review details", icon: ClipboardCheck, state: reviewPending || !reviewComplete ? "required" : "complete", disabled: false },
-    { id: "action" as const, title: "Status & progress", detail: barangayReadOnly ? `Read-only · managed by ${assignedOfficeName}` : reviewPending ? "Available after review" : "Case stage and resident updates", icon: ClipboardList, state: r.status === "resolved" ? "complete" : "available", disabled: reviewPending },
-    { id: "notes" as const, title: "Private notes", detail: "Staff-only context", icon: LockKeyhole, state: "available", disabled: false },
+    ...(!readOnly ? [
+      { id: "review" as const, title: "Review & route", detail: reviewPending ? "Matches, ratings and decision" : canRouteFromReview ? "Review recorded · route if needed" : reviewComplete ? "Barangay review recorded" : "Review details", icon: ClipboardCheck, state: reviewPending || !reviewComplete ? "required" : "complete", disabled: false },
+      { id: "action" as const, title: "Status & progress", detail: barangayReadOnly ? `Read-only · managed by ${assignedOfficeName}` : reviewPending ? "Available after review" : "Case stage and resident updates", icon: ClipboardList, state: r.status === "resolved" ? "complete" : "available", disabled: reviewPending },
+      { id: "notes" as const, title: "Private notes", detail: "Staff-only context", icon: LockKeyhole, state: "available", disabled: false },
+    ] : []),
   ];
   const activeStepMeta = workspaceSteps.find(step => step.id === activeStep) || workspaceSteps[0];
   const currentStatusTitle = r.status === "in_progress" ? "Ongoing" : reportStatusLabel(r.status);
@@ -722,7 +753,7 @@ export function ReportDetail({
                   <div><span>{r.status === "duplicate" ? "Progress ownership" : "Assigned office"}</span><strong>{r.status === "duplicate" ? "Managed through the main report" : refs.organizations.find(organization => organization.id === r.organization_id)?.name || "Barangay team"}</strong></div>
                 </div>
               </section>
-              <ReportHandling report={r} barangays={refs.barangays} />
+              {!readOnly && <ReportHandling report={r} barangays={refs.barangays} />}
               <section className="report-workspace-section report-photo-section">
                 <div className="report-workspace-section-heading"><ImageIcon size={22} aria-hidden="true" /><div><h3>Report photos</h3><p>{canWrite && (nextStatuses.length || canRecordProgress) ? "Unlinked photos are automatically attached to your next saved status or progress update (up to 10)." : "Review photographs attached to the report."}</p></div></div>
                 {q.isPending ? <div className="report-evidence-skeleton" aria-label="Loading supporting photos"><i /><i /><i /></div> : <div className="report-evidence-grid">
@@ -739,8 +770,8 @@ export function ReportDetail({
               <section className="report-workspace-section report-community-context">
                 <div className="report-workspace-section-heading"><UsersRound size={22} aria-hidden="true" /><div><h3>Community context</h3><p>{q.data?.engagement.followers ?? 0} followers · {q.data?.engagement.endorsements ?? 0} residents report the same experience.</p><small>Participation counts provide context; they are not additional verified defects.</small></div></div>
               </section>
-              {r.status === "duplicate" && <DuplicateMainProgress reportId={r.id} onOpen={onOpenLinked} />}
-              {r.status !== "duplicate" && <LinkedDuplicateReports reportId={r.id} onOpen={onOpenLinked} />}
+              {!readOnly && r.status === "duplicate" && <DuplicateMainProgress reportId={r.id} onOpen={onOpenLinked} />}
+              {!readOnly && r.status !== "duplicate" && <LinkedDuplicateReports reportId={r.id} onOpen={onOpenLinked} />}
             </>}
 
             {activeStep === "notes" && <section className="report-workspace-section report-private-notes">

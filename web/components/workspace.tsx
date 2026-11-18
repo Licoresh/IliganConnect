@@ -47,6 +47,7 @@ import { Administration } from "./administration";
 import { BarangayResidents } from "./residents-management";
 import { SettingsPanel } from "./settings";
 import { Reports } from "./reports";
+import { OfficeCategoryReports } from "./office-category-reports";
 import { AccessContext, useAccess } from "./access-context";
 import {
   StaffContext,
@@ -81,6 +82,7 @@ function authErrorMessage(error: unknown) {
 const nav = [
   ["Overview", LayoutDashboard],
   ["Issue reports", ClipboardList],
+  ["Category reports", FileText],
   ["Residents", UserRound],
   ["Issue Mapping & Heatmap", MapPinned],
   ["Geographic analytics", ChartNoAxesCombined],
@@ -550,10 +552,10 @@ export default function Workspace() {
           <div className="workspace-edition"><span /> LOCAL ACTION · STRONGER ILIGAN</div>
           <nav aria-label="Main navigation">
             {[
-              { title: "Community operations", items: nav.slice(0, 5) },
-              { title: "Community", items: [...nav.slice(5, 7), nav[7]] },
-              { title: "System", items: nav.slice(8, 9) },
-              { title: "Account", items: nav.slice(9) },
+              { title: "Community operations", items: nav.slice(0, 6) },
+              { title: "Community", items: nav.slice(6, 9) },
+              { title: "System", items: nav.slice(9, 10) },
+              { title: "Account", items: nav.slice(10) },
             ].map((group) => {
               const items = group.items.filter(([n]) => availableSection(n));
               return items.length ? <div className="nav-group" key={group.title}>
@@ -644,7 +646,7 @@ export default function Workspace() {
               </details>
             </div>
           </header>
-          <main id="main" className={visibleSection === "Overview" || visibleSection === "Issue Mapping & Heatmap" ? "overview-main" : visibleSection === "Issue reports" ? "reports-main" : undefined} tabIndex={-1}>
+          <main id="main" className={visibleSection === "Overview" || visibleSection === "Issue Mapping & Heatmap" ? "overview-main" : ["Issue reports", "Category reports"].includes(visibleSection) ? "reports-main" : undefined} tabIndex={-1}>
             <div className="page-heading">
               {visibleSection === "Overview" ? (
                 <>
@@ -672,6 +674,7 @@ export default function Workspace() {
                   <h1 ref={pageTitle} tabIndex={-1}>{visibleSection}</h1>
                   <p>{({
                     "Issue reports": "Review evidence, route responsibility and keep each case moving.",
+                    "Category reports": "Read barangay-managed reports in your approved categories and coverage.",
                     "Residents": "View the resident directory for your assigned barangay.",
                     "Issue Mapping & Heatmap": "Explore issue concentrations and the reports behind them.",
                     "Geographic analytics": "Compare reporting patterns with evidence and context.",
@@ -691,6 +694,8 @@ export default function Workspace() {
             ) : section === "Issue reports" ? (
               <Reports refs={refs.data!} initialRecordId={recordTarget.id} initialBarangay={scope} initialQueue={reportQueue}
                 onOpenReport={(id, queue) => navigate("Issue reports", id, queue)} onCloseReport={closeReport} />
+            ) : section === "Category reports" && profile.data.role === "office" ? (
+              <OfficeCategoryReports refs={refs.data!} />
             ) : section === "Issue Mapping & Heatmap" ? (
               <IssueMap
                 key={scope}

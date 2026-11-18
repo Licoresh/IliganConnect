@@ -58,6 +58,7 @@ export function canOpenSection(access: StaffContext, section: string) {
   if (["Administration", "Organizations"].includes(section))
     return access.profile.role === "admin";
   if (section === "Residents") return access.profile.role === "barangay";
+  if (section === "Category reports") return access.profile.role === "office";
   if (section === "Barangay prioritization") return canPrioritize(access);
   return [
     "Overview",
@@ -123,8 +124,7 @@ export function canAccessReport(
         ) &&
         r.category_id === report.category_id &&
         (!r.barangay_id || r.barangay_id === report.barangay_id) &&
-        (!r.assignment_only || r.organization_id === report.organization_id) &&
-        (action === "read" || r[`can_${action}`]),
+        (action === "read" || (r.organization_id === report.organization_id && r[`can_${action}`])),
     )
   );
 }

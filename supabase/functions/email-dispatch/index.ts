@@ -7,7 +7,9 @@ const reply = (body: Record<string, unknown>, status = 200) =>
 
 type OutboxRow = {
   id: string;
-  recipient_id: string;
+  recipient_id: string | null;
+  recipient_email: string | null;
+  recipient_name: string | null;
   event_key: EmailEvent;
   report_id: string | null;
   meeting_request_id: string | null;
@@ -35,6 +37,17 @@ const urgencyLabels: Record<number, string> = {
   4: "Urgent",
   5: "Immediate review",
 };
+
+function isValidEmailAddress(value: string) {
+  const [local, ...domains] = value.split("@");
+  const labels = domains.length === 1 ? domains[0].split(".") : [];
+  return value.length <= 254
+    && local.length <= 64
+    && /^[A-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Z0-9!#$%&'*+/=?^_`{|}~-]+)*$/i.test(local)
+    && labels.length >= 2
+    && labels.every((label) => label.length > 0 && label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label))
+    && (labels.at(-1)?.length ?? 0) >= 2;
+}
 
 function paramsFor(event: EmailEvent, name: string, data: Record<string, string>) {
   const common = { firstName: name };
@@ -190,25 +203,38 @@ Deno.serve(async (request) => {
       if (error) console.error("Email outbox completion failed", row.id);
     };
     try {
-      const [{ data: profile, error: profileError }, { data: authUser, error: userError }] = await Promise.all([
-        admin.from("profiles").select("display_name,role,account_status,notifications_enabled").eq("id", row.recipient_id).maybeSingle(),
-        admin.auth.admin.getUserById(row.recipient_id),
-      ]);
-      if (profileError || userError) throw new Error("recipient_lookup_failed");
       const requiredMeetingSchedule = row.event_key === "meeting_update" && row.notification_title === "Your meeting schedule has been confirmed";
-      if (!profile || profile.account_status !== "active" || (!profile.notifications_enabled && row.event_key !== "report_received" && !requiredMeetingSchedule)) {
-        await finish(false, null, "Recipient is inactive or notifications are disabled.");
-        skipped++;
-        continue;
-      }
-      const email = authUser.user?.email?.trim();
-      if (!email || !authUser.user?.email_confirmed_at) {
-        await finish(false, null, "Recipient has no confirmed email address.");
-        skipped++;
-        continue;
+      let profile: Record<string, unknown>;
+      let email: string | null;
+      if (row.recipient_id) {
+        const [{ data, error: profileError }, { data: authUser, error: userError }] = await Promise.all([
+          admin.from("profiles").select("display_name,role,account_status,notifications_enabled").eq("id", row.recipient_id).maybeSingle(),
+          admin.auth.admin.getUserById(row.recipient_id),
+        ]);
+        if (profileError || userError) throw new Error("recipient_lookup_failed");
+        if (!data || data.account_status !== "active" || (!data.notifications_enabled && row.event_key !== "report_received" && !requiredMeetingSchedule)) {
+          await finish(false, null, "Recipient is inactive or notifications are disabled.");
+          skipped++;
+          continue;
+        }
+        profile = data as Record<string, unknown>;
+        email = authUser.user?.email?.trim() || null;
+        if (!email || !authUser.user?.email_confirmed_at) {
+          await finish(false, null, "Recipient has no confirmed email address.");
+          skipped++;
+          continue;
+        }
+      } else {
+        email = row.recipient_email?.trim().toLowerCase() || null;
+        if (!email || !isValidEmailAddress(email)) {
+          await finish(false, null, "Recipient has no confirmed email address.");
+          skipped++;
+          continue;
+        }
+        profile = { display_name: row.recipient_name || "" };
       }
       const templateId = brevoTemplateIds[row.event_key];
-      const params = await readEvent(admin, row, profile as Record<string, unknown>);
+      const params = await readEvent(admin, row, profile);
       if (!params) {
         await finish(false, null, "The linked record is unavailable or is presentation data.");
         skipped++;

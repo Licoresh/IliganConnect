@@ -15,7 +15,7 @@ import {
   type TextInputProps,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { emailInputError, textInputError, characterLimitHint } from "@community/shared";
+import { addressInputError, emailInputError, mobileInputError, personNameInputError, residentAgeError, textInputError, characterLimitHint } from "@community/shared";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -356,13 +356,20 @@ export function Field({
   required = false,
   inputRef,
   error: externalError,
+  validationKind = "text",
   onBlur,
   ...props
-}: TextInputProps & { label: string; leading?: ReactNode; trailing?: ReactNode; hint?: string; minLength?: number; required?: boolean; inputRef?: Ref<TextInput>; error?: string }) {
+}: TextInputProps & { label: string; leading?: ReactNode; trailing?: ReactNode; hint?: string; minLength?: number; required?: boolean; inputRef?: Ref<TextInput>; error?: string; validationKind?: "text" | "name" | "email" | "phone" | "age" | "address" }) {
   const [touched, setTouched] = useState(false);
   const cleanLabel = label.replace(/\s*\*$/, "");
   const value = String(props.value ?? "");
-  const error = externalError || (touched && !props.secureTextEntry ? textInputError(value, { min: minLength, max: props.maxLength, required }) || (value && props.keyboardType === "email-address" ? emailInputError(value) : "") : "");
+  const fieldError = validationKind === "name" ? personNameInputError(value, required, props.maxLength ?? 60)
+    : validationKind === "email" || props.keyboardType === "email-address" ? value.trim() ? emailInputError(value) : required ? "Enter an email address." : ""
+    : validationKind === "phone" ? mobileInputError(value, required)
+    : validationKind === "age" ? residentAgeError(value, required)
+    : validationKind === "address" ? addressInputError(value, { min: minLength, max: props.maxLength, required })
+    : textInputError(value, { min: minLength, max: props.maxLength, required });
+  const error = externalError || (touched && !props.secureTextEntry ? fieldError : "");
   return (
     <View style={{ gap: 7 }}>
       <Text style={styles.fieldLabel}>{cleanLabel}{required && <Text style={{ color: "#b42318" }}> *</Text>}</Text>
@@ -538,7 +545,7 @@ export function SelectionSheet({
           </View>
           <View style={{ minHeight: 52, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Ionicons name="search-outline" size={20} color={colors.muted} />
-            <TextInput accessibilityLabel={searchPlaceholder} placeholder={searchPlaceholder} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 48, color: colors.brandDark, fontSize: 16 }} />
+            <TextInput accessibilityLabel={searchPlaceholder} placeholder={searchPlaceholder} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} maxLength={160} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 48, color: colors.brandDark, fontSize: 16 }} />
           </View>
           <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 8, paddingBottom: 2 }}>
             {filteredItems.map((item) => {

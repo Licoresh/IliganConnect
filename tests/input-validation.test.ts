@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { emailInputError, imageHeaderError, mobileInputError, normalizePhilippineMobile, parseDecimal, parseReportCoordinates, passwordInputError, reportSchema, textInputError, residentNamePartsError, residentDisplayName, residentAgeError, characterLimitHint, SHORT_REASON_LIMIT } from "../shared/index";
+import { addressInputError, dateInputError, emailInputError, imageHeaderError, mobileInputError, normalizePhilippineMobile, numericInputError, parseDecimal, parseReportCoordinates, passwordInputError, personNameInputError, reportSchema, textInputError, residentNamePartsError, residentDisplayName, residentAgeError, characterLimitHint, SHORT_REASON_LIMIT } from "../shared/index";
 
 test("decimal coordinates reject implicit conversions and non-finite inputs", () => {
   for (const value of ["", " ", null, undefined, true, false, [], {}, "0x8", "0b10", "1e999", "9".repeat(1000), "NaN", "Infinity", Infinity, NaN]) assert.ok(Number.isNaN(parseDecimal(value)));
@@ -26,11 +26,32 @@ test("text validation preserves multilingual, punctuated and literal markup inpu
 test("resident name parts compose a bounded full name and allow a blank middle name", () => {
   assert.equal(residentNamePartsError("  Ana  ", "", "Cruz"), "");
   assert.equal(residentNamePartsError("Maria", "Santos", "Dela Cruz"), "");
+  assert.equal(residentNamePartsError("María  José", "Ñ", "Dela-Cruz"), "");
+  assert.equal(residentNamePartsError("Mary-Jane", "O’Connor", "A."), "");
+  assert.equal(personNameInputError("Ma. Cristina", true), "");
+  assert.equal(personNameInputError("J. R. R. Tolkien", true), "");
   assert.equal(residentDisplayName(" Ana ", "  ", "Cruz "), "Ana Cruz");
+  assert.equal(residentDisplayName("Ana  María", "  de  la  ", "Cruz"), "Ana María de la Cruz");
   assert.ok(residentNamePartsError("", "", "Cruz"));
   assert.ok(residentNamePartsError("Ana", "", ""));
+  for (const value of ["John123", "!!!", "Ana🙂", "-Ana", "O''Connor", "a".repeat(61)]) assert.ok(personNameInputError(value, true));
   assert.ok(residentNamePartsError("a".repeat(60), "b".repeat(40), "c"));
   assert.ok(residentNamePartsError("a".repeat(61), "", "Cruz"));
+});
+test("address, numeric, date and spam checks match their field purpose", () => {
+  for (const value of ["House 12, Rizal Street", "Purok 3 - Riverside", "Zone #2 / Block 5"]) assert.equal(addressInputError(value), "");
+  assert.ok(addressInputError("Near the park 🏞️"));
+  assert.equal(addressInputError("", { required: false }), "");
+  assert.ok(addressInputError("   ", { required: true }));
+  assert.equal(numericInputError("21", { min: 1, max: 120 }), "");
+  for (const value of ["-5", "2.5", "age", "1e3"]) assert.ok(numericInputError(value, { min: 1, max: 120 }));
+  assert.equal(numericInputError("1.25", { decimal: true, min: 0, max: 2 }), "");
+  assert.equal(numericInputError("-1", { decimal: true, min: -2, max: 2 }), "");
+  assert.equal(numericInputError("-1", { min: -2, max: 2 }), "");
+  assert.equal(dateInputError("2026-11-19"), "");
+  assert.ok(dateInputError("2026-02-30"));
+  assert.ok(textInputError("x".repeat(30)));
+  assert.equal(textInputError("A normal description with useful context."), "");
 });
 test("resident age accepts whole years from 1 through 120", () => {
   assert.equal(residentAgeError("1", true), "");
@@ -40,14 +61,16 @@ test("resident age accepts whole years from 1 through 120", () => {
   for (const value of ["0", "121", "2.5", "-1", "abc"]) assert.ok(residentAgeError(value));
 });
 test("input bounds include exact limits and do not silently trim passwords", () => {
-  assert.equal(textInputError("x".repeat(160), { min: 8, max: 160 }), "");
+  const exactLimit = "A report with useful details. ".repeat(6).slice(0, 160);
+  assert.equal(exactLimit.length, 160);
+  assert.equal(textInputError(exactLimit, { min: 8, max: 160 }), "");
   assert.ok(textInputError("x".repeat(161), { max: 160 }));
   assert.equal(passwordInputError(" a long password phrase ", 12), "");
   assert.ok(passwordInputError("short", 12));
   assert.ok(passwordInputError("x".repeat(1025)));
 });
 test("email preflight rejects malformed addresses before auth or recovery requests", () => {
-  for (const email of ["", "name", "name@", "name@example", "a b@example.com", "a\n@example.com", "a\u0000@example.com", "a\u200b@example.com", "x".repeat(255)+"@example.com"]) assert.ok(emailInputError(email));
+  for (const email of ["", "name", "name@", "name@example", "a b@example.com", "a\n@example.com", "a\u0000@example.com", "a\u200b@example.com", "x".repeat(255)+"@example.com", "john..doe@example.com", "john@example..com", "john@-example.com", "john@example.c"]) assert.ok(emailInputError(email));
   assert.equal(emailInputError(" name+tag@example.com "), "");
 });
 test("Philippine mobile numbers normalize to one database format", () => {
@@ -83,6 +106,8 @@ test("character guidance stays quiet until close to the limit", () => {
   assert.equal(characterLimitHint(500, 500), "Character limit reached");
   assert.equal(characterLimitHint(501, 500), "1 character over the limit");
   assert.equal(characterLimitHint(1600, 2000), "400 characters left");
-  assert.equal(textInputError("x".repeat(500), { min: 5, max: SHORT_REASON_LIMIT }), "");
+  const maximumReason = "Staff inspected the reported location and recorded the next response step. ".repeat(8).slice(0, SHORT_REASON_LIMIT);
+  assert.equal(maximumReason.length, SHORT_REASON_LIMIT);
+  assert.equal(textInputError(maximumReason, { min: 5, max: SHORT_REASON_LIMIT }), "");
   assert.ok(textInputError("x".repeat(501), { min: 5, max: SHORT_REASON_LIMIT }));
 });

@@ -25,7 +25,9 @@ test("assessment evidence follows existing bounded multilingual text validation"
   for (const note of ["", "    ", "\u200b".repeat(10), "abcd", "x".repeat(4001), "Observed\u0000 damage"]) {
     assert.equal(reportAssessmentSchema.safeParse({ ...valid, note }).success, false);
   }
-  for (const note of ["x".repeat(4000), "Naobserbahan ang kadaot.\nFollow-up: inspect the drain.", "Literal <inspection> & source evidence."]) {
+  const maximumNote = "Observed the reported issue and recorded the next assessment step. ".repeat(64).slice(0, 4000);
+  assert.equal(maximumNote.length, 4000);
+  for (const note of [maximumNote, "Naobserbahan ang kadaot.\nFollow-up: inspect the drain.", "Literal <inspection> & source evidence."]) {
     assert.equal(reportAssessmentSchema.safeParse({ ...valid, note }).success, true);
   }
 });

@@ -4,11 +4,14 @@ set local statement_timeout='30s';
 do $tests$
 declare
   resident uuid:=gen_random_uuid(); administrator uuid:=gen_random_uuid();
-  report_id uuid:=gen_random_uuid(); consultation_id uuid:=gen_random_uuid(); comment_id uuid:=gen_random_uuid();
+  report_id uuid:=gen_random_uuid(); walk_in_report_id uuid:=gen_random_uuid();
+  consultation_id uuid:=gen_random_uuid(); comment_id uuid:=gen_random_uuid();
   request_id uuid:=gen_random_uuid(); meeting_id uuid:=gen_random_uuid(); action_id uuid:=gen_random_uuid(); announcement_id uuid:=gen_random_uuid();
-  area uuid; category uuid; problem text; bad record; denied boolean; target uuid; tests integer:=0;
+  area uuid; category uuid; problem text; latitude double precision; longitude double precision;
+  bad record; denied boolean; target uuid; tests integer:=0;
 begin
-  select id into area from public.barangays where name='Poblacion';
+  select id, extensions.st_y(extensions.st_pointonsurface(boundary)), extensions.st_x(extensions.st_pointonsurface(boundary))
+    into area, latitude, longitude from public.barangays where name='Poblacion' and boundary is not null;
   select c.id,p.code into category,problem from public.report_categories c join public.report_problem_types p on p.category_id=c.id
     where c.active and p.code<>'other' order by c.name,p.sort_order limit 1;
   insert into auth.users(id,email) values(resident,resident::text||'@example.invalid'),(administrator,administrator::text||'@example.invalid');
@@ -17,8 +20,35 @@ begin
   perform set_config('request.jwt.claim.sub',resident::text,true);
   set local role authenticated;
   perform public.submit_report(report_id,category,area,'Rollback input validation','A transaction-only report to verify input validation safely.',8.22947578,124.23688253,'',problem);
-  update public.profiles set display_name=U&'Jos\00E9 O''Connor' where id=resident;
-  assert (select display_name from public.profiles where id=resident)=U&'Jos\00E9 O''Connor','Legitimate Unicode name rejected';
+  update public.profiles set first_name=U&'Jos\00E9',middle_name='O’Connor',last_name='Cruz' where id=resident;
+  assert (select display_name from public.profiles where id=resident)=U&'Jos\00E9 O’Connor Cruz','Legitimate Unicode name rejected';
+  assert private.valid_person_name('Ma. Cristina',2,100),'A Filipino abbreviated name was rejected';
+  assert private.valid_person_name('María O’Connor',2,100),'An accented apostrophe name was rejected';
+  assert private.valid_email_address('walkin+case@example.com'),'A valid plus-address was rejected';
+  assert not private.valid_email_address('john@gmail'),'An incomplete email domain was accepted';
+  assert not private.valid_email_address('john..doe@example.com'),'A malformed email local part was accepted';
+  reset role;
+  update public.profiles set role='barangay' where id=resident;
+  perform set_config('request.jwt.claim.sub',resident::text,true);
+  set local role authenticated;
+  perform public.submit_walk_in_report_with_contacts(
+    walk_in_report_id,category,area,'María O’Connor',' walkin+case@example.com ','0917 123 4567',
+    'Rollback walk-in input','A transaction-only walk-in record for email and name checks.',
+    latitude,longitude,'Poblacion Hall',problem,null,'Purok 1','Zone 1'
+  );
+  reset role;
+  insert into public.report_status_history(report_id,actor_id,old_status,new_status,public_note)
+  values(walk_in_report_id,administrator,'submitted','under_review','Review started for this walk-in report.');
+  assert exists(select 1 from public.email_outbox as outbox where outbox.recipient_id is null and outbox.recipient_email='walkin+case@example.com'
+    and outbox.event_key='report_update' and outbox.report_id=walk_in_report_id),'Walk-in status change did not queue the reporter email';
+  denied:=false;
+  begin update private.walk_in_reporter_details as details set reporter_name='Walk-in123' where details.report_id=walk_in_report_id;
+  exception when check_violation then denied:=true;end;
+  assert denied,'An invalid walk-in reporter name bypassed the database trigger';tests:=tests+1;
+  denied:=false;
+  begin update private.walk_in_reporter_details as details set reporter_email='john@gmail' where details.report_id=walk_in_report_id;
+  exception when check_violation then denied:=true;end;
+  assert denied,'An invalid walk-in email bypassed the database trigger';tests:=tests+1;
   reset role;
   perform set_config('request.jwt.claim.sub',administrator::text,true);
   insert into public.consultations(id,barangay_id,title,body,status,created_by) values(consultation_id,area,'Rollback discussion','A transaction-only discussion to check content and date limits.','open',administrator);
@@ -26,11 +56,12 @@ begin
   insert into public.consultation_comments(id,consultation_id,author_id,body) values(comment_id,consultation_id,resident,'A helpful test comment.');
   insert into public.meeting_requests(id,barangay_id,resident_id,title,body,status,decision_reason) values(request_id,area,resident,'Rollback meeting request','A transaction-only request to verify bounded input.','approved','Approved for rollback-only validation.');
   perform set_config('request.jwt.claim.sub',administrator::text,true);
-  insert into public.meetings(id,request_id,venue,starts_at) values(meeting_id,request_id,'Rollback meeting room',now()+interval '1 day');
+  insert into public.meetings(id,request_id,venue,starts_at,ends_at) values(meeting_id,request_id,'Rollback meeting room',now()+interval '1 day',now()+interval '1 day 1 hour');
   insert into public.meeting_action_items(id,meeting_id,description) values(action_id,meeting_id,'Record a rollback-only follow-up.');
   insert into public.announcements(id,title,body,kind,status,publish_at,created_by) values(announcement_id,'Rollback announcement','A transaction-only announcement to test content and date bounds.','Community update','draft',now(),administrator);
   for bad in select * from (values
     ('profiles','display_name',repeat('x',101),'text'),
+    ('profiles','first_name','Resident123','text'),('profiles','last_name','Bad🙂','text'),
     ('reports','title',repeat('x',161),'text'),('reports','description',repeat(' ',20),'text'),
     ('reports','description',repeat(U&'\200B',25),'text'),('reports','description','A description with '||chr(1)||' a control character.','text'),
     ('reports','landmark',repeat('x',241),'text'),('reports','public_summary',repeat('x',161),'text'),
@@ -77,8 +108,8 @@ begin
     update public.comment_flags f set reason=repeat('r',501) where f.comment_id=target and f.user_id=resident;
   exception when check_violation then denied:=true;end;
   assert denied,'A 501-character comment flag was accepted';tests:=tests+1;
-  assert tests=33,'Invalid-value test count changed';
+  assert tests=37,'Invalid-value test count changed';
   raise notice '% invalid-value attempts rejected; Unicode, literal markup and multiline inputs preserved',tests;
 end $tests$;
 rollback;
-select 'PASS: 33 invalid values rejected; 500-character reasons and authenticated valid inputs accepted; all fixtures rolled back' as result;
+select 'PASS: 37 invalid values rejected; Unicode names, valid direct email queueing, 500-character reasons and authenticated valid inputs accepted; all fixtures rolled back' as result;

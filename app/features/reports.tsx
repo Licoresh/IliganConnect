@@ -689,9 +689,9 @@ export function ReportForm({
               <View style={{ gap: 14 }}>
                 <View style={{ gap: 4 }}><Text style={s.fieldLabel}>Address details (optional)</Text><Text style={s.small}>Add the Purok, Zone or a landmark if known. If you do not know them, use the map pin to show the exact spot.</Text></View>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14 }}>
-                  {(["purok", "zone"] as const).map((name) => <View key={name} style={{ flex: 1, minWidth: 140 }}><Controller control={control} name={name} render={({ field }) => <Field label={`${label(name)} (optional)`} value={field.value || ""} placeholder={name === "purok" ? "e.g. 3 or Riverside" : "e.g. 2 or Central"} maxLength={80} error={errors[name]?.message} inputRef={field.ref} onBlur={field.onBlur} onChangeText={field.onChange} />} /></View>)}
+                  {(["purok", "zone"] as const).map((name) => <View key={name} style={{ flex: 1, minWidth: 140 }}><Controller control={control} name={name} render={({ field }) => <Field label={`${label(name)} (optional)`} validationKind="address" value={field.value || ""} placeholder={name === "purok" ? "e.g. 3 or Riverside" : "e.g. 2 or Central"} maxLength={80} error={errors[name]?.message} inputRef={field.ref} onBlur={field.onBlur} onChangeText={field.onChange} />} /></View>)}
                 </View>
-                <Controller control={control} name="landmark" render={({ field }) => <Field label="Additional location details (optional)" value={field.value || ""} placeholder="Street name, nearby landmark or house number" maxLength={240} multiline error={errors.landmark?.message} inputRef={field.ref} onBlur={field.onBlur} onChangeText={field.onChange} />} />
+                <Controller control={control} name="landmark" render={({ field }) => <Field label="Additional location details (optional)" validationKind="address" value={field.value || ""} placeholder="Street name, nearby landmark or house number" maxLength={240} multiline error={errors.landmark?.message} inputRef={field.ref} onBlur={field.onBlur} onChangeText={field.onChange} />} />
               </View>
             </>
           )}

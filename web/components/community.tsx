@@ -492,15 +492,15 @@ export function Community({
               : "Edit " + editing.title
           }
           close={() => setEditing(null)}
-          className={table === "consultations" ? "consultation-edit-dialog" : undefined}
+          className={table === "consultations" ? "consultation-edit-dialog" : table === "announcements" ? "announcement-edit-dialog" : undefined}
           icon={table === "consultations" ? <Pencil size={22} /> : undefined}
           description={table === "consultations" ? "Update the discussion details and keep your community informed." : undefined}
         >
           <form
             key={editing === "new" ? `${table}-new` : `${table}-${editing.id}`}
-            className={table === "consultations" ? "consultation-edit-form" : undefined}
+            className={table === "consultations" ? "consultation-edit-form" : table === "announcements" ? "announcement-edit-form" : undefined}
             onFocusCapture={(event) => {
-              if (table === "consultations" && event.target.matches("input, select, textarea"))
+              if (table !== "meeting_requests" && event.target.matches("input, select, textarea"))
                 event.target.scrollIntoView({ block: "nearest" });
             }}
             onSubmit={async (e) => {
@@ -531,14 +531,44 @@ export function Community({
                   ? { status: "pending_review" }
                   : {}),
               };
-              if (
-                await run(
-                  editing === "new"
-                    ? db!.from(table).insert(payload)
-                    : db!.from(table).update(payload).eq("id", editing.id),
-                )
-              )
-                setEditing(null);
+              const fileEntry = f.get("announcement_image");
+              const image = fileEntry instanceof File && fileEntry.name ? fileEntry : null;
+              const saved = table === "announcements"
+                ? await run((async () => {
+                    if (image) await validateImageFile(image);
+                    const extension = image?.type === "image/jpeg" ? "jpg" : image?.type === "image/png" ? "png" : "webp";
+                    if (editing === "new") {
+                      const created = await result<{ id: string }>(db!.from("announcements").insert(payload).select("id").single());
+                      let path: string | null = null;
+                      try {
+                        if (image) {
+                          path = `${created.id}/${crypto.randomUUID()}.${extension}`;
+                          await result(db!.storage.from("announcement-media").upload(path, image, { contentType: image.type, upsert: false }));
+                          await result(db!.from("announcements").update({ attachment_path: path }).eq("id", created.id).select("id").single());
+                        }
+                      } catch (cause) {
+                        if (path) await db!.storage.from("announcement-media").remove([path]);
+                        try { await result(db!.from("announcements").delete().eq("id", created.id)); } catch { /* Keep the upload error visible. */ }
+                        throw cause;
+                      }
+                    } else {
+                      let path: string | null = null;
+                      if (image) {
+                        path = `${editing.id}/${crypto.randomUUID()}.${extension}`;
+                        await result(db!.storage.from("announcement-media").upload(path, image, { contentType: image.type, upsert: false }));
+                      }
+                      try {
+                        await result(db!.from("announcements").update({ ...payload, ...(path ? { attachment_path: path } : {}) }).eq("id", editing.id).select("id").single());
+                      } catch (cause) {
+                        if (path) await db!.storage.from("announcement-media").remove([path]);
+                        throw cause;
+                      }
+                      if (path && editing.attachment_path) await db!.storage.from("announcement-media").remove([editing.attachment_path]);
+                    }
+                    return { data: null, error: null };
+                  })())
+                : await run(editing === "new" ? db!.from(table).insert(payload) : db!.from(table).update(payload).eq("id", editing.id));
+              if (saved) setEditing(null);
             }}
           >
             {table === "consultations" ? (
@@ -612,6 +642,11 @@ export function Community({
                 <label>
                   Content
                   <textarea name="body" required minLength={20} maxLength={10000} defaultValue={editing === "new" ? "" : editing.body} />
+                </label>
+                <label className="announcement-image-field">
+                  <span>Announcement image <small>Optional</small></span>
+                  <input type="file" name="announcement_image" accept="image/jpeg,image/png,image/webp" />
+                  <small>{editing !== "new" && editing.attachment_path ? "An image is attached. Choose a new file to replace it." : "Add a JPG, PNG, or WebP image up to 5 MB. Residents can view it with the announcement."}</small>
                 </label>
                 {profile.role === "barangay" ? (
                   <label>

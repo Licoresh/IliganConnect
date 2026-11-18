@@ -61,14 +61,12 @@ const access: StaffContext = {
   ],
 };
 const report = { barangay_id: "b", category_id: "c", organization_id: "o" };
-test("office display permissions intersect category, jurisdiction and assignment", () => {
+test("office display is category-scoped while report actions require the assigned office", () => {
   assert.equal(canAccessReport(access, report), true);
-  for (const change of [
-    { barangay_id: "other" },
-    { category_id: "other" },
-    { organization_id: "other" },
-  ])
+  for (const change of [{ barangay_id: "other" }, { category_id: "other" }])
     assert.equal(canAccessReport(access, { ...report, ...change }), false);
+  assert.equal(canAccessReport(access, { ...report, organization_id: "other" }), true);
+  assert.equal(canAccessReport(access, { ...report, organization_id: "other" }, "update"), false);
   assert.equal(
     canAccessReport({ ...access, authorized: false }, report),
     false,

@@ -3452,6 +3452,28 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
   .consultation-edit-dialog * { scroll-behavior: auto !important; }
 }
 
+.announcement-edit-form { display: grid; min-width: 0; gap: 16px; }
+.announcement-edit-form > label { display: grid; min-width: 0; gap: 7px; color: var(--ink); font-size: 14px; font-weight: 650; }
+.announcement-edit-form > label > small { color: var(--muted); font-size: 12px; font-weight: 450; line-height: 1.5; }
+.announcement-edit-form :is(input:not([type="file"]), select, textarea) { width: 100%; min-width: 0; min-height: 46px; padding: 10px 13px; border: 1px solid #d6e2e9; border-radius: 11px; background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
+.announcement-edit-form textarea { min-height: 132px; resize: vertical; line-height: 1.55; }
+.announcement-edit-form .announcement-image-field { gap: 8px; }
+.announcement-image-field > span { display: flex; align-items: center; gap: 8px; }
+.announcement-image-field > span small { padding: 3px 8px; border-radius: 20px; background: #edf4f4; color: #617782; font-size: 11px; font-weight: 600; }
+.announcement-edit-form .announcement-image-field input[type="file"] { width: 100%; min-width: 0; min-height: 48px; padding: 8px; border: 1px dashed #b9d5d1; border-radius: 11px; background: #f6fbf9; color: var(--ink); font: inherit; font-size: 12px; }
+.announcement-edit-form .announcement-image-field input[type="file"]::file-selector-button { min-height: 32px; margin-right: 10px; padding: 6px 10px; border: 0; border-radius: 8px; background: #e2f3ef; color: #08756b; font: inherit; font-weight: 700; cursor: pointer; }
+.announcement-edit-form :is(input, select, textarea):focus-visible { border-color: var(--brand-hover); outline: 3px solid #08756b26; outline-offset: 1px; }
+.announcement-edit-form .community-edit-actions { display: flex; justify-content: flex-end; padding-top: 12px; border-top: 1px solid #e3ecee; }
+.announcement-edit-form .community-edit-actions button { min-width: 150px; min-height: 44px; padding: 10px 16px; border-radius: 10px; }
+.announcement-edit-form [role="status"] { min-height: 18px; margin: 0; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) {
+  .announcement-edit-form { gap: 12px; }
+  .announcement-edit-form > label { font-size: 13px; }
+  .announcement-edit-form :is(input:not([type="file"]), select, textarea) { min-height: 44px; padding: 9px 11px; font-size: 13px; }
+  .announcement-edit-form textarea { min-height: 120px; }
+  .announcement-edit-form .community-edit-actions button { width: 100%; }
+}
+
 /* Consultation discussion: wide context panel, aligned comment cards, and a clear reply composer. */
 .modal.discussion-detail-dialog { width: min(1280px, calc(100vw - 48px)); max-height: min(94dvh, 1160px); border-radius: 22px; }
 .discussion-detail-dialog .community-dialog-heading { grid-template-columns: 56px minmax(0, 1fr) 44px; gap: 16px; padding: 16px 28px; }

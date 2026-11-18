@@ -876,7 +876,7 @@ function Auth({ initialError }: { initialError: string }) {
                   <View style={{ gap: 11 }}>
                     <Text style={s.eyebrow}>PERSONAL DETAILS</Text>
                     <Field
-                      label="First name" required minLength={1} hint="Use your name as it appears on your records."
+                      label="First name" required minLength={1} validationKind="name" hint="Use your name as it appears on your records."
                       placeholder="First name"
                       value={firstName}
                       onChangeText={setFirstName}
@@ -885,7 +885,7 @@ function Auth({ initialError }: { initialError: string }) {
                       autoComplete="given-name"
                     />
                     <Field
-                      label="Middle name (optional)" hint="Leave blank if you do not use a middle name."
+                      label="Middle name (optional)" validationKind="name" hint="Leave blank if you do not use a middle name."
                       placeholder="Middle name"
                       value={middleName}
                       onChangeText={setMiddleName}
@@ -894,7 +894,7 @@ function Auth({ initialError }: { initialError: string }) {
                       autoComplete="additional-name"
                     />
                     <Field
-                      label="Last name" required minLength={1}
+                      label="Last name" required minLength={1} validationKind="name"
                       error={fullName.length > 100 ? "Use no more than 100 characters across all name fields." : undefined}
                       placeholder="Last name"
                       value={lastName}
@@ -907,9 +907,10 @@ function Auth({ initialError }: { initialError: string }) {
                       label="Age" required hint="Enter a whole number from 1 to 120."
                       placeholder="Age"
                       value={age}
-                      onChangeText={(value) => setAge(value.slice(0, 3))}
+                      onChangeText={(value) => setAge(value.replace(/\D/g, "").slice(0, 3))}
                       onBlur={() => setAgeTouched(true)}
                       error={ageTouched ? residentAgeError(age, true) || undefined : undefined}
+                      validationKind="age"
                       maxLength={3}
                       keyboardType="number-pad"
                       autoComplete="off"
@@ -922,6 +923,7 @@ function Auth({ initialError }: { initialError: string }) {
                       onChangeText={setMobile}
                       onBlur={() => setMobileTouched(true)}
                       error={mobileTouched ? mobileInputError(mobile) || undefined : undefined}
+                      validationKind="phone"
                       maxLength={24}
                       keyboardType="phone-pad"
                       autoComplete="tel"
@@ -953,7 +955,7 @@ function Auth({ initialError }: { initialError: string }) {
                   </View>
                 )}
                 <Field maxLength={254}
-                  label="Email address" required hint="Enter the address you used to register."
+                  label="Email address" required validationKind="email" hint="Enter the address you used to register."
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -1538,11 +1540,11 @@ function ProfileForm({
         <View style={{ minHeight: 38, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="person-circle-outline" size={21} color={colors.brand} /><Text style={[s.title, { flex: 1, marginBottom: 0 }]}>Personal details</Text><Pressable accessibilityRole="button" accessibilityLabel={editing ? "Cancel profile editing" : "Edit personal details"} onPress={() => { setMessage(""); if (editing) { setFirstName(p.first_name || ""); setMiddleName(p.middle_name || ""); setLastName(p.last_name || ""); setAge(p.age == null ? "" : String(p.age)); setPhone(p.phone || ""); setBarangay(p.barangay_id || ""); } setEditing(!editing); }} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 12, borderRadius: 13, backgroundColor: "#e8f7f3" }, pressed && { opacity: 0.75 }]}><Ionicons name={editing ? "close-outline" : "create-outline"} size={17} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>{editing ? "Cancel" : "Edit"}</Text></Pressable></View>
         <View style={[s.card, { padding: 12, gap: 0, borderRadius: 18 }]}>
           {editing ? <>
-            <Field label="First name" required minLength={1} hint="Use the name on your official records." placeholder="First name" value={firstName} onChangeText={setFirstName} maxLength={60} autoCapitalize="words" autoComplete="given-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
-            <Field label="Middle name (optional)" hint="Leave blank if you do not use a middle name." placeholder="Middle name" value={middleName} onChangeText={setMiddleName} maxLength={60} autoCapitalize="words" autoComplete="additional-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
-            <Field label="Last name" required minLength={1} error={fullNameTooLong ? "Use no more than 100 characters across all name fields." : undefined} placeholder="Last name" value={lastName} onChangeText={setLastName} maxLength={60} autoCapitalize="words" autoComplete="family-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
-            <Field label="Age" hint="Leave blank to keep the saved age. Only you and authorized city administrators can view it." placeholder="Age" value={age} onChangeText={(value) => setAge(value.slice(0, 3))} error={age ? residentAgeError(age) || undefined : undefined} maxLength={3} keyboardType="number-pad" autoComplete="off" leading={<Ionicons name="calendar-outline" size={19} color={colors.brand} />} />
-            <Field label="Mobile number (optional)" hint="Philippine mobile number, e.g. 0917 123 4567." placeholder="0917 123 4567" value={phone} onChangeText={setPhone} maxLength={24} keyboardType="phone-pad" autoComplete="tel" error={phone ? mobileInputError(phone) || undefined : undefined} leading={<Ionicons name="call-outline" size={19} color={colors.brand} />} />
+            <Field label="First name" required minLength={1} validationKind="name" hint="Use the name on your official records." placeholder="First name" value={firstName} onChangeText={setFirstName} maxLength={60} autoCapitalize="words" autoComplete="given-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
+            <Field label="Middle name (optional)" validationKind="name" hint="Leave blank if you do not use a middle name." placeholder="Middle name" value={middleName} onChangeText={setMiddleName} maxLength={60} autoCapitalize="words" autoComplete="additional-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
+            <Field label="Last name" required minLength={1} validationKind="name" error={fullNameTooLong ? "Use no more than 100 characters across all name fields." : undefined} placeholder="Last name" value={lastName} onChangeText={setLastName} maxLength={60} autoCapitalize="words" autoComplete="family-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
+            <Field label="Age" validationKind="age" hint="Leave blank to keep the saved age. Only you and authorized city administrators can view it." placeholder="Age" value={age} onChangeText={(value) => setAge(value.replace(/\D/g, "").slice(0, 3))} error={age ? residentAgeError(age) || undefined : undefined} maxLength={3} keyboardType="number-pad" autoComplete="off" leading={<Ionicons name="calendar-outline" size={19} color={colors.brand} />} />
+            <Field label="Mobile number (optional)" validationKind="phone" hint="Philippine mobile number, e.g. 0917 123 4567." placeholder="0917 123 4567" value={phone} onChangeText={setPhone} maxLength={24} keyboardType="phone-pad" autoComplete="tel" error={phone ? mobileInputError(phone) || undefined : undefined} leading={<Ionicons name="call-outline" size={19} color={colors.brand} />} />
             <View style={{ gap: 7, marginTop: 3 }}><Text style={s.fieldLabel}>Your barangay</Text><Choices compact title="Choose a barangay" subtitle="Choose your home barangay for relevant local updates." sheetKind="barangay" items={barangays} value={barangay} onChange={setBarangay} leadingIcon="location-outline" /></View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 }}><Button grow secondary title="Cancel" disabled={busy} onPress={() => { setFirstName(p.first_name || ""); setMiddleName(p.middle_name || ""); setLastName(p.last_name || ""); setAge(p.age == null ? "" : String(p.age)); setPhone(p.phone || ""); setBarangay(p.barangay_id || ""); setEditing(false); setMessage(""); }} /><Button grow title="Save changes" loading={busy} disabled={!!namePartsProblem || !!ageProblem || !!mobileInputError(phone)} onPress={() => void saveProfile()} /></View>
           </> : <>

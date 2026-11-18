@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { FilePlus2, MapPin, UserRound } from "lucide-react";
-import { createReportSchema, emailInputError, mobileInputError, normalizePhilippineMobile, textInputError } from "@community/shared";
+import { createReportSchema, emailInputError, mobileInputError, normalizePhilippineMobile, personNameInputError } from "@community/shared";
 import { db, result } from "../lib/client";
 import { Dialog } from "./dialog";
 import { WalkInLocationMap, type WalkInPin } from "./walk-in-location-map";
@@ -52,7 +52,7 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
       problem_other: String(form.get("problem_other") || ""),
     });
     const nextErrors: Partial<Record<Field, string>> = {};
-    const reporterNameError = textInputError(reporterName, { min: 2, max: 100, required: true });
+    const reporterNameError = personNameInputError(reporterName, true, 100);
     if (reporterNameError) nextErrors.reporter_name = reporterNameError;
     if (reporterEmail && emailInputError(reporterEmail)) nextErrors.reporter_email = emailInputError(reporterEmail);
     if (reporterPhone && mobileInputError(reporterPhone)) nextErrors.reporter_phone = mobileInputError(reporterPhone);
@@ -124,7 +124,7 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
         <div className="walk-in-section-heading"><span>1</span><div><h3 id="walk-in-reporter-heading">Reporter</h3><p>Record who brought the concern to the office.</p></div></div>
         <div className="walk-in-field-grid walk-in-reporter-grid">
           <label className="walk-in-field"><span>Reporter’s full name <b aria-hidden="true">*</b></span><input id="walk-in-reporter_name" name="reporter_name" autoComplete="name" maxLength={100} required aria-invalid={!!fieldErrors.reporter_name} aria-describedby={fieldErrors.reporter_name ? "walk-in-reporter_name-error" : "walk-in-reporter-hint"} onChange={() => setFieldError("reporter_name")} />{fieldHint("reporter_name", "This is recorded for staff follow-up; it does not create an account.", "walk-in-reporter-hint")}</label>
-          <label className="walk-in-field"><span>Email address <small>Optional</small></span><input id="walk-in-reporter_email" name="reporter_email" type="email" inputMode="email" autoComplete="email" maxLength={254} placeholder="name@example.com" aria-invalid={!!fieldErrors.reporter_email} aria-describedby={fieldErrors.reporter_email ? "walk-in-reporter_email-error" : "walk-in-email-hint"} onBlur={(event) => validateOptionalContact("reporter_email", event.currentTarget.value)} onChange={() => setFieldError("reporter_email")} />{fieldHint("reporter_email", "For staff follow-up only; no automatic email is sent.", "walk-in-email-hint")}</label>
+          <label className="walk-in-field"><span>Email address <small>Optional</small></span><input id="walk-in-reporter_email" name="reporter_email" type="email" inputMode="email" autoComplete="email" maxLength={254} placeholder="name@example.com" aria-invalid={!!fieldErrors.reporter_email} aria-describedby={fieldErrors.reporter_email ? "walk-in-reporter_email-error" : "walk-in-email-hint"} onBlur={(event) => validateOptionalContact("reporter_email", event.currentTarget.value)} onChange={() => setFieldError("reporter_email")} />{fieldHint("reporter_email", "If provided, this address receives email updates when the report changes.", "walk-in-email-hint")}</label>
           <label className="walk-in-field"><span>Phone number <small>Optional</small></span><input id="walk-in-reporter_phone" name="reporter_phone" type="tel" inputMode="tel" autoComplete="tel" maxLength={24} placeholder="0917 123 4567" aria-invalid={!!fieldErrors.reporter_phone} aria-describedby={fieldErrors.reporter_phone ? "walk-in-reporter_phone-error" : "walk-in-phone-hint"} onBlur={(event) => validateOptionalContact("reporter_phone", event.currentTarget.value)} onChange={() => setFieldError("reporter_phone")} />{fieldHint("reporter_phone", "For staff follow-up only; no automatic SMS is sent.", "walk-in-phone-hint")}</label>
         </div>
       </section>

@@ -9,7 +9,7 @@ import { Dialog } from "./dialog";
 import { WalkInLocationMap, type WalkInPin } from "./walk-in-location-map";
 import type { References } from "./workspace";
 
-type Field = "reporter_name" | "reporter_contact" | "category_id" | "problem_type" | "problem_other" | "title" | "description" | "purok" | "zone" | "landmark" | "latitude";
+type Field = "reporter_name" | "reporter_email" | "reporter_phone" | "category_id" | "problem_type" | "problem_other" | "title" | "description" | "purok" | "zone" | "landmark" | "latitude";
 
 export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
   refs: References;
@@ -35,8 +35,8 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
     if (busy) return;
     const form = new FormData(event.currentTarget);
     const reporterName = String(form.get("reporter_name") || "").trim();
-    const rawContact = String(form.get("reporter_contact") || "").trim();
-    const contactError = !rawContact ? "" : rawContact.includes("@") ? emailInputError(rawContact) : mobileInputError(rawContact);
+    const reporterEmail = String(form.get("reporter_email") || "").trim();
+    const reporterPhone = String(form.get("reporter_phone") || "").trim();
     const report = createReportSchema(refs.categories).safeParse({
       category_id: categoryId,
       barangay_id: barangayId,
@@ -54,7 +54,8 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
     const nextErrors: Partial<Record<Field, string>> = {};
     const reporterNameError = textInputError(reporterName, { min: 2, max: 100, required: true });
     if (reporterNameError) nextErrors.reporter_name = reporterNameError;
-    if (contactError) nextErrors.reporter_contact = contactError;
+    if (reporterEmail && emailInputError(reporterEmail)) nextErrors.reporter_email = emailInputError(reporterEmail);
+    if (reporterPhone && mobileInputError(reporterPhone)) nextErrors.reporter_phone = mobileInputError(reporterPhone);
     if (!report.success) {
       for (const issue of report.error.issues) {
         const field = issue.path[0] as Field;
@@ -74,12 +75,13 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
     setBusy(true);
     try {
       const id = crypto.randomUUID();
-      await result<string>(db!.rpc("submit_walk_in_report", {
+      await result<string>(db!.rpc("submit_walk_in_report_with_contacts", {
         p_id: id,
         p_category: report.data.category_id,
         p_barangay: barangayId,
         p_reporter_name: reporterName,
-        p_reporter_contact: rawContact.includes("@") ? rawContact.toLowerCase() : normalizePhilippineMobile(rawContact) || null,
+        p_reporter_email: reporterEmail.toLowerCase() || null,
+        p_reporter_phone: normalizePhilippineMobile(reporterPhone) || null,
         p_title: report.data.title,
         p_description: report.data.description,
         p_latitude: report.data.latitude,
@@ -106,6 +108,10 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
   function setFieldError(field: Field) {
     if (fieldErrors[field]) setFieldErrors((current) => ({ ...current, [field]: undefined }));
   }
+  function validateOptionalContact(field: "reporter_email" | "reporter_phone", value: string) {
+    const message = !value.trim() ? "" : field === "reporter_email" ? emailInputError(value) : mobileInputError(value);
+    setFieldErrors((current) => ({ ...current, [field]: message || undefined }));
+  }
   const fieldHint = (field: Field, hint?: string, hintId?: string) => fieldErrors[field]
     ? <small className="walk-in-field-error" id={`walk-in-${field}-error`}>{fieldErrors[field]}</small>
     : hint ? <small className="walk-in-field-hint" id={hintId}>{hint}</small> : null;
@@ -116,9 +122,10 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
 
       <section className="walk-in-report-section" aria-labelledby="walk-in-reporter-heading">
         <div className="walk-in-section-heading"><span>1</span><div><h3 id="walk-in-reporter-heading">Reporter</h3><p>Record who brought the concern to the office.</p></div></div>
-        <div className="walk-in-field-grid">
+        <div className="walk-in-field-grid walk-in-reporter-grid">
           <label className="walk-in-field"><span>Reporter’s full name <b aria-hidden="true">*</b></span><input id="walk-in-reporter_name" name="reporter_name" autoComplete="name" maxLength={100} required aria-invalid={!!fieldErrors.reporter_name} aria-describedby={fieldErrors.reporter_name ? "walk-in-reporter_name-error" : "walk-in-reporter-hint"} onChange={() => setFieldError("reporter_name")} />{fieldHint("reporter_name", "This is recorded for staff follow-up; it does not create an account.", "walk-in-reporter-hint")}</label>
-          <label className="walk-in-field"><span>Phone or email <small>Optional</small></span><input id="walk-in-reporter_contact" name="reporter_contact" autoComplete="tel" inputMode="text" maxLength={254} placeholder="0917 123 4567 or name@email.com" aria-invalid={!!fieldErrors.reporter_contact} aria-describedby={fieldErrors.reporter_contact ? "walk-in-reporter_contact-error" : "walk-in-contact-hint"} onChange={() => setFieldError("reporter_contact")} />{fieldHint("reporter_contact", "Used only if staff need to follow up. No automatic message is sent.", "walk-in-contact-hint")}</label>
+          <label className="walk-in-field"><span>Email address <small>Optional</small></span><input id="walk-in-reporter_email" name="reporter_email" type="email" inputMode="email" autoComplete="email" maxLength={254} placeholder="name@example.com" aria-invalid={!!fieldErrors.reporter_email} aria-describedby={fieldErrors.reporter_email ? "walk-in-reporter_email-error" : "walk-in-email-hint"} onBlur={(event) => validateOptionalContact("reporter_email", event.currentTarget.value)} onChange={() => setFieldError("reporter_email")} />{fieldHint("reporter_email", "For staff follow-up only; no automatic email is sent.", "walk-in-email-hint")}</label>
+          <label className="walk-in-field"><span>Phone number <small>Optional</small></span><input id="walk-in-reporter_phone" name="reporter_phone" type="tel" inputMode="tel" autoComplete="tel" maxLength={24} placeholder="0917 123 4567" aria-invalid={!!fieldErrors.reporter_phone} aria-describedby={fieldErrors.reporter_phone ? "walk-in-reporter_phone-error" : "walk-in-phone-hint"} onBlur={(event) => validateOptionalContact("reporter_phone", event.currentTarget.value)} onChange={() => setFieldError("reporter_phone")} />{fieldHint("reporter_phone", "For staff follow-up only; no automatic SMS is sent.", "walk-in-phone-hint")}</label>
         </div>
       </section>
 

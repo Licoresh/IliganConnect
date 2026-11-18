@@ -6,7 +6,8 @@ import { db, result } from "../lib/client";
 export type Reporter = {
   report_id: string; resident_name: string | null; registered_barangay_id: string | null;
   submission_barangay_id: string | null; assigned_to_name: string | null; email: string | null;
-  reporter_contact?: string | null; submission_source?: "resident" | "walk_in"; created_by_name?: string | null;
+  reporter_contact?: string | null; reporter_email?: string | null; reporter_phone?: string | null;
+  submission_source?: "resident" | "walk_in"; created_by_name?: string | null;
 };
 export function useReportResidents(ids: string[], contact = false) {
   return useQuery({
@@ -22,7 +23,9 @@ export function ReportHandling({ report, barangays }: { report: Report; barangay
     <h3>{report.submission_source === "walk_in" ? "Walk-in reporter" : "Reporting resident"}</h3>
     {reporter.isPending ? <p role="status">Loading reporter information…</p> : reporter.error ? <div role="alert"><p>Reporter information could not be loaded.</p><button className="secondary" onClick={() => void reporter.refetch()}>Retry reporter details</button></div> : person ? <dl className="assessment-current">
       <div><dt>{report.submission_source === "walk_in" ? "Reported by" : "Submitted by"}</dt><dd>{person.resident_name || "Name not recorded"}</dd>
-        {person.reporter_contact && <a href={person.reporter_contact.includes("@") ? `mailto:${person.reporter_contact}` : `tel:${person.reporter_contact}`}>{person.reporter_contact}</a>}
+        {person.reporter_email && <a href={`mailto:${person.reporter_email}`}>Email: {person.reporter_email}</a>}
+        {person.reporter_phone && <a href={`tel:${person.reporter_phone}`}>Phone: {person.reporter_phone}</a>}
+        {!person.reporter_email && !person.reporter_phone && person.reporter_contact && <a href={person.reporter_contact.includes("@") ? `mailto:${person.reporter_contact}` : `tel:${person.reporter_contact}`}>Contact: {person.reporter_contact}</a>}
         {!person.reporter_contact && person.email && <a href={`mailto:${person.email}`}>{person.email}</a>}
         {report.submission_source === "walk_in" && <small>Recorded by {person.created_by_name || "barangay staff"}</small>}
       </div>

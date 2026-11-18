@@ -16,6 +16,7 @@ test("every approved functional staff role has the same heatmap navigation", () 
     assert.equal(canOpenSection(context, "Issue Mapping & Heatmap"), true);
     assert.equal(canOpenSection(context, "Administration"), role === "admin");
     assert.equal(canOpenSection(context, "Organizations"), role === "admin");
+    assert.equal(canOpenSection(context, "Residents"), role === "barangay");
   }
   assert.equal(
     canOpenSection({ ...access, authorized: false }, "Issue Mapping & Heatmap"),

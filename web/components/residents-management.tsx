@@ -13,6 +13,32 @@ type Resident = {
   created_at: string; last_sign_in_at: string | null;
 };
 
+type ResidentTableRow = Pick<Resident, "id" | "display_name" | "age" | "barangay_id" | "email" | "phone" | "account_status">;
+
+function ResidentTable<T extends ResidentTableRow>({
+  residents,
+  barangays,
+  onManage,
+}: {
+  residents: T[];
+  barangays?: Lookup[];
+  onManage?: (resident: T) => void;
+}) {
+  return <div className="table-scroll"><table><thead><tr>
+    <th scope="col">Name</th><th scope="col">Age</th><th scope="col">Email</th><th scope="col">Contact</th>
+    {barangays && <th scope="col">Registered barangay</th>}
+    <th scope="col">Status</th>{onManage && <th scope="col">Profile</th>}
+  </tr></thead><tbody>{residents.map(resident => <tr key={resident.id}>
+    <th scope="row">{resident.display_name}</th>
+    <td data-label="Age">{resident.age ?? "Not recorded"}</td>
+    <td data-label="Email">{resident.email || "Email unavailable"}</td>
+    <td data-label="Contact">{resident.phone || "Not provided"}</td>
+    {barangays && <td data-label="Registered barangay">{barangays.find(item => item.id === resident.barangay_id)?.name || "Not registered"}</td>}
+    <td data-label="Account status">{resident.account_status}</td>
+    {onManage && <td data-label="Profile"><button className="secondary" onClick={() => onManage(resident)}>Manage<span className="sr-only"> {resident.display_name}</span></button></td>}
+  </tr>)}</tbody></table></div>;
+}
+
 function formatDate(value: string | null) {
   if (!value) return "Not recorded";
   const date = new Date(value);
@@ -43,11 +69,7 @@ export function ResidentsManagement({ barangays, active }: { barangays: Lookup[]
     </div>
     {message && <p className="success" role="status">{message}</p>}
     {q.isPending ? <p role="status">Loading residents…</p> : q.error ? <div role="alert"><p className="error">Residents could not be loaded. {q.error.message}</p><button className="secondary" onClick={() => void q.refetch()}>Retry</button></div> :
-      q.data?.items.length ? <div className="table-scroll"><table><thead><tr><th scope="col">Name</th><th scope="col">Age</th><th scope="col">Contact</th><th scope="col">Registered barangay</th><th scope="col">Status</th><th scope="col">Profile</th></tr></thead><tbody>{q.data.items.map(r => <tr key={r.id}>
-        <th scope="row">{r.display_name}</th><td data-label="Age">{r.age ?? "Not recorded"}</td><td data-label="Contact">{r.email || "Email unavailable"}{r.phone && <small className="record-meta">{r.phone}</small>}</td>
-        <td data-label="Registered barangay">{barangays.find(b => b.id === r.barangay_id)?.name || "Not registered"}</td><td data-label="Account status">{r.account_status}</td>
-        <td><button className="secondary" onClick={() => { setSelected(r); setError(""); setPhoneError(""); setPhoneTouched(false); }}>Manage<span className="sr-only"> {r.display_name}</span></button></td>
-      </tr>)}</tbody></table></div> : <p className="empty">No residents match these filters.</p>}
+      q.data?.items.length ? <ResidentTable residents={q.data.items} barangays={barangays} onManage={r => { setSelected(r); setError(""); setPhoneError(""); setPhoneTouched(false); }} /> : <p className="empty">No residents match these filters.</p>}
     <div className="pagination"><span>{q.data ? q.data.total + " residents · " : ""}Page {page + 1}</span><button className="secondary" disabled={!page || q.isFetching} onClick={() => setPage(page - 1)}>Previous</button><button className="secondary" disabled={q.isFetching || !q.data || (page + 1) * 25 >= q.data.total} onClick={() => setPage(page + 1)}>Next</button></div>
     {selected && <Dialog className="resident-edit-dialog" title="Manage resident" description="Update resident information and account access." icon={<UserRound size={23} />} close={() => { if (!busy) setSelected(null); }}>
       <form key={selected.id} className="resident-edit-form" onSubmit={async e => {
@@ -113,5 +135,30 @@ export function ResidentsManagement({ barangays, active }: { barangays: Lookup[]
         <div className="resident-edit-actions"><button type="button" className="secondary" disabled={busy} onClick={() => setSelected(null)}>Cancel</button><button type="submit" disabled={busy}>{busy ? "Saving…" : "Save resident changes"}</button></div>
       </form>
     </Dialog>}
+  </section>;
+}
+
+type BarangayResident = Pick<Resident, "id" | "display_name" | "age" | "barangay_id" | "email" | "phone" | "account_status" | "created_at">;
+
+export function BarangayResidents({ active, barangayName }: { active: boolean; barangayName: string }) {
+  const [search, setSearch] = useState(""), [sort, setSort] = useState("name"), [page, setPage] = useState(0);
+  const term = useDebouncedValue(search.trim());
+  const q = useQuery({
+    queryKey: ["barangay-residents", term, sort, page], enabled: active,
+    queryFn: ({ signal }) => result<{ items: BarangayResident[]; total: number }>(db!.rpc("barangay_residents", {
+      p_search: term, p_sort: sort, p_offset: page * 25,
+    }).abortSignal(signal)),
+  });
+
+  return <section className="resident-management barangay-resident-directory">
+    <header className="organization-section-heading"><div><h2>Residents in {barangayName}</h2><p>View the resident directory for your assigned barangay. Account changes are managed by city administrators.</p></div></header>
+    <div className="resident-directory-scope"><UserRound size={18} aria-hidden="true" /><span>Read-only directory · Limited to {barangayName}</span></div>
+    <div className="resident-filters barangay-resident-filters">
+      <label>Search residents<input type="search" value={search} maxLength={160} placeholder="Name, email, or mobile" onChange={e => { setSearch(e.target.value); setPage(0); }} /></label>
+      <label>Sort by<select value={sort} onChange={e => { setSort(e.target.value); setPage(0); }}><option value="name">Name</option><option value="newest">Newest registrations</option><option value="oldest">Oldest registrations</option></select></label>
+    </div>
+    {q.isPending ? <p role="status">Loading residents…</p> : q.error ? <div role="alert"><p className="error">Residents could not be loaded. {q.error.message}</p><button className="secondary" onClick={() => void q.refetch()}>Retry</button></div> :
+      q.data?.items.length ? <ResidentTable residents={q.data.items} /> : <p className="empty">No residents are registered in {barangayName} yet.</p>}
+    <div className="pagination"><span>{q.data ? q.data.total + " residents · " : ""}Page {page + 1}</span><button className="secondary" disabled={!page || q.isFetching} onClick={() => setPage(page - 1)}>Previous</button><button className="secondary" disabled={q.isFetching || !q.data || (page + 1) * 25 >= q.data.total} onClick={() => setPage(page + 1)}>Next</button></div>
   </section>;
 }

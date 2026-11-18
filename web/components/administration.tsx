@@ -27,6 +27,72 @@ type AuditEntry = {
   old_value: unknown;
   new_value: unknown;
 };
+type StakeholderAccount = Profile & { account_status: string };
+type StakeholderMembership = { user_id: string; organization_id: string };
+type OrganizationOption = Lookup & { active?: boolean };
+
+function StakeholderAccountEditor({
+  person,
+  barangays,
+  organizations,
+  memberships,
+  busy,
+  onSubmit,
+}: {
+  person: StakeholderAccount;
+  barangays: Lookup[];
+  organizations: OrganizationOption[];
+  memberships: StakeholderMembership[];
+  busy: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const [role, setRole] = useState<"barangay" | "office">(person.role as "barangay" | "office");
+  const assignedOrganizations = new Set(memberships.filter(item => item.user_id === person.id).map(item => item.organization_id));
+  const organizationChoices = organizations.filter(item => item.active !== false || assignedOrganizations.has(item.id));
+
+  return <form className="administration-account-form" onSubmit={onSubmit}>
+    <label>
+      Role
+      <select name="role" value={role} onChange={event => setRole(event.target.value as "barangay" | "office")}>
+        <option value="barangay">{roleNames.barangay}</option>
+        <option value="office">{roleNames.office}</option>
+      </select>
+    </label>
+    {role === "barangay" ? <label>
+      Barangay jurisdiction
+      <select name="barangay" defaultValue={person.barangay_id || ""}>
+        <option value="">No barangay assigned</option>
+        {barangays.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
+    </label> : <>
+      <input type="hidden" name="barangay" value="" />
+      <p className="fine">Office staff use organization membership. A barangay assignment is not needed.</p>
+    </>}
+    {role === person.role ? <label>
+      Account approval &amp; status
+      <select name="status" defaultValue={person.account_status}>
+        <option value="pending">Pending approval</option>
+        <option value="active">Active / approved</option>
+        <option value="disabled">Disabled</option>
+      </select>
+    </label> : <>
+      <input type="hidden" name="status" value={person.account_status} />
+      <p className="fine">Changing the staff role returns the account to pending approval. Confirm its new scope before activating it.</p>
+    </>}
+    {role === "office" && <>
+      <fieldset className="administration-account-memberships" disabled={busy}>
+        <legend>Organization memberships</legend>
+        {organizationChoices.length ? organizationChoices.map(item => <label key={item.id}>
+          <input type="checkbox" name="organization_ids" value={item.id} defaultChecked={assignedOrganizations.has(item.id)} disabled={item.active === false && !assignedOrganizations.has(item.id)} />
+          <span>{item.name}{item.active === false && <small>Inactive · existing membership</small>}</span>
+        </label>) : <p className="fine">No active organizations are available.</p>}
+      </fieldset>
+      <p className="fine">Active office accounts need at least one active organization. Existing inactive memberships can be kept or removed.</p>
+    </>}
+    <button disabled={busy}>{busy ? "Saving account…" : "Save account changes"}</button>
+  </form>;
+}
+
 export function Administration({
   refs,
   profile,
@@ -40,7 +106,6 @@ export function Administration({
     [search, setSearch] = useState(""),
     [user, setUser] = useState(""),
     [inviteRole, setInviteRole] = useState<"barangay" | "office">("barangay"),
-    [page, setPage] = useState(0),
     [auditFilter, setAuditFilter] = useState(""),
     [auditPage, setAuditPage] = useState(0),
     [includeInactiveOrganizations, setIncludeInactiveOrganizations] = useState(false),
@@ -48,20 +113,30 @@ export function Administration({
   const qc = useQueryClient();
   const admin = profile.role === "admin";
   const q = useQuery({
-    queryKey: ["administration", page],
+    queryKey: ["administration-stakeholders"],
     enabled: admin && organizationSection === "accounts",
     queryFn: async () => {
-      const [people, memberships] = await Promise.all([result<(Profile & { account_status: string })[]>(
-        db!
-          .from("profiles")
-          .select(
-            "id,display_name,role,barangay_id,notifications_enabled,account_status",
-          )
-          .order("display_name")
-          .range(page * 50, page * 50 + 49),
-      ), result<{ user_id: string; organization_id: string }[]>(
-        db!.from("organization_memberships").select("*"),
-      )]);
+      const people: StakeholderAccount[] = [];
+      for (let offset = 0; ; offset += 1000) {
+        const batch = await result<StakeholderAccount[]>(
+          db!
+            .from("profiles")
+            .select("id,display_name,role,barangay_id,notifications_enabled,account_status")
+            .in("role", ["barangay", "office"])
+            .order("display_name")
+            .range(offset, offset + 999),
+        );
+        people.push(...batch);
+        if (batch.length < 1000) break;
+      }
+      const memberships: StakeholderMembership[] = [];
+      for (let offset = 0; ; offset += 1000) {
+        const batch = await result<StakeholderMembership[]>(
+          db!.from("organization_memberships").select("*").order("user_id").range(offset, offset + 999),
+        );
+        memberships.push(...batch);
+        if (batch.length < 1000) break;
+      }
       return { people, memberships };
     },
   });
@@ -92,13 +167,14 @@ export function Administration({
   });
   async function run(
     p: PromiseLike<{ data: unknown; error: { message: string } | null }>,
+    successMessage = "Saved.",
   ) {
     setBusy(true);
     setMessage("");
     try {
       await result(p);
       setMessageKind("success");
-      setMessage("Saved.");
+      setMessage(successMessage);
       await qc.invalidateQueries();
     } catch (e) {
       setMessageKind("error");
@@ -401,9 +477,9 @@ export function Administration({
               </button>
             </form>
             <section className="administration-account-management">
-            <div className="organization-form-heading"><span className="organization-section-icon"><ShieldCheck size={20} aria-hidden="true" /></span><div><h3>Manage existing accounts</h3><p>Review roles, jurisdiction, memberships, and approval status.</p></div></div>
+            <div className="organization-form-heading"><span className="organization-section-icon"><ShieldCheck size={20} aria-hidden="true" /></span><div><h3>Manage existing accounts</h3><p>Manage barangay and office staff roles, scope, memberships, and approval status.</p></div></div>
             <label>
-              Search current account page
+              Search staff accounts
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -413,12 +489,12 @@ export function Administration({
             <label>
               Account
               <select value={user} onChange={(e) => setUser(e.target.value)}>
-                <option value="">Choose an account</option>
+                <option value="">Choose a staff account</option>
                 {q.data?.people
                   .filter((p) =>
                     (p.display_name + p.id)
                       .toLowerCase()
-                      .includes(search.toLowerCase()),
+                      .includes(search.trim().toLowerCase()),
                   )
                   .map((p) => (
                     <option key={p.id} value={p.id}>
@@ -429,163 +505,33 @@ export function Administration({
               </select>
             </label>
             {q.isPending && <p className="notice" role="status">Loading accounts…</p>}
-            {!q.isPending && !q.error && !q.data?.people.length && <p className="notice">No accounts found on this page.</p>}
-            <div className="pagination administration-account-pagination">
-              <button
-                className="secondary"
-                disabled={!page}
-                onClick={() => setPage(page - 1)}
-              >
-                Previous
-              </button>
-              <span>Page {page + 1}</span>
-              <button
-                className="secondary"
-                disabled={(q.data?.people.length ?? 0) < 50}
-                onClick={() => setPage(page + 1)}
-              >
-                Next
-              </button>
-            </div>
+            {!q.isPending && !q.error && !q.data?.people.length && <p className="notice">No barangay or office staff accounts are available.</p>}
             {person && (
-              <div key={`${person.id}:${person.role}:${person.barangay_id}:${person.account_status}`} className="administration-account-editor">
+              <div className="administration-account-editor">
                 <small className="mono">{person.id}</small>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void run(
-                      db!.rpc("set_role", {
-                        p_user: user,
-                        p_role: new FormData(e.currentTarget).get("role"),
-                      }),
-                    );
+                <StakeholderAccountEditor
+                  key={`${person.id}:${person.role}:${person.barangay_id}:${person.account_status}`}
+                  person={person}
+                  barangays={refs.barangays}
+                  organizations={refs.organizations as OrganizationOption[]}
+                  memberships={q.data?.memberships || []}
+                  busy={busy}
+                  onSubmit={event => {
+                    event.preventDefault();
+                    const form = new FormData(event.currentTarget);
+                    const role = String(form.get("role") || "");
+                    void run(db!.rpc("admin_update_stakeholder_account", {
+                      p_user: person.id,
+                      p_role: role,
+                      p_barangay: role === "barangay" ? String(form.get("barangay") || "") || null : null,
+                      p_status: String(form.get("status") || person.account_status),
+                      p_organization_ids: role === "office" ? form.getAll("organization_ids").map(String) : [],
+                    }), "Stakeholder account changes saved.");
                   }}
-                >
-                  <label>
-                    Role
-                    <select name="role" defaultValue={person.role}>
-                      {["resident", "barangay", "office", "admin"].map((r) => (
-                        <option key={r} value={r}>
-                          {roleNames[r as keyof typeof roleNames]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button disabled={busy}>Assign role</button>
-                </form>
-                {person.role === "barangay" && <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void run(
-                      db!.rpc("set_staff_scope", {
-                        p_user: user,
-                        p_barangay:
-                          new FormData(e.currentTarget).get("barangay") || null,
-                      }),
-                    );
-                  }}
-                >
-                  <label>
-                    Barangay jurisdiction
-                    <select
-                      name="barangay"
-                      defaultValue={person.barangay_id || ""}
-                    >
-                      <option value="">No barangay</option>
-                      {refs.barangays.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button disabled={busy}>Save jurisdiction</button>
-                </form>}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void run(
-                      db!.rpc("set_account_status", {
-                        p_user: user,
-                        p_status: new FormData(e.currentTarget).get("status"),
-                      }),
-                    );
-                  }}
-                >
-                  <label>
-                    Account approval & status
-                    <select name="status" defaultValue={person.account_status}>
-                      <option value="pending">Pending approval</option>
-                      <option value="active">Active / approved</option>
-                      <option value="disabled">Disabled</option>
-                    </select>
-                  </label>
-                  <p className="fine">
-                    Changing a staff role requires approval again. {person.role === "office"
-                      ? "Office staff use organization membership; no barangay assignment is needed."
-                      : person.role === "barangay"
-                        ? "Assign a barangay before activating."
-                        : "This account type does not need a staff jurisdiction."} Disabled accounts lose backend access immediately.
-                  </p>
-                  <button disabled={busy}>Save account status</button>
-                </form>
-                <h3>Organization memberships</h3>
-                {q.data?.memberships
-                  .filter((m) => m.user_id === user)
-                  .map((m) => (
-                    <div className="report-row" key={m.organization_id}>
-                      <strong>
-                        {
-                          refs.organizations.find(
-                            (o) => o.id === m.organization_id,
-                          )?.name
-                        }
-                      </strong>
-                      <button
-                        className="text-button"
-                        disabled={busy}
-                        onClick={() =>
-                          void run(
-                            db!
-                              .from("organization_memberships")
-                              .delete()
-                              .eq("user_id", user)
-                              .eq("organization_id", m.organization_id),
-                          )
-                        }
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void run(
-                      db!.from("organization_memberships").upsert({
-                        user_id: user,
-                        organization_id: new FormData(e.currentTarget).get(
-                          "organization",
-                        ),
-                      }),
-                    );
-                  }}
-                >
-                  <label>
-                    Add membership
-                    <select name="organization">
-                      {activeOrganizations.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button disabled={busy || !activeOrganizations.length}>Save membership</button>
-                </form>
+                />
               </div>
             )}
-            {!person && !q.isPending && <div className="administration-account-placeholder"><UsersRound size={28} aria-hidden="true" /><strong>Choose an account to manage</strong><p>Its role, barangay, approval status, and memberships will appear here.</p></div>}
+            {!person && !q.isPending && <div className="administration-account-placeholder"><UsersRound size={28} aria-hidden="true" /><strong>Choose a staff account to manage</strong><p>Resident and administrator accounts are kept out of this list. Account role, scope, status, and memberships will appear here.</p></div>}
             </section>
             </div>
           </section>

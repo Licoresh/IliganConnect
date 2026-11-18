@@ -6,6 +6,10 @@
 .resident-edit-form label, .case-form > label { display: grid; gap: 7px; }
 .resident-management td, .resident-management th { overflow-wrap: anywhere; }
 .resident-management .table-scroll { overflow-x: auto; min-width: 0; position: relative; }
+.resident-management table { min-width: 920px; }
+.resident-directory-scope { display: flex; align-items: center; gap: 9px; width: fit-content; max-width: 100%; margin: 14px 0 4px; padding: 9px 12px; border: 1px solid #cfe6e0; border-radius: 10px; background: #f1faf8; color: var(--brand-dark); font-size: 13px; line-height: 1.45; }
+.resident-directory-scope svg { flex: 0 0 auto; color: var(--brand); }
+.barangay-resident-filters { grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr); }
 .report-handling h3 { margin-block: 0 12px; }
 .report-handling details { border-top: 1px solid var(--line); margin-top: 18px; }
 .report-handling summary { cursor: pointer; padding-block: 14px; font-weight: 600; color: var(--brand); }
@@ -22,6 +26,7 @@
   .resident-management td, .resident-management th { display: block; padding: 0; border: 0; white-space: normal; }
   .resident-management td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
   .resident-filters { grid-template-columns: minmax(0,1fr); }
+  .barangay-resident-filters { grid-template-columns: minmax(0,1fr); }
   .resident-filters input, .resident-filters select, .case-form input, .case-form select, .case-form textarea, .resident-edit-form input, .resident-edit-form select, .resident-edit-form textarea { font-size: 16px; min-height: 48px; }
 }
 :root {
@@ -4386,8 +4391,6 @@ main#main, main#main.overview-main, main#main.reports-main { width: 100%; max-wi
 .administration-account-management h3, .administration-configuration h3 { margin: 0; font-size: 16px; font-weight: 700; line-height: 1.4; color: var(--ink); }
 .administration-account-management label { font-size: 13px; }
 .administration-account-management :is(input, select) { min-height: 44px; font-size: 14px; border-color: #d9e5e9; border-radius: 9px; }
-.administration-account-pagination { justify-content: space-between; margin: 0; }
-.administration-account-pagination span { color: var(--muted); font-size: 12px; }
 .administration-account-placeholder { display: grid; justify-items: center; gap: 10px; padding: 26px 18px; border: 1px dashed var(--line); border-radius: 11px; background: var(--paper); text-align: center; color: var(--muted); }
 .administration-account-placeholder svg { color: var(--brand); }
 .administration-account-placeholder strong { color: var(--brand-dark); font-size: 14px; }
@@ -4396,6 +4399,13 @@ main#main, main#main.overview-main, main#main.reports-main { width: 100%; max-wi
 .administration-account-editor > .mono { overflow-wrap: anywhere; }
 .administration-account-editor form { margin: 0; padding: 16px; border: 1px solid #e1eaea; border-radius: 10px; gap: 12px; background: #f8fcfb; }
 .administration-account-editor form > button { justify-self: start; font-size: 13px; }
+.administration-account-memberships { display: grid; min-width: 0; gap: 5px; margin: 0; padding: 12px; border: 1px solid #dce9e8; border-radius: 10px; }
+.administration-account-memberships legend { padding-inline: 5px; color: var(--ink); font-size: 13px; font-weight: 650; }
+.administration-account-memberships label { display: flex; align-items: flex-start; gap: 10px; min-height: 40px; padding: 8px; border-bottom: 1px solid #eaf0ef; border-radius: 7px; cursor: pointer; }
+.administration-account-memberships label:last-of-type { border-bottom: 0; }
+.administration-account-memberships label > span { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.administration-account-memberships label small { color: var(--muted); font-size: 11px; }
+.administration-account-memberships input[type=checkbox] { width: 18px; min-width: 18px; min-height: 18px; margin: 2px 0 0; accent-color: var(--brand); }
 .administration-account-editor .fine, .administration-invite-form .fine { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .administration-account-editor .report-row { min-width: 0; gap: 12px; margin: 0; padding: 12px; }
 .administration-account-editor .report-row strong { min-width: 0; font-size: 13px; overflow-wrap: anywhere; }

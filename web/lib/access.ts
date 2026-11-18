@@ -57,6 +57,7 @@ export function canOpenSection(access: StaffContext, section: string) {
   if (!access.authorized) return false;
   if (["Administration", "Organizations"].includes(section))
     return access.profile.role === "admin";
+  if (section === "Residents") return access.profile.role === "barangay";
   if (section === "Barangay prioritization") return canPrioritize(access);
   return [
     "Overview",

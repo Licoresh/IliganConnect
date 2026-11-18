@@ -21,6 +21,7 @@ import {
   MessageSquare,
   Settings,
   Users,
+  UserRound,
   Megaphone,
   ChevronDown,
   ChevronRight,
@@ -43,6 +44,7 @@ import dynamic from "next/dynamic";
 import { Community } from "./community";
 import { Analytics, Charts, AnalyticsData } from "./analytics";
 import { Administration } from "./administration";
+import { BarangayResidents } from "./residents-management";
 import { SettingsPanel } from "./settings";
 import { Reports } from "./reports";
 import { AccessContext, useAccess } from "./access-context";
@@ -79,6 +81,7 @@ function authErrorMessage(error: unknown) {
 const nav = [
   ["Overview", LayoutDashboard],
   ["Issue reports", ClipboardList],
+  ["Residents", UserRound],
   ["Issue Mapping & Heatmap", MapPinned],
   ["Geographic analytics", ChartNoAxesCombined],
   ["Consultations", MessageSquare],
@@ -547,10 +550,10 @@ export default function Workspace() {
           <div className="workspace-edition"><span /> LOCAL ACTION · STRONGER ILIGAN</div>
           <nav aria-label="Main navigation">
             {[
-              { title: "Community operations", items: nav.slice(0, 4) },
-              { title: "Community", items: [...nav.slice(4, 6), nav[6]] },
-              { title: "System", items: nav.slice(7, 8) },
-              { title: "Account", items: nav.slice(8) },
+              { title: "Community operations", items: nav.slice(0, 5) },
+              { title: "Community", items: [...nav.slice(5, 7), nav[7]] },
+              { title: "System", items: nav.slice(8, 9) },
+              { title: "Account", items: nav.slice(9) },
             ].map((group) => {
               const items = group.items.filter(([n]) => availableSection(n));
               return items.length ? <div className="nav-group" key={group.title}>
@@ -669,6 +672,7 @@ export default function Workspace() {
                   <h1 ref={pageTitle} tabIndex={-1}>{visibleSection}</h1>
                   <p>{({
                     "Issue reports": "Review evidence, route responsibility and keep each case moving.",
+                    "Residents": "View the resident directory for your assigned barangay.",
                     "Issue Mapping & Heatmap": "Explore issue concentrations and the reports behind them.",
                     "Geographic analytics": "Compare reporting patterns with evidence and context.",
                     "Consultations": "Bring community experience into the decisions that follow.",
@@ -682,6 +686,8 @@ export default function Workspace() {
             </div>
             {visibleSection === "Overview" ? (
               <Overview onNavigate={navigate} refs={refs.data!} />
+            ) : visibleSection === "Residents" ? (
+              <BarangayResidents active={visibleSection === "Residents"} barangayName={jurisdiction} />
             ) : section === "Issue reports" ? (
               <Reports refs={refs.data!} initialRecordId={recordTarget.id} initialBarangay={scope} initialQueue={reportQueue}
                 onOpenReport={(id, queue) => navigate("Issue reports", id, queue)} onCloseReport={closeReport} />

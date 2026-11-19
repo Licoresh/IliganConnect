@@ -18,6 +18,7 @@ import {
   Link2,
   List,
   MapPin,
+  Megaphone,
   MessageSquare,
   MoreVertical,
   Pencil,
@@ -28,6 +29,7 @@ import {
   ShieldCheck,
   UserRound,
   Users,
+  ImagePlus,
   X,
 } from "lucide-react";
 import { db, result } from "../lib/client";
@@ -471,20 +473,20 @@ export function Community({
             <div className={`announcement-grid${meetingView === "list" ? " is-list" : ""}`}>
               {q.data.map((r) => {
                 const manager = canManage(r);
-                const canEdit = manager || (r.created_by === profile.id && r.status === "pending_review");
-                const primaryNext = r.status === "pending_review" ? "published" : "pending_review";
-                const primaryLabel = r.status === "pending_review" ? "Publish" : r.status === "archived" ? "Restore to review" : "Pending review";
-                const otherStates = states.filter((next) => next !== r.status && next !== "draft" && next !== primaryNext);
+                const canEdit = manager || (r.created_by === profile.id && ["pending_review", "published"].includes(r.status));
+                const primaryNext = r.status === "published" ? "archived" : "published";
+                const primaryLabel = r.status === "pending_review" ? "Publish" : r.status === "archived" ? "Republish" : "Archive";
+                const otherStates = states.filter((next) => next !== r.status && next !== "draft" && next !== "pending_review" && next !== primaryNext);
                 const dateValue = r.publish_at || r.created_at;
-                const dateText = new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(dateValue));
+                const dateText = new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" }).format(new Date(dateValue));
                 const statusText = r.status === "published" && r.publish_at && new Date(r.publish_at).getTime() > Date.now() ? "Scheduled" : label(r.status);
-                const nextLabel = (next: string) => next === "published" ? "Publish" : next === "pending_review" ? "Send for review" : "Archive";
+                const nextLabel = (next: string) => next === "published" ? "Publish" : "Archive";
                 return (
                   <article className="panel announcement-card" key={r.id}>
                     <div className="announcement-card-top">
                       <span className={`announcement-status ${r.status}`}>{statusText}</span>
                       <time dateTime={dateValue}><CalendarDays size={14} /> {dateText}</time>
-                      {manager && <details className="announcement-menu">
+                      {manager && !!otherStates.length && <details className="announcement-menu">
                         <summary aria-label={`More actions for ${r.title}`}><MoreVertical size={17} /></summary>
                         <div className="announcement-menu-panel" role="group" aria-label="Status actions">
                           {otherStates.map((next) => (
@@ -528,8 +530,8 @@ export function Community({
           }
           close={() => setEditing(null)}
           className={table === "consultations" ? "consultation-edit-dialog" : table === "announcements" ? "announcement-edit-dialog" : undefined}
-          icon={table === "consultations" ? <Pencil size={22} /> : undefined}
-          description={table === "consultations" ? "Update the discussion details and keep your community informed." : undefined}
+          icon={table === "consultations" ? <Pencil size={22} /> : table === "announcements" ? <Megaphone size={22} /> : undefined}
+          description={table === "consultations" ? "Update the discussion details and keep your community informed." : table === "announcements" ? editing === "new" ? "Share an update with residents now or schedule it for later." : "Update the announcement and its publication time." : undefined}
         >
           <form
             key={editing === "new" ? `${table}-new` : `${table}-${editing.id}`}
@@ -564,6 +566,8 @@ export function Community({
                 }
                 return;
               }
+              const fileEntry = f.get("announcement_image");
+              const image = fileEntry instanceof File && fileEntry.name ? fileEntry : null;
               const payload: Record<string, unknown> = {
                 title: f.get("title"),
                 body: f.get("body"),
@@ -581,28 +585,27 @@ export function Community({
                       publish_at: publishAt!.toISOString(),
                       kind: f.get("kind"),
                     }),
-                ...(table === "announcements" && editing === "new"
-                  ? { status: "pending_review" }
+                ...(table === "announcements" && (editing === "new" || editing.status === "pending_review")
+                  ? { status: editing === "new" && image ? "draft" : "published" }
                   : {}),
               };
-              const fileEntry = f.get("announcement_image");
-              const image = fileEntry instanceof File && fileEntry.name ? fileEntry : null;
               const saved = table === "announcements"
                 ? await run((async () => {
                     if (image) await validateImageFile(image);
                     const extension = image?.type === "image/jpeg" ? "jpg" : image?.type === "image/png" ? "png" : "webp";
                     if (editing === "new") {
-                      const created = await result<{ id: string }>(db!.from("announcements").insert(payload).select("id").single());
-                      let path: string | null = null;
+                      const id = crypto.randomUUID();
+                      const path = image ? `${id}/${crypto.randomUUID()}.${extension}` : null;
+                      const created = await result<{ id: string }>(db!.from("announcements").insert({ ...payload, ...(path ? { id, attachment_path: path } : {}) }).select("id").single());
                       try {
                         if (image) {
-                          path = `${created.id}/${crypto.randomUUID()}.${extension}`;
+                          if (!path) throw new Error("The announcement image could not be prepared.");
                           await result(db!.storage.from("announcement-media").upload(path, image, { contentType: image.type, upsert: false }));
-                          await result(db!.from("announcements").update({ attachment_path: path }).eq("id", created.id).select("id").single());
+                          await result(db!.from("announcements").update({ attachment_path: path, status: "published" }).eq("id", created.id).eq("status", "draft").select("id").single());
                         }
                       } catch (cause) {
                         if (path) await db!.storage.from("announcement-media").remove([path]);
-                        try { await result(db!.from("announcements").delete().eq("id", created.id)); } catch { /* Keep the upload error visible. */ }
+                        try { await result(db!.from("announcements").delete().eq("id", created.id).eq("status", "draft")); } catch { /* Keep the upload error visible. */ }
                         throw cause;
                       }
                     } else {
@@ -711,65 +714,35 @@ export function Community({
               </div>
             ) : (
               <>
-                <label>
-                  Title
-                  <input name="title" required minLength={8} maxLength={160} defaultValue={editing === "new" ? "" : editing.title} />
-                </label>
-                <label>
-                  Content
-                  <textarea name="body" required minLength={20} maxLength={10000} defaultValue={editing === "new" ? "" : editing.body} />
-                </label>
-                <label className="announcement-image-field">
-                  <span>Announcement image <small>Optional</small></span>
-                  <input type="file" name="announcement_image" accept="image/jpeg,image/png,image/webp" />
-                  <small>{editing !== "new" && editing.attachment_path ? "An image is attached. Choose a new file to replace it." : "Add a JPG, PNG, or WebP image up to 5 MB. Residents can view it with the announcement."}</small>
-                </label>
-                {profile.role === "barangay" ? (
-                  <label>
-                    Barangay
-                    <input type="hidden" name="barangay" value={profile.barangay_id ?? ""} />
-                    <input value={refs.barangays.find((item) => item.id === profile.barangay_id)?.name ?? "Your assigned barangay"} readOnly />
-                  </label>
-                ) : (
-                  <label>
-                    Barangay
-                    <select name="barangay" required={profile.role === "office" && !canSetCitywide} value={draftBarangay} onChange={(event) => setDraftBarangay(event.target.value)}>
-                      {profile.role === "office" && !canSetCitywide ? <option value="">Choose a barangay</option> : <option value="">Citywide</option>}
-                      {(profile.role === "office" ? allowedAnnouncementBarangays : refs.barangays).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                    </select>
-                  </label>
-                )}
-                {profile.role !== "barangay" && (
-                  <label>
-                    Issuing office
-                    <select name="organization" required={profile.role === "office"} value={profile.role === "office" ? draftOrganization : undefined} defaultValue={profile.role === "office" ? undefined : editing === "new" ? "" : editing.organization_id || ""} onChange={profile.role === "office" ? (event) => {
-                      const nextOrganization = event.target.value;
-                      const nextRules = access.rules.filter((rule) => rule.enabled && rule.organization_id === nextOrganization);
-                      setDraftOrganization(nextOrganization);
-                      setDraftBarangay((current) => current && nextRules.some((rule) => !rule.barangay_id || rule.barangay_id === current) ? current : nextRules.some((rule) => !rule.barangay_id) ? "" : nextRules.find((rule) => rule.barangay_id)?.barangay_id ?? "");
-                    } : undefined}>
-                      <option value="">{profile.role === "office" ? "Choose your office" : "Barangay administration"}</option>
-                      {(profile.role === "office" ? announcementOrganizations : refs.organizations).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                    </select>
-                  </label>
-                )}
-                <label>
-                  Announcement type
-                  <input maxLength={80} required list="announcement-kinds" name="kind" defaultValue={editing === "new" ? "General announcement" : editing.kind} />
-                  <datalist id="announcement-kinds">
-                    {["General announcement", "Maintenance notice", "Community cleanup", "Office advisory", "Consultation invitation", "Meeting schedule", "Repair update"].map((k) => <option key={k}>{k}</option>)}
-                  </datalist>
-                </label>
-                <label>
-                  Publication date
-                  <input required name="publish" type="datetime-local" defaultValue={localDate(editing === "new" ? undefined : editing.publish_at)} onInput={(event) => event.currentTarget.setCustomValidity("")} />
-                </label>
-                <p className="fine">Published items become visible at this date. Immediate and scheduled publication send in-app updates once to eligible subscribers. Scheduled delivery is checked every minute.</p>
+                <div className="announcement-edit-content">
+                  <section className="announcement-edit-section">
+                    <div className="announcement-edit-section-heading"><span className="announcement-edit-section-icon"><FileText size={18} /></span><div><h3>Announcement details</h3><p>Write a clear update residents can act on.</p></div></div>
+                    <div className="announcement-edit-grid">
+                      <label className="announcement-edit-field is-wide"><span>Title <b>*</b></span><input name="title" required minLength={8} maxLength={160} defaultValue={editing === "new" ? "" : editing.title} /></label>
+                      <label className="announcement-edit-field is-wide"><span>Content <b>*</b></span><textarea name="body" required minLength={20} maxLength={10000} defaultValue={editing === "new" ? "" : editing.body} /></label>
+                      <label className="announcement-edit-field"><span>Type <b>*</b></span><input maxLength={80} required list="announcement-kinds" name="kind" defaultValue={editing === "new" ? "General announcement" : editing.kind} /><datalist id="announcement-kinds">{["General announcement", "Maintenance notice", "Community cleanup", "Office advisory", "Consultation invitation", "Meeting schedule", "Repair update"].map((kind) => <option key={kind}>{kind}</option>)}</datalist></label>
+                      <label className="announcement-edit-image"><span><ImagePlus size={16} /> Image <small>Optional</small></span><input type="file" name="announcement_image" accept="image/jpeg,image/png,image/webp" /><small>{editing !== "new" && editing.attachment_path ? "Choose a new image to replace the attached one." : "JPG, PNG, or WebP · up to 5 MB"}</small></label>
+                    </div>
+                  </section>
+                  <section className="announcement-edit-section">
+                    <div className="announcement-edit-section-heading"><span className="announcement-edit-section-icon"><MapPin size={18} /></span><div><h3>Audience</h3><p>Choose where this announcement applies.</p></div></div>
+                    <div className="announcement-edit-grid announcement-audience-grid">
+                      {profile.role === "barangay" ? (
+                        <label className="announcement-edit-field"><span>Barangay</span><input type="hidden" name="barangay" value={profile.barangay_id ?? ""} /><input value={refs.barangays.find((item) => item.id === profile.barangay_id)?.name ?? "Your assigned barangay"} readOnly /></label>
+                      ) : (
+                        <label className="announcement-edit-field"><span>Barangay <b>{profile.role === "office" && !canSetCitywide ? "*" : ""}</b></span><select name="barangay" required={profile.role === "office" && !canSetCitywide} value={draftBarangay} onChange={(event) => setDraftBarangay(event.target.value)}>{profile.role === "office" && !canSetCitywide ? <option value="">Choose a barangay</option> : <option value="">Citywide</option>}{(profile.role === "office" ? allowedAnnouncementBarangays : refs.barangays).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+                      )}
+                      {profile.role !== "barangay" && <label className="announcement-edit-field"><span>Issuing office <b>{profile.role === "office" ? "*" : ""}</b></span><select name="organization" required={profile.role === "office"} value={profile.role === "office" ? draftOrganization : undefined} defaultValue={profile.role === "office" ? undefined : editing === "new" ? "" : editing.organization_id || ""} onChange={profile.role === "office" ? (event) => { const nextOrganization = event.target.value; const nextRules = access.rules.filter((rule) => rule.enabled && rule.organization_id === nextOrganization); setDraftOrganization(nextOrganization); setDraftBarangay((current) => current && nextRules.some((rule) => !rule.barangay_id || rule.barangay_id === current) ? current : nextRules.some((rule) => !rule.barangay_id) ? "" : nextRules.find((rule) => rule.barangay_id)?.barangay_id ?? ""); } : undefined}><option value="">{profile.role === "office" ? "Choose your office" : "Barangay administration"}</option>{(profile.role === "office" ? announcementOrganizations : refs.organizations).map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label>}
+                    </div>
+                  </section>
+                  <section className="announcement-edit-section announcement-publication-section">
+                    <div className="announcement-edit-section-heading"><span className="announcement-edit-section-icon"><CalendarDays size={18} /></span><div><h3>Publication</h3><p>Set when residents can see it.</p></div></div>
+                    <label className="announcement-edit-field"><span>Publish date and time · Philippine time <b>*</b></span><input required name="publish" type="datetime-local" defaultValue={localDate(editing === "new" ? undefined : editing.publish_at)} onInput={(event) => event.currentTarget.setCustomValidity("")} /></label>
+                    <p className="announcement-publish-note"><Clock3 size={16} /><span>No review is needed. It will publish at this time; a future time is scheduled automatically. Residents receive one in-app update when it goes live.</span></p>
+                  </section>
+                </div>
               </>
             )}
-            {table === "announcements" && <p className="fine">
-              Announcements are submitted for review and become visible to residents only after an authorized publisher publishes them.
-            </p>}
             {table === "consultations" ? (
               <div className="consultation-edit-footer">
                 <p className="consultation-edit-status" role="status">{message}</p>
@@ -780,10 +753,20 @@ export function Community({
               </div>
             ) : (
               <>
-                <div className="community-edit-actions">
-                  <button disabled={busy}>{busy ? editing === "new" ? "Submitting…" : "Saving…" : editing === "new" ? "Submit for review" : "Save changes"}</button>
-                </div>
-                <p role="status">{message}</p>
+                {table === "announcements" ? (
+                  <div className="community-edit-actions announcement-edit-actions">
+                    <p role="status">{message}</p>
+                    <div className="announcement-edit-buttons">
+                      <button type="button" className="secondary" onClick={() => setEditing(null)}>Cancel</button>
+                      <button disabled={busy}>{busy ? editing === "new" || editing.status === "pending_review" ? "Publishing…" : "Saving…" : editing === "new" || editing.status === "pending_review" ? <><Send size={15} /> Publish announcement</> : "Save changes"}</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="community-edit-actions"><button disabled={busy}>{busy ? editing === "new" ? "Submitting…" : "Saving…" : editing === "new" ? "Submit for review" : "Save changes"}</button></div>
+                    <p role="status">{message}</p>
+                  </>
+                )}
               </>
             )}
           </form>
@@ -1531,7 +1514,7 @@ function Announcement({
     <>
       <span className="badge">{row.kind}</span>
       <p className="fine">
-        Publication: {new Date(row.publish_at!).toLocaleString()}
+        Publication: {new Date(row.publish_at!).toLocaleString("en-PH", { timeZone: "Asia/Manila" })} Philippine time
       </p>
       <p className="preserve-lines">{row.body}</p>
       {q.data?.url && (

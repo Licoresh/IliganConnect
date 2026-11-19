@@ -3471,26 +3471,55 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
   .consultation-edit-dialog * { scroll-behavior: auto !important; }
 }
 
-.announcement-edit-form { display: grid; min-width: 0; gap: 16px; }
-.announcement-edit-form > label { display: grid; min-width: 0; gap: 7px; color: var(--ink); font-size: 14px; font-weight: 650; }
-.announcement-edit-form > label > small { color: var(--muted); font-size: 12px; font-weight: 450; line-height: 1.5; }
-.announcement-edit-form :is(input:not([type="file"]), select, textarea) { width: 100%; min-width: 0; min-height: 46px; padding: 10px 13px; border: 1px solid #d6e2e9; border-radius: 11px; background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
-.announcement-edit-form textarea { min-height: 132px; resize: vertical; line-height: 1.55; }
-.announcement-edit-form .announcement-image-field { gap: 8px; }
-.announcement-image-field > span { display: flex; align-items: center; gap: 8px; }
-.announcement-image-field > span small { padding: 3px 8px; border-radius: 20px; background: #edf4f4; color: #617782; font-size: 11px; font-weight: 600; }
-.announcement-edit-form .announcement-image-field input[type="file"] { width: 100%; min-width: 0; min-height: 48px; padding: 8px; border: 1px dashed #b9d5d1; border-radius: 11px; background: #f6fbf9; color: var(--ink); font: inherit; font-size: 12px; }
-.announcement-edit-form .announcement-image-field input[type="file"]::file-selector-button { min-height: 32px; margin-right: 10px; padding: 6px 10px; border: 0; border-radius: 8px; background: #e2f3ef; color: #08756b; font: inherit; font-weight: 700; cursor: pointer; }
-.announcement-edit-form :is(input, select, textarea):focus-visible { border-color: var(--brand-hover); outline: 3px solid #08756b26; outline-offset: 1px; }
-.announcement-edit-form .community-edit-actions { display: flex; justify-content: flex-end; padding-top: 12px; border-top: 1px solid #e3ecee; }
-.announcement-edit-form .community-edit-actions button { min-width: 150px; min-height: 44px; padding: 10px 16px; border-radius: 10px; }
-.announcement-edit-form [role="status"] { min-height: 18px; margin: 0; color: var(--muted); font-size: 12px; }
+.modal.announcement-edit-dialog { display: flex; width: min(760px, calc(100vw - 32px)); max-height: min(84dvh, 760px); flex-direction: column; overflow: hidden; padding: 0; border-radius: 18px; }
+.announcement-edit-dialog .community-dialog-heading { grid-template-columns: 46px minmax(0, 1fr) 40px; gap: 13px; padding: 15px 22px; }
+.announcement-edit-dialog .community-dialog-icon { width: 46px; height: 46px; border-radius: 14px; }
+.announcement-edit-dialog .community-dialog-icon svg { width: 21px; height: 21px; }
+.announcement-edit-dialog .community-dialog-title h2 { font-size: 19px; letter-spacing: -.25px; }
+.announcement-edit-dialog .community-dialog-title p { margin-top: 3px; font-size: 12px; }
+.announcement-edit-dialog .community-dialog-close { width: 40px; height: 40px; min-height: 40px; }
+.announcement-edit-dialog .community-dialog-body { display: block; min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 0; }
+.announcement-edit-form { display: grid; min-width: 0; gap: 0; padding: 17px 22px 0; }
+.announcement-edit-content { display: grid; min-width: 0; gap: 0; }
+.announcement-edit-section { min-width: 0; }
+.announcement-edit-section + .announcement-edit-section { margin-top: 15px; padding-top: 15px; border-top: 1px solid #e6eeef; }
+.announcement-edit-section-heading { display: flex; align-items: center; gap: 11px; margin-bottom: 11px; }
+.announcement-edit-section-icon { display: grid; width: 37px; height: 37px; flex: 0 0 auto; place-items: center; border-radius: 11px; background: var(--brand-soft); color: var(--brand); }
+.announcement-edit-section-heading h3 { margin: 0; color: var(--ink); font-size: 14px; font-weight: 750; line-height: 1.3; }
+.announcement-edit-section-heading p { margin: 3px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.announcement-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 11px 13px; }
+.announcement-edit-field { display: grid; min-width: 0; gap: 6px; color: var(--ink); font-size: 12px; font-weight: 650; line-height: 1.4; }
+.announcement-edit-field.is-wide { grid-column: 1 / -1; }
+.announcement-edit-field b { color: #b54242; }
+.announcement-edit-form :is(input:not([type="file"]), select, textarea) { width: 100%; min-width: 0; min-height: 42px; padding: 9px 11px; border: 1px solid #d9e6e8; border-radius: 10px; background: #fff; color: var(--ink); font: inherit; font-size: 12px; }
+.announcement-edit-form textarea { min-height: 84px; resize: vertical; line-height: 1.5; }
+.announcement-edit-image { display: grid; min-width: 0; gap: 6px; padding: 9px 10px; border: 1px dashed #b9d5d1; border-radius: 10px; background: #f7fbfa; color: var(--ink); font-size: 12px; font-weight: 650; }
+.announcement-edit-image > span { display: flex; align-items: center; gap: 6px; }
+.announcement-edit-image > span svg { color: var(--brand); }
+.announcement-edit-image > span small { margin-left: auto; color: var(--muted); font-size: 10px; font-weight: 500; }
+.announcement-edit-image > small { color: var(--muted); font-size: 10px; font-weight: 450; line-height: 1.4; }
+.announcement-edit-image input[type="file"] { width: 100%; min-width: 0; color: var(--muted); font: inherit; font-size: 10px; }
+.announcement-edit-image input[type="file"]::file-selector-button { min-height: 30px; margin-right: 8px; padding: 5px 9px; border: 0; border-radius: 7px; background: #e2f3ef; color: #08756b; font: inherit; font-weight: 700; cursor: pointer; }
+.announcement-publish-note { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0 0; padding: 10px 11px; border-radius: 10px; background: #f1f8f7; color: #536e78; font-size: 11px; line-height: 1.5; }
+.announcement-publish-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--brand); }
+.announcement-edit-form :is(button, input, select, textarea):focus-visible { outline: 3px solid #08756b26; outline-offset: 2px; }
+.announcement-edit-form .community-edit-actions { position: sticky; z-index: 2; bottom: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 0 -22px; padding: 12px 22px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid #e3ecee; background: #fff; }
+.announcement-edit-actions [role="status"] { min-height: 18px; margin: 0; color: var(--muted); font-size: 11px; }
+.announcement-edit-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+.announcement-edit-buttons button { min-width: 116px; min-height: 40px; justify-content: center; gap: 7px; padding: 9px 13px; border-radius: 10px; font-size: 12px; }
 @media (max-width: 600px) {
-  .announcement-edit-form { gap: 12px; }
-  .announcement-edit-form > label { font-size: 13px; }
-  .announcement-edit-form :is(input:not([type="file"]), select, textarea) { min-height: 44px; padding: 9px 11px; font-size: 13px; }
-  .announcement-edit-form textarea { min-height: 120px; }
-  .announcement-edit-form .community-edit-actions button { width: 100%; }
+  .modal.announcement-edit-dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); }
+  .announcement-edit-dialog .community-dialog-heading { grid-template-columns: 42px minmax(0, 1fr) 38px; gap: 10px; padding: 13px 15px; }
+  .announcement-edit-dialog .community-dialog-icon { width: 42px; height: 42px; }
+  .announcement-edit-form { padding: 14px 15px 0; }
+  .announcement-edit-section + .announcement-edit-section { margin-top: 13px; padding-top: 13px; }
+  .announcement-edit-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .announcement-edit-field.is-wide { grid-column: auto; }
+  .announcement-edit-form textarea { min-height: 76px; }
+  .announcement-edit-form .community-edit-actions { grid-template-columns: 1fr; gap: 7px; margin-inline: -15px; padding-inline: 15px; }
+  .announcement-edit-actions [role="status"]:empty { display: none; }
+  .announcement-edit-buttons { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); }
+  .announcement-edit-buttons button { min-width: 0; width: 100%; }
 }
 
 /* Consultation discussion: wide context panel, aligned comment cards, and a clear reply composer. */
@@ -4933,4 +4962,14 @@ main#main .issue-map .overview-map-base button { min-width: 44px; min-height: 34
   .walk-in-location-actions button { min-width: 0; padding-inline: 8px; white-space: normal; line-height: 1.35; }
   .walk-in-report-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .walk-in-report-actions button { width: 100%; padding-inline: 8px; font-size: 11px; }
+}
+@media (max-width: 480px) {
+  .modal.announcement-edit-dialog .community-dialog-heading { grid-template-columns: 36px minmax(0, 1fr) 38px; align-items: center; gap: 8px; }
+  .modal.announcement-edit-dialog .community-dialog-heading > .community-dialog-icon { display: grid; grid-column: 1; grid-row: 1; width: 36px; height: 36px; }
+  .modal.announcement-edit-dialog .community-dialog-title { display: block; grid-column: 2; grid-row: 1; }
+  .modal.announcement-edit-dialog .community-dialog-title h2,
+  .modal.announcement-edit-dialog .community-dialog-title p { grid-column: auto; grid-row: auto; }
+  .modal.announcement-edit-dialog .community-dialog-title h2 { font-size: 16px; }
+  .modal.announcement-edit-dialog .community-dialog-title p { font-size: 11px; }
+  .modal.announcement-edit-dialog .community-dialog-close { grid-column: 3; grid-row: 1; width: 38px; height: 38px; }
 }

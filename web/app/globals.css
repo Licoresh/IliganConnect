@@ -4852,7 +4852,9 @@ main#main .issue-map .overview-map-base button { min-width: 44px; min-height: 34
 .walk-in-map-heading .text-button { flex: 0 0 auto; padding: 6px; font-size: 11px; }
 .walk-in-map-canvas-wrap { position: relative; height: clamp(220px, 32vh, 320px); overflow: hidden; border: 1px solid #d7e4e5; border-radius: 12px; background: #eef3f1; isolation: isolate; }
 .walk-in-map-canvas { position: absolute; inset: 0; }
-.walk-in-map-loading { position: absolute; inset: 0; display: grid; place-items: center; background: #eef3f1; color: var(--muted); font-size: 12px; }
+.walk-in-map-loading { position: absolute; z-index: 1; inset: 0; display: grid; place-items: center; background: #eef3f1; color: var(--muted); font-size: 12px; pointer-events: none; }
+.walk-in-map-error { position: absolute; z-index: 3; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; padding: 18px; background: #eef3f1ee; color: var(--ink); text-align: center; font-size: 12px; line-height: 1.5; }
+.walk-in-map-error button { min-height: 38px; padding: 8px 12px; border: 1px solid var(--brand); border-radius: 8px; background: var(--brand); color: #fff; font-weight: 700; }
 .walk-in-map-badge { position: absolute; z-index: 2; top: 10px; left: 10px; display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid #dce8e9; border-radius: 8px; background: #fff; color: var(--ink); font-size: 10px; font-weight: 650; box-shadow: 0 2px 8px #152d3912; pointer-events: none; }
 .walk-in-map-badge svg { color: var(--brand); }
 .walk-in-map-coordinates { margin: 0; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }

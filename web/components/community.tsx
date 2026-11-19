@@ -57,6 +57,14 @@ type Row = {
   created_at: string;
   can_manage?: boolean;
 };
+type RelatedReport = {
+  id: string;
+  title: string;
+  status: string;
+  barangay_id: string;
+  category_id: string;
+  created_at: string;
+};
 type Comment = {
   id: string;
   body: string;
@@ -135,8 +143,11 @@ export function Community({
     [editTitleLength, setEditTitleLength] = useState(0),
     [editBodyLength, setEditBodyLength] = useState(0),
     [relatedReport, setRelatedReport] = useState(""),
+    [relatedReportSearch, setRelatedReportSearch] = useState(""),
+    [showRelatedReportOptions, setShowRelatedReportOptions] = useState(false),
     [page, setPage] = useState(0);
   const searchTerm = useDebouncedValue(search.trim());
+  const relatedReportSearchTerm = useDebouncedValue(relatedReportSearch.trim());
   const columns = table === "meeting_requests"
     ? "id,title,body,status,coordination_status,barangay_id,decision_reason,consultation_id,category_id,report_id,created_at"
     : "*";
@@ -191,6 +202,8 @@ export function Community({
     setEditTitleLength(0);
     setEditBodyLength(0);
     setRelatedReport("");
+    setRelatedReportSearch("");
+    setShowRelatedReportOptions(false);
     setEditing("new");
   };
   const startEdit = (row: Row) => {
@@ -199,6 +212,8 @@ export function Community({
     setEditTitleLength(row.title.length);
     setEditBodyLength(row.body.length);
     setRelatedReport(row.report_id ?? "");
+    setRelatedReportSearch("");
+    setShowRelatedReportOptions(false);
     setEditing(row);
   };
   const q = useQuery({
@@ -242,6 +257,29 @@ export function Community({
       );
     },
   });
+  const relatedReports = useQuery({
+    queryKey: ["consultation-related-reports", profile.id, draftBarangay, relatedReportSearchTerm, relatedReport],
+    enabled: table === "consultations" && !!editing && !!draftBarangay && (showRelatedReportOptions || !!relatedReport),
+    queryFn: async () => {
+      const columns = "id,title,status,barangay_id,category_id,created_at";
+      const reportsQuery = db!.from("reports").select(columns)
+        .eq("barangay_id", draftBarangay).order("created_at", { ascending: false }).limit(8);
+      const isReportId = new RegExp(`^${UUID_PATTERN}$`, "i").test(relatedReportSearchTerm);
+      const filteredReportsQuery = relatedReportSearchTerm
+        ? isReportId ? reportsQuery.eq("id", relatedReportSearchTerm) : reportsQuery.ilike("title", `%${relatedReportSearchTerm}%`)
+        : reportsQuery;
+      const [options, selectedReport] = await Promise.all([
+        result<RelatedReport[]>(filteredReportsQuery),
+        relatedReport
+          ? result<RelatedReport | null>(db!.from("reports").select(columns).eq("id", relatedReport).eq("barangay_id", draftBarangay).maybeSingle<RelatedReport>())
+          : Promise.resolve(null),
+      ]);
+      return selectedReport && !options.some((report) => report.id === selectedReport.id)
+        ? [selectedReport, ...options]
+        : options;
+    },
+  });
+  const selectedRelatedReport = relatedReports.data?.find((report) => report.id === relatedReport);
   const canManage = (r: Row) => !!r.can_manage;
   const states =
     table === "consultations"
@@ -612,7 +650,13 @@ export function Community({
                   <div className="consultation-edit-grid">
                     <label className="consultation-edit-field">
                       <span className="consultation-edit-field-label"><span>Barangay <b>*</b></span></span>
-                      <select name="barangay" required defaultValue={editing === "new" ? initialBarangay || profile.barangay_id || "" : editing.barangay_id || ""}>
+                      <select name="barangay" required value={draftBarangay} onChange={(event) => {
+                        const nextBarangay = event.target.value;
+                        setDraftBarangay(nextBarangay);
+                        setRelatedReport("");
+                        setRelatedReportSearch("");
+                        setShowRelatedReportOptions(false);
+                      }}>
                         <option value="">Choose a barangay</option>
                         {refs.barangays.filter((item) => profile.role !== "barangay" || item.id === profile.barangay_id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                       </select>
@@ -633,8 +677,24 @@ export function Community({
                     <div><h3>Related report <span>(optional)</span></h3><p>Link this consultation to an existing report for easier tracking.</p></div>
                   </div>
                   <div className="consultation-edit-related">
-                    <input maxLength={36} name="report" pattern={UUID_PATTERN} title="Use the complete 36-character report ID." placeholder="Full report ID (optional)" value={relatedReport} onChange={(event) => setRelatedReport(event.target.value)} aria-label="Related report identifier" />
-                    {relatedReport && <button type="button" className="consultation-edit-clear" aria-label="Clear related report" onClick={() => setRelatedReport("")}><X size={18} /></button>}
+                    <input type="hidden" name="report" value={relatedReport} />
+                    {relatedReport && !showRelatedReportOptions ? (
+                      <div className="consultation-linked-report">
+                        <div><strong>{selectedRelatedReport?.title || relatedReportSearch || "Related report"}</strong><small>{relatedReport.slice(0, 8).toUpperCase()} · {selectedRelatedReport ? label(selectedRelatedReport.status) : "Linked"}</small></div>
+                        <div className="consultation-linked-report-actions"><button type="button" onClick={() => { setRelatedReport(""); setRelatedReportSearch(""); setShowRelatedReportOptions(true); }}>Change</button><button type="button" onClick={() => { setRelatedReport(""); setRelatedReportSearch(""); setShowRelatedReportOptions(false); }}>Remove link</button></div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="consultation-edit-related-search"><Search size={17} aria-hidden="true" /><input maxLength={160} placeholder="Search report title or paste report ID" value={relatedReportSearch} onFocus={() => setShowRelatedReportOptions(true)} onChange={(event) => { setRelatedReport(""); setRelatedReportSearch(event.target.value); setShowRelatedReportOptions(true); }} aria-label="Search reports in this barangay" aria-expanded={showRelatedReportOptions} aria-controls="consultation-related-report-options" autoComplete="off" />{relatedReportSearch && <button type="button" className="consultation-edit-clear" aria-label="Clear report search" onClick={() => { setRelatedReportSearch(""); setShowRelatedReportOptions(true); }}><X size={17} /></button>}</div>
+                        {showRelatedReportOptions && <div className="consultation-related-report-options" id="consultation-related-report-options" role="listbox" aria-label="Available reports">
+                          {!draftBarangay ? <p>Choose a barangay first to find related reports.</p>
+                            : relatedReports.isPending ? <p role="status">Loading reports…</p>
+                              : relatedReports.isError ? <p role="alert">Reports could not load. <button type="button" className="text-button" onClick={() => void relatedReports.refetch()}>Try again</button></p>
+                                : !relatedReports.data?.length ? <p>{relatedReportSearchTerm ? "No matching reports found." : "No accessible reports in this barangay."}</p>
+                                  : relatedReports.data.map((report) => <button type="button" role="option" aria-selected={relatedReport === report.id} key={report.id} onClick={() => { setRelatedReport(report.id); setRelatedReportSearch(report.title); setShowRelatedReportOptions(false); }}><span><strong>{report.title}</strong><small>{refs.categories.find((category) => category.id === report.category_id)?.name || "Report"} · {label(report.status)} · {new Date(report.created_at).toLocaleDateString("en-PH", { timeZone: "Asia/Manila" })}</small></span><code>{report.id.slice(0, 8).toUpperCase()}</code></button>)}
+                        </div>}
+                      </>
+                    )}
                   </div>
                 </section>
 

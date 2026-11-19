@@ -3383,41 +3383,60 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 }
 
 /* Consultation editor: sectioned form with a persistent save bar. */
-.modal.consultation-edit-dialog { width: min(1320px, calc(100vw - 48px)); max-height: min(94dvh, 1180px); border-radius: 24px; }
-.consultation-edit-dialog .community-dialog-heading { grid-template-columns: 84px minmax(0, 1fr) 58px; gap: 28px; padding: 28px 42px 24px; }
-.consultation-edit-dialog .community-dialog-icon { width: 84px; height: 84px; border-radius: 22px; }
-.consultation-edit-dialog .community-dialog-icon svg { width: 36px; height: 36px; }
-.consultation-edit-dialog .community-dialog-title h2 { font-size: clamp(24px, 3vw, 36px); letter-spacing: -.7px; }
-.consultation-edit-dialog .community-dialog-title p { margin-top: 5px; font-size: clamp(14px, 1.35vw, 19px); }
-.consultation-edit-dialog .community-dialog-close { width: 58px; height: 58px; min-height: 58px; }
-.consultation-edit-dialog .community-dialog-close svg { width: 25px; height: 25px; }
+.modal.consultation-edit-dialog { width: min(960px, calc(100vw - 40px)); max-height: min(88dvh, 880px); border-radius: 18px; }
+.consultation-edit-dialog .community-dialog-heading { grid-template-columns: 48px minmax(0, 1fr) 42px; gap: 15px; padding: 17px 24px; }
+.consultation-edit-dialog .community-dialog-icon { width: 48px; height: 48px; border-radius: 13px; }
+.consultation-edit-dialog .community-dialog-icon svg { width: 22px; height: 22px; }
+.consultation-edit-dialog .community-dialog-title h2 { font-size: 22px; letter-spacing: -.35px; }
+.consultation-edit-dialog .community-dialog-title p { margin-top: 3px; font-size: 13px; }
+.consultation-edit-dialog .community-dialog-close { width: 42px; height: 42px; min-height: 42px; }
+.consultation-edit-dialog .community-dialog-close svg { width: 19px; height: 19px; }
 .consultation-edit-dialog .community-dialog-body { display: block; min-height: 0; flex: 1 1 auto; overflow: hidden; padding: 0; }
-.consultation-edit-form { display: flex; width: 100%; height: 100%; min-height: 0; flex-direction: column; gap: 16px; overflow-y: auto; overscroll-behavior: contain; padding: 22px 42px 0; }
-.consultation-edit-content { display: grid; min-width: 0; gap: 16px; }
-.consultation-edit-section { display: grid; min-width: 0; gap: 17px; padding: 20px 0 0; border-top: 1px solid #e1ebe8; }
+.consultation-edit-form { display: flex; width: 100%; height: 100%; min-height: 0; flex-direction: column; gap: 12px; overflow-y: auto; overscroll-behavior: contain; padding: 16px 24px 0; }
+.consultation-edit-content { display: grid; min-width: 0; gap: 12px; }
+.consultation-edit-section { display: grid; min-width: 0; gap: 12px; padding: 14px 0 0; border-top: 1px solid #e1ebe8; }
 .consultation-edit-section:first-child { padding-top: 0; border-top: 0; }
-.consultation-edit-section-heading { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; gap: 14px; }
-.consultation-edit-section-icon { display: grid; width: 58px; height: 58px; place-items: center; border-radius: 15px; background: var(--brand-soft); color: var(--brand); }
-.consultation-edit-section-heading h3 { margin: 0; color: #102b4a; font-size: 21px; font-weight: 750; line-height: 1.35; letter-spacing: -.3px; }
+.consultation-edit-section-heading { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 11px; }
+.consultation-edit-section-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 12px; background: var(--brand-soft); color: var(--brand); }
+.consultation-edit-section-heading h3 { margin: 0; color: #102b4a; font-size: 16px; font-weight: 750; line-height: 1.35; letter-spacing: -.2px; }
 .consultation-edit-section-heading h3 span { color: var(--muted); font-weight: 500; }
-.consultation-edit-section-heading p { margin: 3px 0 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
-.consultation-edit-field { display: grid; min-width: 0; gap: 7px; color: var(--ink); font-size: 15px; font-weight: 650; line-height: 1.4; }
+.consultation-edit-section-heading p { margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.consultation-edit-field { display: grid; min-width: 0; gap: 6px; color: var(--ink); font-size: 13px; font-weight: 650; line-height: 1.4; }
 .consultation-edit-field-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .consultation-edit-field-label b { color: #b93643; font-weight: 700; }
-.consultation-edit-field-label small { color: var(--muted); font-size: 13px; font-weight: 450; }
-.consultation-edit-form input, .consultation-edit-form select, .consultation-edit-form textarea { width: 100%; min-width: 0; min-height: 54px; padding: 12px 16px; border: 1px solid #d6e2e9; border-radius: 11px; background: #fff; color: var(--ink); font-size: 17px; line-height: 1.45; }
-.consultation-edit-form textarea { min-height: 130px; resize: vertical; }
+.consultation-edit-field-label small { color: var(--muted); font-size: 11px; font-weight: 450; }
+.consultation-edit-form input, .consultation-edit-form select, .consultation-edit-form textarea { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #d6e2e9; border-radius: 9px; background: #fff; color: var(--ink); font-size: 14px; line-height: 1.45; }
+.consultation-edit-form textarea { min-height: 100px; resize: vertical; }
 .consultation-edit-form input:focus, .consultation-edit-form select:focus, .consultation-edit-form textarea:focus { border-color: var(--brand-hover); outline: 3px solid #7a2a481a; }
-.consultation-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
-.consultation-edit-related { position: relative; min-width: 0; }
-.consultation-edit-related input { padding-right: 58px; }
+.consultation-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.consultation-edit-related { display: grid; min-width: 0; gap: 8px; }
+.consultation-edit-related-search { position: relative; display: flex; min-width: 0; align-items: center; }
+.consultation-edit-related-search > svg { position: absolute; left: 12px; flex: 0 0 auto; color: #688095; pointer-events: none; }
+.consultation-edit-related-search input { padding-left: 40px; padding-right: 44px; }
 .consultation-edit-clear { position: absolute; top: 50%; right: 8px; display: grid; width: 40px; height: 40px; min-height: 40px; transform: translateY(-50%); place-items: center; padding: 0; border: 0; border-radius: 10px; background: transparent; color: #193652; }
 .consultation-edit-clear:hover { background: #edf7f5; }
-.consultation-edit-footer { position: sticky; bottom: 0; z-index: 2; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px; margin: 0 -42px; padding: 12px 42px; border-top: 1px solid #e3ecee; background: #fff; box-shadow: 0 -8px 20px var(--ink)0a; }
+.consultation-linked-report { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #cfe5df; border-radius: 10px; background: #f1f8f6; }
+.consultation-linked-report > div { display: grid; min-width: 0; gap: 3px; }
+.consultation-linked-report strong { overflow: hidden; color: var(--ink); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.consultation-linked-report small { color: var(--muted); font-size: 11px; }
+.consultation-linked-report-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.consultation-linked-report-actions button { min-height: 36px; padding: 7px 10px; border: 1px solid #cfe5df; border-radius: 8px; background: #fff; color: var(--brand); font-size: 12px; font-weight: 700; }
+.consultation-linked-report-actions button:last-child { color: #6e7f8b; }
+.consultation-related-report-options { display: grid; max-height: 220px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #dbe7e8; border-radius: 10px; background: #fff; box-shadow: 0 8px 20px #16374a10; }
+.consultation-related-report-options > p { margin: 0; padding: 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.consultation-related-report-options > p button { color: var(--brand); }
+.consultation-related-report-options > button { display: flex; width: 100%; min-width: 0; min-height: 52px; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border: 0; border-bottom: 1px solid #edf2f3; border-radius: 0; background: #fff; color: var(--ink); text-align: left; }
+.consultation-related-report-options > button:last-child { border-bottom: 0; }
+.consultation-related-report-options > button:hover, .consultation-related-report-options > button[aria-selected="true"] { background: #f1f8f6; }
+.consultation-related-report-options > button > span { display: grid; min-width: 0; gap: 3px; }
+.consultation-related-report-options > button strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.consultation-related-report-options > button small { color: var(--muted); font-size: 10px; }
+.consultation-related-report-options > button code { flex: 0 0 auto; color: #587084; font-size: 10px; }
+.consultation-edit-footer { position: sticky; bottom: 0; z-index: 2; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; margin: 0 -24px; padding: 10px 24px; border-top: 1px solid #e3ecee; background: #fff; box-shadow: 0 -8px 20px var(--ink)0a; }
 .consultation-edit-actions { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 12px; }
-.consultation-edit-actions button { min-width: 168px; min-height: 58px; padding: 12px 20px; border-radius: 12px; font-size: 16px; }
-.consultation-edit-actions button:last-child { min-width: 200px; }
-.consultation-edit-status { min-width: 0; min-height: 18px; margin: 0; color: var(--brand); font-size: 13px; }
+.consultation-edit-actions button { min-width: 110px; min-height: 44px; padding: 9px 14px; border-radius: 9px; font-size: 13px; }
+.consultation-edit-actions button:last-child { min-width: 140px; }
+.consultation-edit-status { min-width: 0; min-height: 18px; margin: 0; color: var(--brand); font-size: 12px; }
 .consultation-edit-dialog :is(button, input, select, textarea):focus-visible { outline: 3px solid #7a2a4830; outline-offset: 2px; }
 @media (max-width: 760px) {
   .modal.consultation-edit-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: 17px; }
@@ -4207,9 +4226,9 @@ main#main, main#main.overview-main, main#main.reports-main { width: 100%; max-wi
 .map-list-pagination button { min-height: 44px; padding: 8px 12px; font-size: 13px; }
 .map-report-list h2 { scroll-margin-top: 96px; }
 .modal.consultation-edit-dialog .consultation-edit-form { overflow: hidden; padding: 0; }
-.modal.consultation-edit-dialog .consultation-edit-content { min-height: 0; flex: 1 1 auto; align-content: start; overflow-y: auto; overscroll-behavior: contain; padding: 22px 42px; scroll-padding-block: 16px; }
+.modal.consultation-edit-dialog .consultation-edit-content { min-height: 0; flex: 1 1 auto; align-content: start; overflow-y: auto; overscroll-behavior: contain; padding: 16px 24px; scroll-padding-block: 12px; }
 .consultation-edit-content :is(input, select, textarea) { scroll-margin-block: 12px; }
-.modal.consultation-edit-dialog .consultation-edit-footer { position: static; margin: 0; padding-inline: 42px; }
+.modal.consultation-edit-dialog .consultation-edit-footer { position: static; margin: 0; padding-inline: 24px; }
 .consultation-edit-footer .consultation-edit-actions { padding-top: 0; border-top: 0; }
 .sidebar { overflow: hidden; }
 .sidebar > :not(nav) { flex-shrink: 0; }

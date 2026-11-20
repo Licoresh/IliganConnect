@@ -289,7 +289,7 @@ export const styles = StyleSheet.create({
   reportCategory: { width: "48.5%", minHeight: 74, padding: 10, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", gap: 8 },
   reportCategorySelected: { backgroundColor: "#eaf5ef", borderColor: colors.brand },
   locationPill: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6, borderWidth: 1, borderColor: colors.line, backgroundColor: "white", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
-  authScroll: { flexGrow: 1, width: "100%", maxWidth: 560, alignSelf: "center", paddingBottom: 22 },
+  authScroll: { flexGrow: 1, width: "100%", maxWidth: 560, alignSelf: "center", paddingBottom: 22, backgroundColor: colors.paper },
   authHero: { backgroundColor: colors.brandDark, padding: 24, paddingTop: 20, gap: 17 },
   authBrand: { flexDirection: "row", alignItems: "center", gap: 11 },
   authBrandIcon: { width: 42, height: 42, borderRadius: 15, backgroundColor: "#23545a", alignItems: "center", justifyContent: "center" },

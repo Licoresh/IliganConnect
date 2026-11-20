@@ -299,7 +299,7 @@ export default function Home() {
         <View style={{ padding: 18 }}><ListSkeleton variant="home" count={1} label="Opening the home screen" /></View>
       </SafeAreaView>
     );
-  if (!user) return <Auth initialError={authError} />;
+  if (!user) return <Auth initialError={authError} onRecoveryVerified={() => setRecovery(true)} />;
   if (recovery)
     return (
       <SafeAreaView style={s.screen}>
@@ -674,7 +674,7 @@ export default function Home() {
     </SafeAreaView>
   );
 }
-function Auth({ initialError }: { initialError: string }) {
+function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRecoveryVerified: () => void }) {
   const [mode, setMode] = useState("login"),
     [firstName, setFirstName] = useState(""),
     [middleName, setMiddleName] = useState(""),
@@ -700,7 +700,7 @@ function Auth({ initialError }: { initialError: string }) {
     [termsRead, setTermsRead] = useState(false),
     [termsAccepted, setTermsAccepted] = useState(false);
   useEffect(() => {
-    if (mode !== "verify" || resendSeconds <= 0) return;
+    if ((mode !== "verify" && mode !== "recovery-code") || resendSeconds <= 0) return;
     const timer = setTimeout(() => setResendSeconds((seconds) => Math.max(0, seconds - 1)), 1000);
     return () => clearTimeout(timer);
   }, [mode, resendSeconds]);
@@ -767,6 +767,21 @@ function Auth({ initialError }: { initialError: string }) {
       setAuthFailure(error, "resend");
     } finally { setBusy(false); }
   }
+  async function sendRecoveryCode() {
+    if (busy || !db) return;
+    const problem = emailInputError(email);
+    if (problem) { setMessage(problem); setMessageIsError(true); return; }
+    setBusy(true); setMessage(""); setMessageIsError(false);
+    try {
+      const { error } = await db.auth.resetPasswordForEmail(email.trim().toLowerCase());
+      if (error) throw error;
+      setMode("recovery-code");
+      setOtp("");
+      setResendSeconds(EMAIL_RESEND_INTERVAL_SECONDS);
+      setMessage(`If an account exists for this email, a ${EMAIL_OTP_LENGTH}-digit recovery code was sent. It expires in ${EMAIL_OTP_EXPIRY_SECONDS / 60} minutes.`);
+    } catch (error) { setAuthFailure(error, "recovery"); }
+    finally { setBusy(false); }
+  }
   async function signInSocial(provider: "google" | "facebook") {
     if (busy || !providers.data?.[provider]) return;
     setBusy(true); setMessage(""); setMessageIsError(false);
@@ -795,13 +810,14 @@ function Auth({ initialError }: { initialError: string }) {
     } finally { setBusy(false); }
   }
   return (
-    <SafeAreaView style={[s.screen, { backgroundColor: colors.brandDark }]}>
+    <SafeAreaView edges={["top"]} style={[s.screen, { backgroundColor: colors.brandDark }]}>
       <StatusBar style="light" />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: colors.paper }}
       >
         <ScrollView
+          style={{ flex: 1, backgroundColor: colors.paper }}
           contentContainerStyle={s.authScroll}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
@@ -832,6 +848,8 @@ function Auth({ initialError }: { initialError: string }) {
                     ? "Join your community"
                     : mode === "reset"
                       ? "Recover your account"
+                      : mode === "recovery-code"
+                        ? "Enter recovery code"
                       : "Welcome back"}
                 </Text>
                 <Text style={s.small}>
@@ -840,15 +858,17 @@ function Auth({ initialError }: { initialError: string }) {
                     : mode === "verify"
                       ? "Enter the one-time code sent to your email to activate your account."
                     : mode === "reset"
-                      ? "We’ll send a secure recovery link to your email."
+                      ? "We’ll send a recovery code to your email."
+                    : mode === "recovery-code"
+                      ? "Verify the code from your email to continue and choose a new password."
                       : "Sign in to see your reports and community updates."}
                 </Text>
               </View>
-            {configured ? mode === "verify" ? (
+            {configured ? mode === "verify" || mode === "recovery-code" ? (
               <>
-                <Text style={s.body}>Check <Text style={{ fontWeight: "700" }}>{email.trim().toLowerCase()}</Text> for your verification code. If the email contains a confirmation link, opening it will verify your account too.</Text>
+                <Text style={s.body}>{mode === "verify" ? <>Check <Text style={{ fontWeight: "700" }}>{email.trim().toLowerCase()}</Text> for your verification code. If the email contains a confirmation link, opening it will verify your account too.</> : <>Check <Text style={{ fontWeight: "700" }}>{email.trim().toLowerCase()}</Text> for your password reset code. Enter it here to continue resetting your password.</>}</Text>
                 <Field
-                  label={`${EMAIL_OTP_LENGTH}-digit email code`} required hint={`Enter the code from your email. It expires after ${EMAIL_OTP_EXPIRY_SECONDS / 60} minutes.`}
+                  label={`${EMAIL_OTP_LENGTH}-digit ${mode === "verify" ? "email" : "recovery"} code`} required hint={`Enter the code from your email. It expires after ${EMAIL_OTP_EXPIRY_SECONDS / 60} minutes.`}
                   value={otp}
                   onChangeText={(value) => setOtp(value.replace(/\D/g, "").slice(0, EMAIL_OTP_LENGTH))}
                   keyboardType="number-pad"
@@ -857,21 +877,23 @@ function Auth({ initialError }: { initialError: string }) {
                   autoCorrect={false}
                   maxLength={EMAIL_OTP_LENGTH}
                 />
-                <Button title={busy ? "Verifying…" : "Verify email"} disabled={busy || otp.length !== EMAIL_OTP_LENGTH} loading={busy} onPress={async () => {
+                <Button title={busy ? "Verifying…" : mode === "verify" ? "Verify email" : "Verify recovery code"} disabled={busy || otp.length !== EMAIL_OTP_LENGTH} loading={busy} onPress={async () => {
                   if (!new RegExp(`^\\d{${EMAIL_OTP_LENGTH}}$`).test(otp)) { setMessage(`Enter the ${EMAIL_OTP_LENGTH}-digit code from your email.`); setMessageIsError(true); return; }
                   setBusy(true); setMessage(""); setMessageIsError(false);
                   try {
-                    const { error } = await db!.auth.verifyOtp({ email: email.trim().toLowerCase(), token: otp, type: "signup" });
+                    const recovering = mode === "recovery-code";
+                    const { error } = await db!.auth.verifyOtp({ email: email.trim().toLowerCase(), token: otp, type: recovering ? "recovery" : "signup" });
                     if (error) throw error;
                     setOtp("");
+                    if (recovering) onRecoveryVerified();
                   } catch (error) { setAuthFailure(error, "verification"); }
                   finally { setBusy(false); }
                 }} />
-                <Pressable accessibilityRole="button" disabled={busy || resendSeconds > 0} style={s.textAction} onPress={() => void resendSignupCode()}>
-                  <Text style={[s.textActionLabel, (busy || resendSeconds > 0) && { opacity: 0.55 }]}>{resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : "Resend verification code"}</Text>
+                <Pressable accessibilityRole="button" disabled={busy || resendSeconds > 0} style={s.textAction} onPress={() => void (mode === "verify" ? resendSignupCode() : sendRecoveryCode())}>
+                  <Text style={[s.textActionLabel, (busy || resendSeconds > 0) && { opacity: 0.55 }]}>{resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : mode === "verify" ? "Resend verification code" : "Resend recovery code"}</Text>
                 </Pressable>
-                <Pressable accessibilityRole="button" disabled={busy} style={s.textAction} onPress={() => changeMode("register")}>
-                  <Text style={s.textActionLabel}>Change email or account details</Text>
+                <Pressable accessibilityRole="button" disabled={busy} style={s.textAction} onPress={() => changeMode(mode === "verify" ? "register" : "reset")}>
+                  <Text style={s.textActionLabel}>{mode === "verify" ? "Change email or account details" : "Use a different email"}</Text>
                 </Pressable>
               </>
             ) : (
@@ -1046,7 +1068,7 @@ function Auth({ initialError }: { initialError: string }) {
                       : mode === "register"
                         ? "Create account"
                         : mode === "reset"
-                          ? "Send recovery link"
+                          ? "Send recovery code"
                           : "Sign in"
                   }
                   disabled={
@@ -1067,56 +1089,46 @@ function Auth({ initialError }: { initialError: string }) {
                   }
                   loading={busy}
                   onPress={async () => {
-                    const problem = emailInputError(email) || (mode === "register" ? namePartsProblem || ageProblem || mobileInputError(mobile) || (password !== confirmPassword ? "Passwords do not match." : "") || (!registeredBarangay || !signupBarangays.data?.some((item) => item.id === registeredBarangay) ? "Choose your registered barangay before creating an account." : "") || (!termsRead || !termsAccepted ? "Read and agree to the Terms and Conditions before creating an account." : "") : "") || (mode !== "reset" ? passwordInputError(password, mode === "register" ? MIN_PASSWORD_LENGTH : 1) : "");
+                    if (mode === "reset") { await sendRecoveryCode(); return; }
+                    const problem = emailInputError(email) || (mode === "register" ? namePartsProblem || ageProblem || mobileInputError(mobile) || (password !== confirmPassword ? "Passwords do not match." : "") || (!registeredBarangay || !signupBarangays.data?.some((item) => item.id === registeredBarangay) ? "Choose your registered barangay before creating an account." : "") || (!termsRead || !termsAccepted ? "Read and agree to the Terms and Conditions before creating an account." : "") : "") || passwordInputError(password, mode === "register" ? MIN_PASSWORD_LENGTH : 1);
                     if (problem) { setMessage(problem); setMessageIsError(true); return; }
                     setBusy(true);
                     setMessage("");
                     setMessageIsError(false);
                     try {
-                      if (mode === "reset") {
-                        const { error } = await db!.auth.resetPasswordForEmail(
-                          email.trim(),
-                          { redirectTo: redirect() },
-                        );
-                        if (error) throw error;
-                        setMessage(
-                          "If this address is registered, check your email for a recovery link.",
-                        );
-                      } else {
-                        const response =
-                          mode === "register"
-                            ? await db!.auth.signUp({
-                                email: email.trim().toLowerCase(),
-                                password,
-                                options: {
-                                  data: {
-                                    registration_type: "resident",
-                                    first_name: firstName.trim(),
-                                    middle_name: middleName.trim() || null,
-                                    last_name: lastName.trim(),
-                                    age: Number(age),
-                                    display_name: fullName,
-                                    phone: normalizePhilippineMobile(mobile) || null,
-                                    barangay_id: registeredBarangay,
-                                    terms_version: RESIDENT_TERMS_VERSION,
-                                    terms_accepted_at: new Date().toISOString(),
-                                  },
-                                  emailRedirectTo: redirect(),
+                      const response =
+                        mode === "register"
+                          ? await db!.auth.signUp({
+                              email: email.trim().toLowerCase(),
+                              password,
+                              options: {
+                                data: {
+                                  registration_type: "resident",
+                                  first_name: firstName.trim(),
+                                  middle_name: middleName.trim() || null,
+                                  last_name: lastName.trim(),
+                                  age: Number(age),
+                                  display_name: fullName,
+                                  phone: normalizePhilippineMobile(mobile) || null,
+                                  barangay_id: registeredBarangay,
+                                  terms_version: RESIDENT_TERMS_VERSION,
+                                  terms_accepted_at: new Date().toISOString(),
                                 },
-                              })
-                            : await db!.auth.signInWithPassword({
-                                email: email.trim().toLowerCase(),
-                                password,
-                              });
-                        if (response.error) throw response.error;
-                        if (mode === "register") { setPassword(""); setConfirmPassword(""); setConfirmPasswordTouched(false); }
-                        if (mode === "register" && !response.data.session) {
-                          setMode("verify");
-                          setEmail(email.trim().toLowerCase());
-                          setOtp("");
-                          setResendSeconds(EMAIL_RESEND_INTERVAL_SECONDS);
-                          setMessage(`If this address can receive verification messages, check for a code or confirmation link. Codes expire in ${EMAIL_OTP_EXPIRY_SECONDS / 60} minutes.`);
-                        }
+                                emailRedirectTo: redirect(),
+                              },
+                            })
+                          : await db!.auth.signInWithPassword({
+                              email: email.trim().toLowerCase(),
+                              password,
+                            });
+                      if (response.error) throw response.error;
+                      if (mode === "register") { setPassword(""); setConfirmPassword(""); setConfirmPasswordTouched(false); }
+                      if (mode === "register" && !response.data.session) {
+                        setMode("verify");
+                        setEmail(email.trim().toLowerCase());
+                        setOtp("");
+                        setResendSeconds(EMAIL_RESEND_INTERVAL_SECONDS);
+                        setMessage(`If this address can receive verification messages, check for a code or confirmation link. Codes expire in ${EMAIL_OTP_EXPIRY_SECONDS / 60} minutes.`);
                       }
                     } catch (e) {
                       setAuthFailure(e, mode === "reset" ? "recovery" : "sign-in");

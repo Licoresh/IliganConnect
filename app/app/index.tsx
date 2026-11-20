@@ -245,7 +245,7 @@ export default function Home() {
           .eq("status", "published")
           .lte("publish_at", new Date().toISOString())
           .order("publish_at", { ascending: false })
-          .limit(3),
+          .limit(2),
       ),
       db!.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user!).is("read_at", null),
       result<{ include_samples: boolean }>(db!.from("analytics_settings").select("include_samples").single()),
@@ -533,18 +533,21 @@ export default function Home() {
                         </Pressable>;
                       })}
                     </View>
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 7 }}><Text style={{ color: "#12343d", fontSize: 20, fontWeight: "800", letterSpacing: -0.3 }}>From your community</Text><Pressable accessibilityRole="button" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={{ minHeight: 48, justifyContent: "center" }}><Text style={{ color: colors.brand, fontSize: 13, fontWeight: "700" }}>View all</Text></Pressable></View>
+                    <View style={{ gap: 6, marginTop: 3 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 30 }}><Text style={{ color: "#12343d", fontSize: 14, fontWeight: "800", letterSpacing: -0.2 }}>From your community</Text><Pressable accessibilityRole="button" accessibilityLabel="View all announcements" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 3, paddingLeft: 8 }}><Text style={{ color: colors.brand, fontSize: 11, fontWeight: "700" }}>View all</Text><Ionicons name="chevron-forward" size={13} color={colors.brand} /></Pressable></View>
                     {q.data.announcements.length ? q.data.announcements.map((a) => (
-                      <Pressable key={a.id} accessibilityRole="button" accessibilityLabel={`${a.kind}: ${a.title}. Open official update`} style={({ pressed }) => [{ minHeight: 94, flexDirection: "row", alignItems: "center", gap: 13, padding: 14, borderRadius: 20, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }, pressed && { opacity: 0.85 }]} onPress={() => { setSelectedAnnouncement(a.id); setTab("Announcements"); }}>
-                        <View style={{ width: 48, height: 48, borderRadius: 17, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name={a.kind.toLowerCase().includes("meeting") ? "calendar-outline" : "megaphone-outline"} size={22} color={colors.brand} /></View>
-                        <View style={{ flex: 1, gap: 5 }}><Text style={{ color: "#008d86", fontSize: 10, fontWeight: "800", letterSpacing: 1.3 }}>{a.kind.toUpperCase()}</Text><Text numberOfLines={2} style={{ color: "#10263f", fontSize: 15, lineHeight: 20, fontWeight: "700" }}>{a.title}</Text><Text style={{ color: "#5d7378", fontSize: 12 }}>Read official update</Text></View>
-                        <Ionicons name="chevron-forward" size={18} color="#9aabba" />
+                      <Pressable key={a.id} accessibilityRole="button" accessibilityLabel={`${a.kind}: ${a.title}. Open official update`} style={({ pressed }) => [{ minHeight: 60, flexDirection: "row", alignItems: "center", gap: 8, padding: 8, borderRadius: 15, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }, pressed && { opacity: 0.85, backgroundColor: "#f9fcfb" }]} onPress={() => { setSelectedAnnouncement(a.id); setTab("Announcements"); }}>
+                        <View style={{ width: compactPhone ? 34 : 38, height: compactPhone ? 34 : 38, borderRadius: 14, backgroundColor: "#e5f7f4", alignItems: "center", justifyContent: "center" }}><Ionicons name={a.kind.toLowerCase().includes("meeting") ? "calendar-outline" : "megaphone-outline"} size={18} color={colors.brand} /></View>
+                        <View style={{ flex: 1, minWidth: 0, gap: 1 }}><Text numberOfLines={1} style={{ color: "#008d86", fontSize: 8, lineHeight: 10, fontWeight: "800", letterSpacing: 0.7 }}>{a.kind.toUpperCase()}</Text><Text numberOfLines={2} style={{ color: "#10263f", fontSize: 11, lineHeight: 14, fontWeight: "700" }}>{a.title}</Text><Text style={{ color: "#5d7378", fontSize: 9, lineHeight: 11 }}>Read official update</Text></View>
+                        <Ionicons name="chevron-forward" size={16} color="#8499a8" />
                       </Pressable>
-                    )) : <View style={{ minHeight: 86, borderRadius: 18, padding: 16, backgroundColor: "#ffffff", justifyContent: "center" }}><Text style={{ color: "#526b82", fontSize: 14 }}>No new community announcements.</Text><Text style={s.small}>Check back for official city and barangay updates.</Text></View>}
-                    <Pressable accessibilityRole="button" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={({ pressed }) => [{ minHeight: 54, borderRadius: 18, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 }, pressed && { opacity: 0.82 }]}><Text style={{ color: colors.brand, fontSize: 15, fontWeight: "800" }}>All official announcements</Text><Ionicons name="chevron-forward" size={18} color={colors.brand} /></Pressable>
-                    <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginTop: 9, marginBottom: 1 }}>
-                      <Text style={{ color: "#10263f", fontSize: 20, fontWeight: "800", letterSpacing: -0.3 }}>Your reports</Text>
-                      <Text style={{ color: "#5d7378", fontSize: 13 }}>{reportsQuery.data ? `${reportsQuery.data.count} total` : ""}</Text>
+                    )) : <View style={{ minHeight: 52, flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 14, paddingHorizontal: 10, backgroundColor: "white", borderWidth: 1, borderColor: "#e4eff0" }}><View style={{ width: 32, height: 32, borderRadius: 12, backgroundColor: "#e5f7f4", alignItems: "center", justifyContent: "center" }}><Ionicons name="megaphone-outline" size={16} color={colors.brand} /></View><View style={{ flex: 1, gap: 2 }}><Text style={{ color: "#12343d", fontSize: 11, fontWeight: "700" }}>No new community announcements.</Text><Text style={{ color: "#5d7378", fontSize: 10 }}>Check back for city and barangay updates.</Text></View></View>}
+                    <Pressable accessibilityRole="button" accessibilityLabel="View all official announcements" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={({ pressed }) => [{ minHeight: 36, borderRadius: 18, backgroundColor: "#def6f3", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 }, pressed && { opacity: 0.82 }]}><Ionicons name="megaphone-outline" size={13} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 10, fontWeight: "800" }}>All official announcements</Text><Ionicons name="chevron-forward" size={12} color={colors.brand} /></Pressable>
+                    </View>
+                    <View style={{ gap: 6 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 30 }}>
+                      <Text style={{ color: "#10263f", fontSize: 15, fontWeight: "800", letterSpacing: -0.2 }}>Your reports</Text>
+                      <Text accessibilityLiveRegion="polite" style={{ color: "#5d7378", fontSize: 10, fontWeight: "600" }}>{reportsQuery.data ? `${reportsQuery.data.count} total` : ""}</Text>
                     </View>
                     {reportsLoading ? <ListSkeleton variant="report" count={REPORT_PAGE_SIZE} label={`Loading report page ${page + 1}`} /> : reportsQuery.error ? (
                       <View style={s.card}><Text style={s.error}>Could not load your reports. {reportsQuery.error.message}</Text><Button secondary title="Retry reports" onPress={() => void reportsQuery.refetch()} /></View>
@@ -556,18 +559,18 @@ export default function Home() {
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel={`${r.title}, ${label(r.status)}, open report progress`}
-                          style={({ pressed }) => [{ minHeight: 96, flexDirection: "row", alignItems: "center", gap: 11, padding: 10, borderRadius: 20, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white", shadowColor: "#12343d", shadowOpacity: 0.035, shadowRadius: 10, shadowOffset: { width: 0, height: 48 }, elevation: 1 }, pressed && { backgroundColor: "#f8fbf9", opacity: 0.9 }]}
+                          style={({ pressed }) => [{ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 8, padding: 7, borderRadius: 15, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }, pressed && { backgroundColor: "#f8fbf9", opacity: 0.9 }]}
                           key={r.id}
                           onPress={() => { setReportReturnTab("Home"); setSelected(r); }}
                         >
-                          {reportPhotos.data?.urls[r.id] && !failedReportPhotos[r.id] ? <PhotoViewer source={{ uri: reportPhotos.data.urls[r.id] }} label={`${categoryName} report photo`} onError={() => setFailedReportPhotos((value) => ({ ...value, [r.id]: true }))} style={{ width: 78, height: 78, borderRadius: 14, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 78, height: 78, borderRadius: 14, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={27} color={categoryToneFor(categoryName).foreground} /></View>}
-                          <View style={{ flex: 1, gap: 6 }}>
-                            <Text style={[s.title, { fontSize: 15, lineHeight: 19 }]} numberOfLines={1}>{r.title}</Text>
-                            <View style={[s.row, { gap: 7 }]}>
+                          {reportPhotos.data?.urls[r.id] && !failedReportPhotos[r.id] ? <PhotoViewer source={{ uri: reportPhotos.data.urls[r.id] }} label={`${categoryName} report photo`} onError={() => setFailedReportPhotos((value) => ({ ...value, [r.id]: true }))} style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={21} color={categoryToneFor(categoryName).foreground} /></View>}
+                          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                            <Text style={[s.title, { fontSize: 12, lineHeight: 15 }]} numberOfLines={2}>{r.title}</Text>
+                            <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                               <View style={[s.statusBadge, { backgroundColor: tone.background }]}>
-                                <Text style={[s.small, { color: tone.foreground, fontWeight: "700" }]}>{label(r.status)}</Text>
+                                <Text numberOfLines={1} style={{ color: tone.foreground, fontSize: 9, fontWeight: "700" }}>{label(r.status)}</Text>
                               </View>
-                              <Text style={s.small}>{new Date(r.created_at).toLocaleDateString()}</Text>
+                              <Text style={{ color: colors.muted, fontSize: 10 }}>{new Date(r.created_at).toLocaleDateString()}</Text>
                             </View>
                           </View>
                           <Ionicons name="chevron-forward" size={18} color={colors.muted} />
@@ -575,18 +578,12 @@ export default function Home() {
                         );
                       })
                     ) : (
-                      <View style={s.card}>
-                        <Ionicons
-                          name="documents-outline"
-                          size={30}
-                          color={colors.muted}
-                        />
-                        <Text style={s.body}>
-                          {page ? "No reports on this page." : "Your reports will appear here."}
-                        </Text>
-                        <Text style={s.small}>
-                          Once submitted, you can follow every recorded update.
-                        </Text>
+                      <View style={{ minHeight: 58, flexDirection: "row", alignItems: "center", gap: 9, padding: 10, borderRadius: 15, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }}>
+                        <View style={{ width: 32, height: 32, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#f0f6f8" }}><Ionicons name="documents-outline" size={18} color="#3976a8" /></View>
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={{ color: "#12343d", fontSize: 11, lineHeight: 14, fontWeight: "700" }}>{page ? "No reports on this page." : "Your reports will appear here."}</Text>
+                          <Text style={{ color: "#5d7378", fontSize: 10, lineHeight: 13 }}>Once submitted, you can follow every recorded update.</Text>
+                        </View>
                       </View>
                     )}
                     {(page > 0 || (reportsQuery.data?.count ?? 0) > REPORT_PAGE_SIZE) && <View style={{ gap: 9 }}>
@@ -596,7 +593,8 @@ export default function Home() {
                         <Pressable accessibilityRole="button" accessibilityLabel="Next report page" disabled={reportsQuery.isFetching || !!reportsQuery.error || (page + 1) * REPORT_PAGE_SIZE >= (reportsQuery.data?.count ?? 0)} onPress={() => setPage((value) => value + 1)} style={{ flex: 1, minHeight: 54, borderWidth: 1, borderColor: "#dcebe8", borderRadius: 17, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, opacity: reportsQuery.isFetching || !!reportsQuery.error || (page + 1) * REPORT_PAGE_SIZE >= (reportsQuery.data?.count ?? 0) ? 0.48 : 1 }}><Text style={{ color: colors.brand, fontSize: 14, fontWeight: "800" }}>Next</Text><Ionicons name="chevron-forward" size={19} color={colors.brand} /></Pressable>
                       </View>
                     </View>}
-                    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 14, borderRadius: 18, backgroundColor: "#eef5fb", borderWidth: 1, borderColor: "#dfebf6" }}><Ionicons name="information-circle" size={21} color="#3b73ba" /><Text style={{ flex: 1, color: "#5b7185", fontSize: 12, lineHeight: 18 }}>Not an emergency service. Stay clear of dangerous infrastructure while documenting a report.</Text></View>
+                    </View>
+                    <View style={{ minHeight: 40, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 13, backgroundColor: "#e7f3fd", borderWidth: 1, borderColor: "#d4e8fb" }}><Ionicons name="information-circle" size={17} color="#2875bd" /><Text style={{ flex: 1, color: "#526b82", fontSize: 10, lineHeight: 14 }}>Not an emergency service. Stay clear of dangerous infrastructure while documenting a report.</Text></View>
                   </>
                 )}
               </>

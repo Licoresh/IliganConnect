@@ -42,6 +42,7 @@ export type MapProps = {
   onPageScroll?: (delta: number) => void;
   mapStyle?: MapStyle;
   onMapStyleChange?: (style: MapStyle) => void;
+  mapStyleSelector?: "menu" | "tabs";
   initialRegion?: Region;
   onViewportChange?: (region: Region) => void;
   bounds?: MapBounds;
@@ -108,6 +109,7 @@ export default function LocationMap({
   onPageScroll,
   mapStyle,
   onMapStyleChange,
+  mapStyleSelector = "menu",
   initialRegion,
   onViewportChange,
   bounds,
@@ -324,7 +326,9 @@ export default function LocationMap({
           <ReportPin key={p.id || i} {...p} selected={p.id === selectedPointId} onPointPress={onPointPress} />
         ))}
       </MapView>
-      <View style={{ position: "absolute", left: 10, top: 10, flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 14, padding: 4, backgroundColor: "#ffffffed", elevation: 3 }}>
+      {mapStyleSelector === "tabs" ? <View style={{ position: "absolute", left: 9, top: 9, flexDirection: "row", alignItems: "center", gap: 2, padding: 4, borderRadius: 23, backgroundColor: "#ffffffed", elevation: 3 }}>
+        {(["map", "terrain", "satellite"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); map.current?.animateCamera({ pitch: value === "terrain" ? 40 : 0 }, { duration: 300 }); }} style={{ minWidth: 57, minHeight: 38, paddingHorizontal: 8, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: base === value ? colors.brand : "transparent" }}><Text style={{ color: base === value ? "white" : "#34486b", fontSize: 10, fontWeight: base === value ? "800" : "600" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text></Pressable>)}
+      </View> : <View style={{ position: "absolute", left: 10, top: 10, flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 14, padding: 4, backgroundColor: "#ffffffed", elevation: 3 }}>
         <Pressable accessibilityRole="button" accessibilityLabel="Map style" accessibilityState={{ expanded: stylePickerOpen }} onPress={() => setStylePickerOpen(!stylePickerOpen)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, borderRadius: 11, backgroundColor: colors.brandSoft }}>
           <Ionicons name="layers-outline" size={16} color={colors.brand} />
           <Text style={{ color: "#08756b", fontSize: 12, fontWeight: "800" }}>{baseName}</Text>
@@ -335,7 +339,7 @@ export default function LocationMap({
             <Text style={{ color: base === value ? "#08756b" : "#34486b", fontSize: 11, fontWeight: base === value ? "800" : "600" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text>
           </Pressable>
         ))}
-      </View>
+      </View>}
       {density && <View pointerEvents="none" style={{ position: "absolute", left: 10, bottom: 10, width: 194, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 7, backgroundColor: "#ffffffed", elevation: 4 }}>
         {!points.length ? <Text style={{ color: "#526461", fontSize: 10, fontWeight: "700" }}>No matching reports</Text> : <>
         <Text style={{ color: "#173b3a", fontSize: 10, fontWeight: "800", marginBottom: 4 }}>Reports / 250 m cell</Text>
@@ -343,9 +347,9 @@ export default function LocationMap({
         {selectedCellCount != null && <Text style={{ color: "#526461", fontSize: 9, marginTop: 3 }}>{selectedCellCount} reports here</Text>}
         </>}
       </View>}
-      <View style={{ position: "absolute", right: 12, top: 12, gap: 8 }}>
-        {([["add", () => zoom(1), "Zoom in"], ["remove", () => zoom(-1), "Zoom out"], [userPoint ? "locate" : "locate-outline", userPoint ? () => map.current?.animateToRegion({ ...userPoint, latitudeDelta: 0.035, longitudeDelta: 0.035 }, 250) : onLocate ?? center, userPoint ? "Recenter on my location" : "Find my location"], ["layers-outline", () => { setLocalBase(nextBase); onMapStyleChange?.(nextBase); }, `Change map layer to ${nextBase}`], ...(onExpand ? [["expand-outline", onExpand, "Expand map"] as const] : [])] as const).map(([icon, action, label]) => (
-          <Pressable key={label} accessibilityRole="button" accessibilityLabel={label === "Find my location" && locating ? "Finding your location" : label} disabled={label === "Find my location" && locating} onPress={action} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "white", elevation: 3 }}>
+      <View style={{ position: "absolute", right: mapStyleSelector === "tabs" ? 9 : 12, top: mapStyleSelector === "tabs" ? 9 : 12, gap: mapStyleSelector === "tabs" ? 4 : 8 }}>
+        {([["add", () => zoom(1), "Zoom in"], ["remove", () => zoom(-1), "Zoom out"], [userPoint ? "locate" : "locate-outline", userPoint ? () => map.current?.animateToRegion({ ...userPoint, latitudeDelta: 0.035, longitudeDelta: 0.035 }, 250) : onLocate ?? center, userPoint ? "Recenter on my location" : "Find my location"], ...(mapStyleSelector === "menu" ? [["layers-outline", () => { setLocalBase(nextBase); onMapStyleChange?.(nextBase); }, `Change map layer to ${nextBase}`] as const] : []), ...(onExpand ? [["expand-outline", onExpand, "Expand map"] as const] : [])] as const).map(([icon, action, label]) => (
+          <Pressable key={label} accessibilityRole="button" accessibilityLabel={label === "Find my location" && locating ? "Finding your location" : label} disabled={label === "Find my location" && locating} onPress={action} style={{ width: mapStyleSelector === "tabs" ? 38 : 48, height: mapStyleSelector === "tabs" ? 38 : 48, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: "white", elevation: 3 }}>
             <Ionicons name={icon} size={19} color="#173b3a" />
           </Pressable>
         ))}

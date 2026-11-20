@@ -45,14 +45,30 @@ function formatDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? "Not recorded" : date.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function residentEditValidationError(firstName: string, middleName: string, lastName: string, age: string) {
+  const nameProblem = firstName || middleName || lastName ? residentNamePartsError(firstName, middleName, lastName) : "";
+  return nameProblem || (age ? residentAgeError(age) : "");
+}
+
 export function ResidentsManagement({ barangays, active }: { barangays: Lookup[]; active: boolean }) {
   const qc = useQueryClient();
   const [search, setSearch] = useState(""), [barangay, setBarangay] = useState("");
   const [status, setStatus] = useState(""), [sort, setSort] = useState("name"), [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Resident | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
+  const [validationError, setValidationError] = useState("");
   const [phoneError, setPhoneError] = useState(""), [phoneTouched, setPhoneTouched] = useState(false);
   const term = useDebouncedValue(search.trim());
+  const revalidateResidentEdit = (form: HTMLFormElement | null) => {
+    if (!form) return setValidationError("");
+    const values = new FormData(form);
+    setValidationError(residentEditValidationError(
+      String(values.get("first_name") || "").trim(),
+      String(values.get("middle_name") || "").trim(),
+      String(values.get("last_name") || "").trim(),
+      String(values.get("age") || "").trim(),
+    ));
+  };
   const q = useQuery({
     queryKey: ["admin-residents", term, barangay, status, sort, page], enabled: active,
     queryFn: ({ signal }) => result<{ items: Resident[]; total: number }>(db!.rpc("admin_residents", {
@@ -69,7 +85,7 @@ export function ResidentsManagement({ barangays, active }: { barangays: Lookup[]
     </div>
     {message && <p className="success" role="status">{message}</p>}
     {q.isPending ? <p role="status">Loading residents…</p> : q.error ? <div role="alert"><p className="error">Residents could not be loaded. {q.error.message}</p><button className="secondary" onClick={() => void q.refetch()}>Retry</button></div> :
-      q.data?.items.length ? <ResidentTable residents={q.data.items} barangays={barangays} onManage={r => { setSelected(r); setError(""); setPhoneError(""); setPhoneTouched(false); }} /> : <p className="empty">No residents match these filters.</p>}
+      q.data?.items.length ? <ResidentTable residents={q.data.items} barangays={barangays} onManage={r => { setSelected(r); setError(""); setValidationError(""); setPhoneError(""); setPhoneTouched(false); }} /> : <p className="empty">No residents match these filters.</p>}
     <div className="pagination"><span>{q.data ? q.data.total + " residents · " : ""}Page {page + 1}</span><button className="secondary" disabled={!page || q.isFetching} onClick={() => setPage(page - 1)}>Previous</button><button className="secondary" disabled={q.isFetching || !q.data || (page + 1) * 25 >= q.data.total} onClick={() => setPage(page + 1)}>Next</button></div>
     {selected && <Dialog className="resident-edit-dialog" title="Manage resident" description="Update resident information and account access." icon={<UserRound size={23} />} close={() => { if (!busy) setSelected(null); }}>
       <form key={selected.id} className="resident-edit-form" onSubmit={async e => {
@@ -86,19 +102,13 @@ export function ResidentsManagement({ barangays, active }: { barangays: Lookup[]
           document.getElementById("resident-edit-phone")?.focus();
           return;
         }
-        const nameProblem = firstName || middleName || lastName ? residentNamePartsError(firstName, middleName, lastName) : "";
-        if (nameProblem) {
-          setError(nameProblem);
-          document.getElementById("resident-edit-first-name")?.focus();
+        const inputProblem = residentEditValidationError(firstName, middleName, lastName, ageInput);
+        if (inputProblem) {
+          setValidationError(inputProblem);
+          document.getElementById(firstName || middleName || lastName ? "resident-edit-first-name" : "resident-edit-age")?.focus();
           return;
         }
-        const ageProblem = ageInput ? residentAgeError(ageInput) : "";
-        if (ageProblem) {
-          setError(ageProblem);
-          document.getElementById("resident-edit-age")?.focus();
-          return;
-        }
-        setBusy(true); setError("");
+        setBusy(true); setError(""); setValidationError("");
         try {
           await result(db!.rpc("admin_update_resident", {
             p_user: selected.id, p_first_name: firstName || null, p_middle_name: middleName || null,
@@ -116,10 +126,10 @@ export function ResidentsManagement({ barangays, active }: { barangays: Lookup[]
         </div>
         <fieldset className="resident-edit-fields" disabled={busy}>
           <p className="resident-edit-name-hint">Current name: <strong>{selected.display_name}</strong>. Leave all three fields blank to keep it, or enter both first and last name to update it.</p>
-          <label>First name<input id="resident-edit-first-name" name="first_name" autoComplete="given-name" maxLength={60} defaultValue={selected.first_name || ""} /></label>
-          <label>Middle name (optional)<input name="middle_name" autoComplete="additional-name" maxLength={60} defaultValue={selected.middle_name || ""} /></label>
-          <label>Last name<input name="last_name" autoComplete="family-name" maxLength={60} defaultValue={selected.last_name || ""} /></label>
-          <label>Age (optional for existing accounts)<input id="resident-edit-age" name="age" type="text" inputMode="numeric" maxLength={3} defaultValue={selected.age == null ? "" : String(selected.age)} /><small>Whole number from 1 to 120.</small></label>
+          <label>First name<input id="resident-edit-first-name" name="first_name" autoComplete="given-name" maxLength={60} defaultValue={selected.first_name || ""} onChange={e => { if (validationError) revalidateResidentEdit(e.currentTarget.form); }} /></label>
+          <label>Middle name (optional)<input name="middle_name" autoComplete="additional-name" maxLength={60} defaultValue={selected.middle_name || ""} onChange={e => { if (validationError) revalidateResidentEdit(e.currentTarget.form); }} /></label>
+          <label>Last name<input name="last_name" autoComplete="family-name" maxLength={60} defaultValue={selected.last_name || ""} onChange={e => { if (validationError) revalidateResidentEdit(e.currentTarget.form); }} /></label>
+          <label>Age (optional for existing accounts)<input id="resident-edit-age" name="age" type="text" inputMode="numeric" maxLength={3} defaultValue={selected.age == null ? "" : String(selected.age)} onChange={e => { if (validationError) revalidateResidentEdit(e.currentTarget.form); }} /><small>Whole number from 1 to 120.</small></label>
           <label>Mobile number
             <span className="resident-edit-phone-wrap"><Smartphone size={17} aria-hidden="true" /><input id="resident-edit-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" maxLength={24} defaultValue={selected.phone || ""} aria-invalid={!!phoneError} aria-describedby={phoneError ? "resident-edit-phone-hint resident-edit-phone-error" : "resident-edit-phone-hint"} onBlur={e => { setPhoneTouched(true); setPhoneError(mobileInputError(e.currentTarget.value)); }} onChange={e => { if (phoneTouched) setPhoneError(mobileInputError(e.currentTarget.value)); }} /></span>
             <small id="resident-edit-phone-hint">Optional · saved as the resident’s contact number. Use a Philippine mobile number.</small>
@@ -130,6 +140,7 @@ export function ResidentsManagement({ barangays, active }: { barangays: Lookup[]
           <label className="resident-edit-notifications"><input type="checkbox" name="notifications" defaultChecked={selected.notifications_enabled} /><span><strong>In-app notifications enabled</strong><small>Allow this account to receive resident updates in the app.</small></span></label>
           <label className="resident-edit-reason">Reason for change<textarea name="reason" required minLength={5} maxLength={500} placeholder="Explain this profile or access change." /><small>5–500 characters. Recorded in the administrator audit trail.</small></label>
           <p className="report-form-hint">Deactivated residents lose protected access. Their report and meeting records are retained.</p>
+          {validationError && <p className="error resident-edit-error" role="alert">{validationError}</p>}
           {error && <p className="error resident-edit-error" role="alert">{error}</p>}
         </fieldset>
         <div className="resident-edit-actions"><button type="button" className="secondary" disabled={busy} onClick={() => setSelected(null)}>Cancel</button><button type="submit" disabled={busy}>{busy ? "Saving…" : "Save resident changes"}</button></div>

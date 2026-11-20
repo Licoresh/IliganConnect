@@ -78,6 +78,27 @@ type Comment = {
 const localDate = (value?: string) => {
   return meetingDateTimeInput(value);
 };
+type MeetingInputErrorMode = "save" | "calendar";
+function getMeetingInputError(form: HTMLFormElement, mode: MeetingInputErrorMode) {
+  const fields = new FormData(form);
+  const date = String(fields.get("date") || "");
+  const startsAt = parseManilaDateTimeInput(`${date}T${String(fields.get("starts_at") || "")}`);
+  const endsAt = parseManilaDateTimeInput(`${date}T${String(fields.get("ends_at") || "")}`);
+  const meetUrlInput = String(fields.get("meet_url") || "").trim();
+  const meetUrl = normalizeGoogleMeetUrl(meetUrlInput);
+  if (!startsAt || !endsAt) return "Enter a valid date and start and end times in Philippine time.";
+  if (endsAt <= startsAt) return "End time must be later than start time on the selected date.";
+  if (endsAt.getTime() - startsAt.getTime() > 12 * 60 * 60 * 1000) return "A meeting time window can be up to 12 hours.";
+  if (mode === "calendar") return meetUrlInput && !meetUrl ? "Enter a valid Google Meet link, such as https://meet.google.com/abc-defg-hij." : "";
+  const venueType = String(fields.get("venue_type") || "venue") === "online" ? "online" : "venue";
+  const completed = fields.get("completed") === "on";
+  if (venueType === "venue" && String(fields.get("venue") || "").trim().length < 3) return "Enter the physical meeting venue.";
+  if (venueType === "online" && !meetUrl) return "Add a valid Google Meet link before saving an online meeting.";
+  if (meetUrlInput && !meetUrl) return "Enter a valid Google Meet link, such as https://meet.google.com/abc-defg-hij.";
+  if (!completed && startsAt.getTime() < Date.now() - 60_000) return "Choose a future time, or mark the meeting completed if it has already taken place.";
+  if (completed && endsAt.getTime() > Date.now()) return "A meeting cannot be marked completed before its scheduled end time.";
+  return "";
+}
 function useSave() {
   const qc = useQueryClient();
   const [message, setMessage] = useState(""),
@@ -1173,6 +1194,8 @@ function Meeting({
 }) {
   const { run, message, failed, busy } = useSave();
   const [meetingFormError, setMeetingFormError] = useState("");
+  const [meetingInputError, setMeetingInputError] = useState("");
+  const [meetingInputErrorMode, setMeetingInputErrorMode] = useState<MeetingInputErrorMode>("save");
   const [venueType, setVenueType] = useState<"venue" | "online">("venue");
   const q = useQuery({
     queryKey: ["meeting", row.id],
@@ -1285,9 +1308,13 @@ function Meeting({
       )}
 
       {manageSchedule && row.status === "approved" && (
-        <form className="meeting-section meeting-details-form" key={meeting?.id || "new"} onSubmit={(e) => {
+        <form className="meeting-section meeting-details-form" key={meeting?.id || "new"} onChange={(e) => {
+          if (!meetingInputError) return;
+          setMeetingInputError(getMeetingInputError(e.currentTarget, meetingInputErrorMode));
+        }} onSubmit={(e) => {
           e.preventDefault();
-          const f = new FormData(e.currentTarget);
+          const form = e.currentTarget;
+          const f = new FormData(form);
           const date = String(f.get("date") || "");
           const startsAt = parseManilaDateTimeInput(`${date}T${String(f.get("starts_at") || "")}`);
           const endsAt = parseManilaDateTimeInput(`${date}T${String(f.get("ends_at") || "")}`);
@@ -1295,14 +1322,9 @@ function Meeting({
           const meetUrlInput = String(f.get("meet_url") || "").trim();
           const meetUrl = normalizeGoogleMeetUrl(meetUrlInput);
           const completed = f.get("completed") === "on";
-          if (!startsAt || !endsAt) { setMeetingFormError("Enter a valid date and start and end times in Philippine time."); return; }
-          if (endsAt <= startsAt) { setMeetingFormError("End time must be later than start time on the selected date."); return; }
-          if (endsAt.getTime() - startsAt.getTime() > 12 * 60 * 60 * 1000) { setMeetingFormError("A meeting time window can be up to 12 hours."); return; }
-          if (selectedVenueType === "venue" && String(f.get("venue") || "").trim().length < 3) { setMeetingFormError("Enter the physical meeting venue."); return; }
-          if (selectedVenueType === "online" && !meetUrl) { setMeetingFormError("Add a valid Google Meet link before saving an online meeting."); return; }
-          if (meetUrlInput && !meetUrl) { setMeetingFormError("Enter a valid Google Meet link, such as https://meet.google.com/abc-defg-hij."); return; }
-          if (!completed && startsAt.getTime() < Date.now() - 60_000) { setMeetingFormError("Choose a future time, or mark the meeting completed if it has already taken place."); return; }
-          if (completed && endsAt.getTime() > Date.now()) { setMeetingFormError("A meeting cannot be marked completed before its scheduled end time."); return; }
+          const inputProblem = getMeetingInputError(form, "save");
+          if (inputProblem || !startsAt || !endsAt) { setMeetingInputErrorMode("save"); setMeetingInputError(inputProblem || "Enter a valid date and start and end times in Philippine time."); return; }
+          setMeetingInputError("");
           setMeetingFormError("");
           const payload = { request_id: row.id, venue_type: selectedVenueType,
             venue: selectedVenueType === "online" ? "Online via Google Meet" : String(f.get("venue") || "").trim(),
@@ -1340,6 +1362,7 @@ function Meeting({
           </div>
           {venueType === "online" && <label className="meeting-field"><span>Google Meet link <b>*</b></span><input name="meet_url" type="url" inputMode="url" required autoCapitalize="none" autoCorrect="off" maxLength={300} defaultValue={meeting?.meet_url || ""} placeholder="https://meet.google.com/abc-defg-hij" aria-describedby="meeting-link-hint" /><small id="meeting-link-hint">Create or copy the Meet link from Google Calendar. The resident will receive it by email.</small></label>}
           <div className="meeting-calendar-help"><CalendarPlus size={16} aria-hidden="true" /><span>{venueType === "online" ? "Open a Calendar draft, turn on Google Meet, save the event, then paste its link above. A Meet link cannot be generated from a Calendar draft alone." : "Open a Calendar draft with this exact date and time range."}</span></div>
+          {meetingInputError && <p className="meeting-feedback error" role="alert">{meetingInputError}</p>}
           {meetingFormError && <p className="meeting-feedback error" role="alert">{meetingFormError}</p>}
           <label className="meeting-field"><span>Public summary and minutes</span><textarea name="outcome" maxLength={2000} defaultValue={meeting?.outcome || ""} placeholder="Write a summary, decisions, and key discussion points…" /></label>
           <label className="meeting-completed"><input name="completed" type="checkbox" defaultChecked={meeting?.completed} /><span><strong>Meeting completed</strong><small>Mark complete after the planned activities and follow-up are finished.</small></span></label>
@@ -1353,8 +1376,8 @@ function Meeting({
             const selectedVenueType = String(fields.get("venue_type") || "venue") === "online" ? "online" : "venue";
             const meetUrlInput = String(fields.get("meet_url") || "").trim();
             const meetUrl = normalizeGoogleMeetUrl(meetUrlInput);
-            if (!startsAt || !endsAt || endsAt <= startsAt || endsAt.getTime() - startsAt.getTime() > 12 * 60 * 60 * 1000) { setMeetingFormError("Enter a valid date and time range of up to 12 hours before opening Calendar."); return; }
-            if (meetUrlInput && !meetUrl) { setMeetingFormError("Enter a valid Google Meet link, such as https://meet.google.com/abc-defg-hij."); return; }
+            const calendarProblem = getMeetingInputError(form, "calendar");
+            if (calendarProblem || !startsAt || !endsAt) { setMeetingInputErrorMode("calendar"); setMeetingInputError(!startsAt || !endsAt || calendarProblem === "End time must be later than start time on the selected date." || calendarProblem === "A meeting time window can be up to 12 hours." ? "Enter a valid date and time range of up to 12 hours before opening Calendar." : calendarProblem); return; }
             const calendarUrl = googleCalendarDraftUrl({
               title: `Iligan Connect · ${row.title}`,
               details: `${row.body}\n\nBarangay: ${refs.barangays.find((item) => item.id === row.barangay_id)?.name || "Iligan City"}`,
@@ -1363,8 +1386,8 @@ function Meeting({
               endsAt,
               meetUrl,
             });
-            if (!calendarUrl) { setMeetingFormError("The selected date could not be added to Calendar."); return; }
-            setMeetingFormError("");
+            if (!calendarUrl) { setMeetingInputErrorMode("calendar"); setMeetingInputError("The selected date could not be added to Calendar."); return; }
+            setMeetingInputError("");
             window.open(calendarUrl, "_blank", "noopener,noreferrer");
           }}><CalendarPlus size={15} aria-hidden="true" />Create Calendar draft</button><button disabled={busy}>{busy ? "Saving…" : "Save meeting details"}</button></div>
         </form>

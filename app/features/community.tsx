@@ -225,23 +225,24 @@ export function Community({
   ];
   return (
     <>
-      <View style={{ minHeight: 112, justifyContent: "center", overflow: "hidden", paddingVertical: 4 }}>
-        <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={{ position: "absolute", right: 0, bottom: 0, width: "100%", height: "100%", opacity: 0.82 }}>
+      <View style={{ minHeight: 140, justifyContent: "center", overflow: "hidden", paddingHorizontal: 18, paddingVertical: 18, borderRadius: 24, borderWidth: 1, borderColor: "#dcece8", backgroundColor: "#edf8f5" }}>
+        <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={{ position: "absolute", right: 0, bottom: 0, width: "100%", height: "100%", opacity: 0.78 }}>
           <Image source={require("../assets/iligan-community-profile-header.jpg")} resizeMode="cover" resizeMethod="resize" style={{ width: "100%", height: "100%" }} />
         </View>
-        <Text accessibilityRole="header" style={[s.heading, { fontSize: 30, lineHeight: 36, marginBottom: 5 }]}>Community</Text>
-        <Text style={[s.subtitle, { maxWidth: 245, marginBottom: 0 }]}>Local conversations, meeting updates, and ways to take part.</Text>
+        <View pointerEvents="none" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "70%", backgroundColor: "#ffffff35" }} />
+        <Text accessibilityRole="header" style={[s.heading, { maxWidth: 270, fontSize: 32, lineHeight: 39, marginBottom: 8 }]}>Community</Text>
+        <Text style={[s.subtitle, { maxWidth: 260, marginBottom: 0, fontSize: 15, lineHeight: 22 }]}>Local conversations, meeting updates, and ways to take part.</Text>
       </View>
-      <View style={{ minHeight: 92, flexDirection: "row", alignItems: "center", gap: 12, padding: 13, borderRadius: 20, backgroundColor: "#f1fbf8", borderWidth: 1, borderColor: "#dcefe9" }}>
-        <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: "#e2f6f1", alignItems: "center", justifyContent: "center" }}><Ionicons name="people-outline" size={24} color={colors.brand} /></View>
-        <View style={{ flex: 1, gap: 4 }}><Text style={{ color: colors.brandDark, fontSize: 15, fontWeight: "800" }}>Your community, in one place</Text><Text style={s.small}>Read local updates and help shape what happens next.</Text></View>
+      <View style={{ minHeight: 92, flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: 22, backgroundColor: "#f1fbf8", borderWidth: 1, borderColor: "#dcefe9" }}>
+        <View style={{ width: 52, height: 52, borderRadius: 18, backgroundColor: "#e2f6f1", alignItems: "center", justifyContent: "center" }}><Ionicons name="people-outline" size={25} color={colors.brand} /></View>
+        <View style={{ flex: 1, gap: 5 }}><Text style={{ color: colors.brandDark, fontSize: 16, lineHeight: 21, fontWeight: "800" }}>Your community, in one place</Text><Text style={[s.small, { fontSize: 13, lineHeight: 19 }]}>Read local updates and help shape what happens next.</Text></View>
       </View>
-      <View style={{ flexDirection: "row", gap: 3, padding: 4, borderRadius: 17, borderWidth: 1, borderColor: "#e2ebf1", backgroundColor: "white" }}>
+      <View style={{ flexDirection: "row", gap: 5, padding: 5, borderRadius: 20, borderWidth: 1, borderColor: "#e2ebf1", backgroundColor: "white" }}>
         {communityTabs.map((item) => {
           const active = tab === item.id;
-          return <Pressable key={item.id} accessibilityRole="tab" accessibilityLabel={item.id === "request" ? "Request a meeting" : item.name} accessibilityState={{ selected: active }} onPress={() => { setTab(item.id); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 58, paddingHorizontal: 5, paddingVertical: 6, borderRadius: 13, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: active ? "#e8f7f3" : "transparent" }, pressed && { opacity: 0.78 }]}>
-            <Ionicons name={item.icon} size={18} color={active ? colors.brand : colors.muted} />
-            <Text numberOfLines={2} style={{ flexShrink: 1, textAlign: "center", color: active ? colors.brand : colors.muted, fontSize: 11, lineHeight: 14, fontWeight: active ? "800" : "600" }}>{item.name}</Text>
+          return <Pressable key={item.id} accessibilityRole="tab" accessibilityLabel={item.id === "request" ? "Request a meeting" : item.name} accessibilityState={{ selected: active }} onPress={() => { setTab(item.id); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 72, paddingHorizontal: 7, paddingVertical: 7, borderRadius: 15, flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, backgroundColor: active ? "#e8f7f3" : "transparent" }, pressed && { opacity: 0.78 }]}>
+            <Ionicons name={item.icon} size={20} color={active ? colors.brand : colors.muted} />
+            <Text style={{ flexShrink: 1, textAlign: "center", color: active ? colors.brand : colors.muted, fontSize: 12, lineHeight: 16, fontWeight: active ? "800" : "600" }}>{item.name}</Text>
           </Pressable>;
         })}
       </View>
@@ -252,26 +253,26 @@ export function Community({
       )}
       {tab === "consultations" && (
         <>
-        <View style={[s.card, { gap: 11, padding: 13 }]}>
-          <View style={{ gap: 8 }}><Text style={[s.fieldLabel, { fontSize: 15 }]}>Find a community update</Text><Field maxLength={200} label="Search topics" placeholder="Search conversations or meetings" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
+        <View style={[s.card, { gap: 16, padding: 17 }]}>
+          <View style={{ gap: 10 }}><Text style={[s.fieldLabel, { fontSize: 16 }]}>Find a community update</Text><Field maxLength={200} label="Search topics" placeholder="Search conversations" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
           <Choices compact title="Filter by barangay" sheetTitle="Choose a barangay" subtitle="See conversations from a specific barangay." items={[{ id: "", name: "All barangays" }, ...barangays]} value={area} onChange={(value) => { setArea(value); setPage(0); }} leadingIcon="location-outline" />
-          <View style={{ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 11, paddingVertical: 9, borderRadius: 16, backgroundColor: "#f2faf8" }}>
-            <View style={{ width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandSoft }}><Ionicons name="location-outline" size={20} color={colors.brand} /></View>
-            <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={{ color: colors.muted, fontSize: 9, fontWeight: "800", letterSpacing: 0.8 }}>MY BARANGAY</Text><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>{barangays.find((item) => item.id === defaultBarangay)?.name ?? "Not set in your profile"}</Text></View>
-            {!!defaultBarangay && <Pressable accessibilityRole="button" accessibilityLabel="Filter by my barangay" accessibilityState={{ selected: area === defaultBarangay }} onPress={() => { setArea(area === defaultBarangay ? "" : defaultBarangay); setPage(0); }} style={({ pressed }) => [{ minHeight: 48, paddingHorizontal: 12, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: area === defaultBarangay ? colors.brand : "white", borderWidth: 1, borderColor: area === defaultBarangay ? colors.brand : colors.line }, pressed && { opacity: 0.75 }]}><Text style={{ color: area === defaultBarangay ? "white" : colors.brand, fontSize: 11, fontWeight: "800" }}>{area === defaultBarangay ? "Selected" : "Use mine"}</Text></Pressable>}
+          <View style={{ minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 17, backgroundColor: "#f2faf8" }}>
+            <View style={{ width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandSoft }}><Ionicons name="location-outline" size={21} color={colors.brand} /></View>
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.8 }}>MY BARANGAY</Text><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 15, fontWeight: "800" }}>{barangays.find((item) => item.id === defaultBarangay)?.name ?? "Not set in your profile"}</Text></View>
+            {!!defaultBarangay && <Pressable accessibilityRole="button" accessibilityLabel="Filter by my barangay" accessibilityState={{ selected: area === defaultBarangay }} onPress={() => { setArea(area === defaultBarangay ? "" : defaultBarangay); setPage(0); }} style={({ pressed }) => [{ minHeight: 48, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: area === defaultBarangay ? colors.brand : "white", borderWidth: 1, borderColor: area === defaultBarangay ? colors.brand : colors.line }, pressed && { opacity: 0.75 }]}><Text style={{ color: area === defaultBarangay ? "white" : colors.brand, fontSize: 12, fontWeight: "800" }}>{area === defaultBarangay ? "Selected" : "Use mine"}</Text></Pressable>}
           </View>
           <Choices columns={3} items={[{ id: "all", name: "All topics" }, { id: "open", name: "Open to join" }, { id: "closed", name: "Closed" }]} value={participation} onChange={(value) => { setParticipation(value); setPage(0); }} />
         </View>
         {(search || area || participation !== "all") && <Button secondary title="Clear community filters" onPress={() => { setSearch(""); setArea(""); setParticipation("all"); setPage(0); }} />}
         </>
       )}
-      {tab === "meetings" && <View style={[s.card, { gap: 11, padding: 13 }]}>
-        <View style={{ gap: 8 }}><Text style={[s.fieldLabel, { fontSize: 15 }]}>Find a community update</Text><Field maxLength={200} label="Search topics" placeholder="Search conversations or meetings" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
+      {tab === "meetings" && <View style={[s.card, { gap: 16, padding: 17 }]}>
+        <View style={{ gap: 10 }}><Text style={[s.fieldLabel, { fontSize: 16 }]}>Find a meeting update</Text><Field maxLength={200} label="Search meetings" placeholder="Search meeting requests" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
         <Choices compact title="Filter meetings by barangay" sheetTitle="Choose a barangay" subtitle="See meeting requests from a specific barangay." items={[{ id: "", name: "All barangays" }, ...barangays]} value={area} onChange={(value) => { setArea(value); setPage(0); }} leadingIcon="location-outline" />
-        <View style={{ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 11, paddingVertical: 9, borderRadius: 16, backgroundColor: "#f2faf8" }}>
-          <View style={{ width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandSoft }}><Ionicons name="location-outline" size={20} color={colors.brand} /></View>
-          <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={{ color: colors.muted, fontSize: 9, fontWeight: "800", letterSpacing: 0.8 }}>MY BARANGAY</Text><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>{barangays.find((item) => item.id === defaultBarangay)?.name ?? "Not set in your profile"}</Text></View>
-          {!!defaultBarangay && <Pressable accessibilityRole="button" accessibilityLabel="Filter meetings by my barangay" accessibilityState={{ selected: area === defaultBarangay }} onPress={() => { setArea(area === defaultBarangay ? "" : defaultBarangay); setPage(0); }} style={({ pressed }) => [{ minHeight: 48, paddingHorizontal: 12, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: area === defaultBarangay ? colors.brand : "white", borderWidth: 1, borderColor: area === defaultBarangay ? colors.brand : colors.line }, pressed && { opacity: 0.75 }]}><Text style={{ color: area === defaultBarangay ? "white" : colors.brand, fontSize: 11, fontWeight: "800" }}>{area === defaultBarangay ? "Selected" : "Use mine"}</Text></Pressable>}
+        <View style={{ minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 17, backgroundColor: "#f2faf8" }}>
+          <View style={{ width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandSoft }}><Ionicons name="location-outline" size={21} color={colors.brand} /></View>
+          <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.8 }}>MY BARANGAY</Text><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 15, fontWeight: "800" }}>{barangays.find((item) => item.id === defaultBarangay)?.name ?? "Not set in your profile"}</Text></View>
+          {!!defaultBarangay && <Pressable accessibilityRole="button" accessibilityLabel="Filter meetings by my barangay" accessibilityState={{ selected: area === defaultBarangay }} onPress={() => { setArea(area === defaultBarangay ? "" : defaultBarangay); setPage(0); }} style={({ pressed }) => [{ minHeight: 48, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: area === defaultBarangay ? colors.brand : "white", borderWidth: 1, borderColor: area === defaultBarangay ? colors.brand : colors.line }, pressed && { opacity: 0.75 }]}><Text style={{ color: area === defaultBarangay ? "white" : colors.brand, fontSize: 12, fontWeight: "800" }}>{area === defaultBarangay ? "Selected" : "Use mine"}</Text></Pressable>}
         </View>
       </View>}
       {tab !== "request" && q.isPending && <ListSkeleton variant={tab === "consultations" ? "discussion" : "meeting"} count={3} label={`Loading ${tab === "consultations" ? "community discussions" : "meeting requests"}`} />}
@@ -286,12 +287,12 @@ export function Community({
               accessibilityRole="button"
               accessibilityLabel={`${phase === "closed" ? "Read discussion" : "Open conversation"}: ${c.title}`}
               accessibilityHint={`${barangays.find((b) => b.id === c.barangay_id)?.name ?? "Iligan City"} community conversation`}
-              style={({ pressed }) => [s.card, { gap: 9, borderColor: "#e3ecef", padding: 13, shadowOpacity: 0.035 }, pressed && { backgroundColor: "#f6fbf9" }]}
+              style={({ pressed }) => [s.card, { gap: 14, borderColor: "#e3ecef", padding: 18, shadowOpacity: 0.035 }, pressed && { backgroundColor: "#f6fbf9" }]}
               key={c.id}
               onPress={() => setSelected(c.id)}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.brand} /></View>
+                <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.brand} /></View>
                 <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text numberOfLines={1} style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>{barangays.find((b) => b.id === c.barangay_id)?.name ?? "Iligan City"}</Text><Text style={s.small}>Community conversation{c.category_name ? ` · ${c.category_name}` : ""}</Text></View>
                 <View style={{ paddingHorizontal: 9, paddingVertical: 6, borderRadius: 13, backgroundColor: open ? "#e8f7f0" : phase === "scheduled" ? "#eaf2ff" : "#eef3f8" }}><Text style={{ color: open ? "#146f50" : phase === "scheduled" ? "#315b92" : colors.muted, fontSize: 10, fontWeight: "800" }}>{open ? "OPEN" : phase === "scheduled" ? "SOON" : "CLOSED"}</Text></View>
               </View>
@@ -301,7 +302,7 @@ export function Community({
               </Text>
               <View style={[s.row, { gap: 6 }]}><Ionicons name="time-outline" size={15} color={colors.muted} /><Text style={s.small}>{phase === "scheduled" ? "Opens" : phase === "open" ? "Closes" : "Closed"} {new Date(phase === "scheduled" ? c.opens_at : c.closes_at).toLocaleString()}</Text></View>
               {!!c.outcome && <Text style={[s.small, { color: colors.brand, fontWeight: "700" }]}>Recorded outcome available</Text>}
-              <View style={{ minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2, paddingHorizontal: 11, borderRadius: 13, backgroundColor: open ? "#e9f8f4" : "#f4f7f9" }}><Text style={[s.small, { color: open ? colors.brand : colors.brandDark, fontWeight: "800" }]}>{open ? "Join the conversation" : c.outcome ? "Read outcome" : "View discussion"}</Text><Ionicons name="chevron-forward" size={18} color={open ? colors.brand : colors.muted} /></View>
+              <View style={{ minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2, paddingHorizontal: 14, borderRadius: 15, backgroundColor: open ? "#e9f8f4" : "#f4f7f9" }}><Text style={[s.small, { color: open ? colors.brand : colors.brandDark, fontSize: 13, fontWeight: "800" }]}>{open ? "Join the conversation" : c.outcome ? "Read outcome" : "View discussion"}</Text><Ionicons name="chevron-forward" size={19} color={open ? colors.brand : colors.muted} /></View>
             </Pressable>
             );
           })}
@@ -333,9 +334,9 @@ export function Community({
             const acceptedInvitations = r.invitations.filter((invitation) => invitation.status === "accepted").length;
             const waitingInvitations = r.invitations.filter((invitation) => invitation.status === "pending").length;
             const declinedInvitations = r.invitations.filter((invitation) => invitation.status === "declined").length;
-            return <View style={[s.card, { gap: 10, padding: 14 }]} key={r.id}>
+            return <View style={[s.card, { gap: 14, padding: 18 }]} key={r.id}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: "#edf3fb", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={20} color="#426ca6" /></View>
+                <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: "#edf3fb", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={22} color="#426ca6" /></View>
                 <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Text style={[s.eyebrow, { marginBottom: 0 }]}>MEETING REQUEST</Text><View style={{ alignSelf: "flex-start", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 4, backgroundColor: state.background }}><Text style={{ color: state.foreground, fontSize: 11, lineHeight: 15, fontWeight: "700" }}>{state.label}</Text></View></View>
                 <Ionicons name={expandedMeeting === r.id ? "chevron-up" : "chevron-forward"} size={18} color={colors.muted} />
               </View>
@@ -377,13 +378,12 @@ export function Community({
         </>
       )}
       {tab === "request" && (
-        <View style={[s.card, { gap: 12 }]}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderRadius: 15, backgroundColor: "#f0faf7" }}><View style={{ width: 44, height: 44, borderRadius: 15, backgroundColor: "#def4ee", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-number-outline" size={22} color={colors.brand} /></View><View style={{ flex: 1, gap: 3 }}><Text style={s.title}>Request a meeting</Text><Text style={s.small}>Your barangay reviews the request and posts its decision here.</Text></View></View>
-          <View accessibilityLabel="Meeting request steps" style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingVertical: 4 }}>
-            {[{ n: "1", title: "Send request" }, { n: "2", title: "Barangay review" }, { n: "3", title: "See updates" }].map((step, index) => <View key={step.n} style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 5 }}>
-              <View style={{ width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#e2f5ef" }}><Text style={{ color: colors.brand, fontSize: 11, fontWeight: "800" }}>{step.n}</Text></View>
-              <Text style={{ flex: 1, minWidth: 0, color: colors.brandDark, fontSize: 10, lineHeight: 13, fontWeight: "700" }}>{step.title}</Text>
-              {index < 2 && <Ionicons name="chevron-forward" size={13} color="#91a4ac" />}
+          <View style={[s.card, { gap: 18, padding: 18 }]}>
+          <View style={{ minHeight: 104, flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: 18, backgroundColor: "#f0faf7" }}><View style={{ width: 52, height: 52, borderRadius: 17, backgroundColor: "#def4ee", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-number-outline" size={24} color={colors.brand} /></View><View style={{ flex: 1, gap: 5 }}><Text style={[s.title, { fontSize: 18, lineHeight: 24 }]}>Request a meeting</Text><Text style={[s.small, { fontSize: 13, lineHeight: 19 }]}>Your barangay reviews the request and posts its decision here.</Text></View></View>
+          <View accessibilityLabel="Meeting request steps" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, paddingVertical: 5 }}>
+            {[{ n: "1", title: "Send request" }, { n: "2", title: "Barangay review" }, { n: "3", title: "See updates" }].map((step) => <View key={step.n} style={{ flex: 1, minWidth: 0, alignItems: "center", gap: 7 }}>
+              <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#e2f5ef" }}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>{step.n}</Text></View>
+              <Text style={{ color: colors.brandDark, fontSize: 11, lineHeight: 15, fontWeight: "700", textAlign: "center" }}>{step.title}</Text>
             </View>)}
           </View>
           <Field
@@ -414,13 +414,13 @@ export function Community({
           }} />}
           {!!report && !!ownReports.data?.find((item) => item.id === report) ? <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 10, borderRadius: 13, backgroundColor: "#f0faf7" }}><Ionicons name="checkmark-circle-outline" size={18} color={colors.brand} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1, color: colors.brandDark }]}>This request will go to {barangays.find((item) => item.id === barangay)?.name ?? "the report’s barangay"}. The report category is linked automatically.</Text></View> : <>
             <View style={{ gap: 6 }}><Text style={s.fieldLabel}>Which barangay should review it? <Text style={{ color: "#b4453e" }}>*</Text></Text><Text style={s.small}>Choose the barangay connected to this meeting.</Text><Choices compact title="Choose a barangay" sheetTitle="Choose a barangay" items={barangays} value={barangay} onChange={setBarangay} leadingIcon="location-outline" /></View>
-            <View style={{ gap: 7 }}><Text style={s.fieldLabel}>Related category (optional)</Text><View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 8 }}>
+          <View style={{ gap: 10 }}><Text style={[s.fieldLabel, { fontSize: 14 }]}>Related category (optional)</Text><View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 10 }}>
               {[{ id: "", name: "Not specified" }, ...categories].map((item) => {
                 const selected = category === item.id;
                 const tone = item.id ? categoryToneFor(item.name) : { background: "#eef3f6", foreground: colors.muted };
                 const icon = item.id ? categoryIconFor(item.name) : "grid-outline" as const;
-                return <Pressable key={item.id || "unspecified"} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => setCategory(item.id)} style={({ pressed }) => [{ width: "48.5%", minHeight: 58, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 9, paddingVertical: 8, borderRadius: 13, backgroundColor: selected ? "#effaf7" : "white", borderWidth: selected ? 1.5 : 1, borderColor: selected ? colors.brand : colors.line }, pressed && { opacity: 0.8 }]}>
-                  <View style={{ width: 32, height: 32, borderRadius: 11, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={icon} size={17} color={tone.foreground} /></View><Text style={{ flex: 1, minWidth: 0, color: selected ? colors.brand : colors.brandDark, fontSize: 11, lineHeight: 14, fontWeight: selected ? "800" : "600" }}>{item.id ? item.name : "Not specified"}</Text>{selected && <Ionicons name="checkmark-circle" size={16} color={colors.brand} />}
+                return <Pressable key={item.id || "unspecified"} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => setCategory(item.id)} style={({ pressed }) => [{ width: "48.5%", minHeight: 70, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 11, paddingVertical: 10, borderRadius: 15, backgroundColor: selected ? "#effaf7" : "white", borderWidth: selected ? 1.5 : 1, borderColor: selected ? colors.brand : colors.line }, pressed && { opacity: 0.8 }]}>
+                  <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={icon} size={19} color={tone.foreground} /></View><Text style={{ flex: 1, minWidth: 0, color: selected ? colors.brand : colors.brandDark, fontSize: 12, lineHeight: 16, fontWeight: selected ? "800" : "600" }}>{item.id ? item.name : "Not specified"}</Text>{selected && <Ionicons name="checkmark-circle" size={17} color={colors.brand} />}
                 </Pressable>;
               })}
             </View></View>
@@ -466,7 +466,7 @@ export function Community({
               </View>
             </View>}
           </View> : <Text style={s.small}>No offices are available to invite yet. The barangay can add an office later.</Text>}
-          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 10, borderRadius: 12, backgroundColor: "#f5f8fa" }}><Ionicons name="information-circle-outline" size={17} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>After you send this, check Meetings for the barangay’s decision, office replies, date, place, and online link.</Text></View>
+          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 14, borderRadius: 15, backgroundColor: "#f5f8fa" }}><Ionicons name="information-circle-outline" size={19} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1, fontSize: 13, lineHeight: 19 }]}>After you send this, check Meetings for the barangay’s decision, office replies, date, place, and online link.</Text></View>
           <Button
             title={busy ? "Sending request…" : "Send meeting request"}
             loading={busy}

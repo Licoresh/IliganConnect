@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent } from "react";
 import { ActivityIndicator, BackHandler, Platform, Text, View, Image, Linking, Pressable, TextInput, Modal, ScrollView, Share, useWindowDimensions } from "react-native";
 import type { Region } from "react-native-maps";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -62,6 +62,37 @@ function ReportNotice({ tone, message, onDismiss }: { tone: NoticeTone; message:
   );
 }
 
+function ReviewItem({
+  icon,
+  label: itemLabel,
+  value,
+  detail,
+  onEdit,
+}: {
+  icon: ComponentProps<typeof Ionicons>["name"];
+  label: string;
+  value: string;
+  detail?: string;
+  onEdit: () => void;
+}) {
+  return (
+    <View style={{ minHeight: 70, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10 }}>
+      <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}>
+        <Ionicons name={icon} size={20} color={colors.brand} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+        <Text style={s.small}>{itemLabel}</Text>
+        <Text numberOfLines={itemLabel === "Description" ? 3 : 2} style={{ color: colors.brandDark, fontSize: 14, lineHeight: 19, fontWeight: "700" }}>{value}</Text>
+        {!!detail && <Text numberOfLines={2} style={s.small}>{detail}</Text>}
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Edit ${itemLabel.toLowerCase()}`} onPress={onEdit} style={({ pressed }) => [{ minHeight: 40, paddingHorizontal: 10, borderRadius: 20, backgroundColor: "#effaf7", flexDirection: "row", alignItems: "center", gap: 4 }, pressed && { opacity: 0.72 }]}>
+        <Ionicons name="create-outline" size={15} color={colors.brand} />
+        <Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>Edit</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export function ReportReviewCard({
   category,
   problem,
@@ -75,7 +106,9 @@ export function ReportReviewCard({
   latitude,
   longitude,
   photo,
-  onMapPageScroll,
+  onEditDetails,
+  onEditLocation,
+  onEditPhotos,
 }: {
   category: string;
   problem: string;
@@ -89,37 +122,43 @@ export function ReportReviewCard({
   latitude: number | null;
   longitude: number | null;
   photo?: string | null;
-  onMapPageScroll?: (delta: number) => void;
+  onEditDetails: (field: "category" | "title" | "description") => void;
+  onEditLocation: () => void;
+  onEditPhotos: () => void;
 }) {
-  const tone = categoryToneFor(category);
+  const address = [purok && `Purok ${purok}`, zone && `Zone ${zone}`, landmark || locationAddress].filter(Boolean).join(" · ");
   return (
     <>
-      <View style={[s.card, { gap: 13, padding: 15 }]}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="clipboard-outline" size={21} color={colors.brand} /></View>
-          <View style={{ flex: 1, gap: 3 }}><Text style={[s.eyebrow, { marginBottom: 0 }]}>CHECK BEFORE SENDING</Text><Text style={s.small}>Make sure the details are right.</Text></View>
-          <View style={{ paddingHorizontal: 9, paddingVertical: 6, borderRadius: 13, backgroundColor: "#e9f7f0" }}><Text style={{ color: "#146f50", fontSize: 10, fontWeight: "800" }}>READY</Text></View>
-        </View>
-        <View style={{ height: 1, backgroundColor: colors.line }} />
-        <View style={{ gap: 5 }}>
-          <Text style={[s.small, { fontWeight: "700", color: colors.muted }]}>REPORT TITLE</Text>
-          <Text style={[s.title, { fontSize: 19, lineHeight: 24 }]}>{title || "Untitled report"}</Text>
-          <Text style={s.body}>{description || "No description added."}</Text>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderRadius: 15, backgroundColor: tone.background }}>
-          <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: "#ffffffb8", alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(category)} size={20} color={tone.foreground} /></View>
-          <View style={{ flex: 1, gap: 3 }}><Text style={{ color: tone.foreground, fontSize: 12, fontWeight: "800" }}>{categoryDisplayName(category)}</Text><Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "700" }}>{problem || "Specific problem selected"}</Text></View>
-          <Ionicons name="checkmark-circle" size={20} color={tone.foreground} />
-        </View>
-        {!!landmark && <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="navigate-outline" size={17} color={colors.muted} /><Text style={s.small}>{landmark}</Text></View>}
-        {photo && <PhotoViewer source={{ uri: photo }} label="Report photograph" style={{ width: "100%", height: 190, borderRadius: 15, backgroundColor: "#eaf2f1" }} />}
+      <View style={[s.card, { gap: 0, paddingHorizontal: 14, paddingVertical: 6 }]}>
+        <ReviewItem icon={categoryIconFor(category)} label="Issue category" value={categoryDisplayName(category)} detail={problem || "Specific problem selected"} onEdit={() => onEditDetails("category")} />
+        <View style={s.divider} />
+        <ReviewItem icon="document-text-outline" label="Title" value={title || "Untitled report"} onEdit={() => onEditDetails("title")} />
+        <View style={s.divider} />
+        <ReviewItem icon="reorder-three-outline" label="Description" value={description || "No description added."} onEdit={() => onEditDetails("description")} />
+        <View style={s.divider} />
+        <ReviewItem
+          icon="location-outline"
+          label="Location"
+          value={`${barangay || "Barangay not selected"}, Iligan City`}
+          detail={[address, hasReportCoordinates({ latitude, longitude }) ? `Pinned location · ${latitude!.toFixed(5)}, ${longitude!.toFixed(5)}` : "Manual address · No GPS coordinates shared."].filter(Boolean).join(" · ")}
+          onEdit={onEditLocation}
+        />
       </View>
-      <View style={[s.card, { gap: 10, padding: 12 }]}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 2 }}><View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="location" size={19} color={colors.brand} /></View><View style={{ flex: 1, gap: 2 }}><Text style={s.fieldLabel}>Issue location</Text><Text style={s.small}>{barangay || "Barangay not selected"} · Iligan City</Text></View><Ionicons name="checkmark-circle" size={20} color={colors.brand} /></View>
-        {!!(purok || zone) && <Text style={s.body}>{[purok && `Purok: ${purok}`, zone && `Zone: ${zone}`].filter(Boolean).join(" · ")}</Text>}
-        {!!locationAddress && <Text style={s.small}>{locationAddress}</Text>}
-        {hasReportCoordinates({ latitude, longitude }) ? <><LocationMap height={154} point={{ latitude: latitude!, longitude: longitude! }} onPageScroll={onMapPageScroll} /><Text style={s.small}>{latitude!.toFixed(5)}, {longitude!.toFixed(5)} · Check that the pin marks the issue.</Text></> : <Text style={s.small}>Manual address · No GPS coordinates shared.</Text>}
-        <Text style={[s.small, { paddingHorizontal: 2 }]}>Specific address details are shared with authorized staff. Published reports show only an approximate location when a pin is available.</Text>
+      <View style={[s.card, { padding: 14, gap: 10 }]}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+            <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="images-outline" size={19} color={colors.brand} /></View>
+            <View style={{ gap: 2 }}><Text style={s.fieldLabel}>Photos ({photo ? 1 : 0})</Text><Text style={s.small}>{photo ? "Evidence for staff review" : "No photos added"}</Text></View>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Manage report photos" onPress={onEditPhotos} style={({ pressed }) => [{ minHeight: 40, flexDirection: "row", alignItems: "center", gap: 3 }, pressed && { opacity: 0.72 }]}>
+            <Text style={{ color: colors.brand, fontSize: 12, fontWeight: "700" }}>Manage photos</Text><Ionicons name="chevron-forward" size={16} color={colors.brand} />
+          </Pressable>
+        </View>
+        {photo && <PhotoViewer source={{ uri: photo }} label="Report photograph" style={{ width: 118, height: 88, borderRadius: 14, backgroundColor: "#eaf2f1" }} />}
+      </View>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 12, borderRadius: 15, backgroundColor: colors.brandSoft }}>
+        <Ionicons name="information-circle" size={20} color={colors.brand} />
+        <Text style={[s.small, { flex: 1, color: colors.brandDark }]}>You can go back to edit your details or location before submitting. Exact location details are shared with authorized staff only.</Text>
       </View>
     </>
   );
@@ -132,6 +171,7 @@ export function ReportForm({
   residentProfile,
   onEditProfile,
   onMapPageScroll,
+  onScrollToReportSection,
   initialCategory = "",
   initialBarangay = "",
 }: {
@@ -141,6 +181,7 @@ export function ReportForm({
   residentProfile?: Profile;
   onEditProfile?: () => void;
   onMapPageScroll?: (delta: number) => void;
+  onScrollToReportSection?: (y: number) => void;
   initialCategory?: string;
   initialBarangay?: string;
 }) {
@@ -195,16 +236,43 @@ export function ReportForm({
     [uploaded, setUploaded] = useState(false),
     [draftKey, setDraftKey] = useState(""),
     [coordinates, setCoordinates] = useState({ latitude: "", longitude: "" });
+  const titleInputRef = useRef<TextInput | null>(null);
+  const descriptionInputRef = useRef<TextInput | null>(null);
+  const sectionPositions = useRef({ header: 0, details: 0, review: 0, title: 0, description: 0, photos: 0 });
+  const pendingScrollTarget = useRef<"details" | "location" | "review" | "category" | "title" | "description" | "photos" | null>(null);
   const values = watch();
   function showMessage(text: string, tone: NoticeTone = "info") { setMessage(text); setMessageTone(tone); }
   function clearMessage() { showMessage(""); }
   const locationRequest = useRef(0);
   const submissionLock = useRef(false);
   useEffect(() => () => { locationRequest.current++; }, []);
-  const goBackStep = () => {
-    setStep((value) => Math.max(0, value - 1));
+  function navigateToStep(next: 0 | 1 | 2, target: "details" | "location" | "review" | "category" | "title" | "description" | "photos" = next === 0 ? "details" : next === 1 ? "location" : "review") {
+    pendingScrollTarget.current = target;
+    setStep(next);
     clearMessage();
-  };
+  }
+  function goBackStep() {
+    if (step === 2) navigateToStep(1, "location");
+    else if (step === 1) navigateToStep(0, "details");
+  }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const target = pendingScrollTarget.current ?? (step === 0 ? "details" : step === 1 ? "location" : "review");
+      const positions = sectionPositions.current;
+      const y = target === "location" ? positions.header
+        : target === "review" ? positions.header
+        : target === "title" ? positions.details + positions.title
+        : target === "description" ? positions.details + positions.description
+        : target === "photos" ? positions.details + positions.photos
+        : positions.header;
+      onScrollToReportSection?.(Math.max(0, y - 12));
+      if (target === "category") setCategorySheetOpen(true);
+      if (target === "title") titleInputRef.current?.focus();
+      if (target === "description") descriptionInputRef.current?.focus();
+      pendingScrollTarget.current = null;
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [step, onScrollToReportSection]);
   useEffect(() => {
     if (Platform.OS !== "android" || step === 0 || busy) return;
     const listener = BackHandler.addEventListener("hardwareBackPress", () => { goBackStep(); return true; });
@@ -278,27 +346,27 @@ export function ReportForm({
   const problemLabel = problemOptions.find((item) => item.code === values.problem_type)?.label;
   async function reviewReport() {
     if (!(await trigger(["category_id", "problem_type", "problem_other", "title", "description"]))) {
-      setStep(0);
+      navigateToStep(0, "details");
       showMessage(issueDetailsMessage(values), "warning");
       return;
     }
     if (!locationReady || !(await trigger(["latitude", "longitude", "barangay_id", "purok", "zone", "landmark", "location_source", "location_address", "location_accuracy"]))) {
-      setStep(1);
+      navigateToStep(1, "location");
       showMessage("Choose a valid pin and barangay before reviewing.", "warning");
       return;
     }
     if (barangayReviewRequired && !manualBarangayConfirmed) {
-      setStep(1);
+      navigateToStep(1, "location");
       showMessage("Please review the suggested barangay below. Change it if needed, then tap Confirm barangay.", "warning");
       return;
     }
     if (barangayMismatch && !manualBarangayConfirmed) {
-      setStep(1);
+      navigateToStep(1, "location");
       showMessage(`Boundary data suggests ${detectedBarangayName}, but you selected ${selectedBarangay?.name}. Use the detected barangay or confirm your choice.`, "warning");
       return;
     }
     clearMessage();
-    setStep(2);
+    navigateToStep(2, "review");
   }
   useEffect(
     () =>
@@ -369,18 +437,18 @@ export function ReportForm({
   async function submit(v: ReportInput) {
     if (submissionLock.current) return;
     if (!locationReady || !locationSource || !hasReportCoordinates(v) || !cityConfirmed || locating) {
+      navigateToStep(1, "location");
       showMessage("Choose a valid issue location before submitting.", "warning");
-      setStep(1);
       return;
     }
     if (barangayReviewRequired && !manualBarangayConfirmed) {
+      navigateToStep(1, "location");
       showMessage("Please review and confirm the barangay before submitting.", "warning");
-      setStep(1);
       return;
     }
     if (barangayMismatch && !manualBarangayConfirmed) {
+      navigateToStep(1, "location");
       showMessage(`Boundary data suggests ${detectedBarangayName}, but you selected ${selectedBarangay?.name}. Please confirm the barangay before submitting.`, "warning");
-      setStep(1);
       return;
     }
     submissionLock.current = true;
@@ -445,7 +513,7 @@ export function ReportForm({
   </View>;
   return (
     <>
-      <Text style={[s.heading, { fontSize: 28, lineHeight: 34 }]}>Report a concern</Text>
+      <Text onLayout={(event) => { sectionPositions.current.header = event.nativeEvent.layout.y; }} style={[s.heading, { fontSize: 28, lineHeight: 34 }]}>Report a concern</Text>
       {residentProfile && <Text style={s.small}>Reporting as {residentProfile.display_name} · Registered in {barangays.find(b => b.id === residentProfile.barangay_id)?.name || "your barangay"}</Text>}
       {!saved && <Text style={s.body}>Describe the concern, confirm its location, then check and send. Your name and registered barangay are taken from your signed-in account.</Text>}
       {!!message && <ReportNotice tone={messageTone} message={message} onDismiss={clearMessage} />}
@@ -483,26 +551,25 @@ export function ReportForm({
         </View>
       ) : (
         <>
-          {step > 0 && <AppBackNavigation label={step === 1 ? "Back to details" : "Back to location"} onBack={goBackStep} />}
           <View style={{ position: "relative", flexDirection: "row", paddingVertical: 2 }}>
             <View pointerEvents="none" style={{ position: "absolute", top: 17, left: "16.67%", right: "16.67%", height: 4, borderRadius: 2, backgroundColor: "#e3ebf2" }}>
               <View style={{ width: `${step * 50}%`, height: "100%", borderRadius: 2, backgroundColor: colors.brand }} />
             </View>
             {["Details", "Location", "Review"].map((title, i) => <Pressable key={title} accessibilityRole="tab" accessibilityState={{ selected: step === i, disabled: busy }} disabled={busy} onPress={() => {
               if (i === 2) void reviewReport();
-              else { setStep(i); clearMessage(); }
+              else navigateToStep(i as 0 | 1, i === 0 ? "details" : "location");
             }} style={{ flex: 1, minHeight: 66, alignItems: "center", gap: 5 }}>
               <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: i <= step ? colors.brand : colors.warmSurface, borderWidth: i === step ? 2 : 0, borderColor: colors.mint }}>
-                <Text style={{ color: i <= step ? "white" : colors.muted, fontSize: 14, fontWeight: "800" }}>{i < step ? "✓" : i + 1}</Text>
+                {i < step ? <Ionicons name="checkmark" size={19} color="white" /> : <Text style={{ color: i <= step ? "white" : colors.muted, fontSize: 14, fontWeight: "800" }}>{i + 1}</Text>}
               </View>
               <Text style={{ color: i <= step ? colors.brand : colors.muted, fontSize: 12, fontWeight: i === step ? "800" : "600" }}>{title}</Text>
             </Pressable>)}
           </View>
           <Text style={s.eyebrow}>
-            STEP {step + 1} OF 3 · {["DESCRIBE", "LOCATE", "REVIEW"][step]}
+            STEP {step + 1} OF 3 · {["DETAILS", "LOCATION", "REVIEW"][step]}
           </Text>
           {step === 0 && (
-            <>
+            <View style={{ gap: 14 }} onLayout={(event) => { sectionPositions.current.details = event.nativeEvent.layout.y; }}>
               <Text style={s.subtitle}>
                 Tell us what needs attention. Keep a safe distance from hazards.
               </Text>
@@ -551,7 +618,7 @@ export function ReportForm({
                 {!!errors.problem_other && <Text accessibilityRole="alert" style={s.error}>{errors.problem_other.message}</Text>}
               </View>} />}
               {(["title", "description"] as const).map((name) => (
-                <View key={name} style={{ gap: 7 }}>
+                <View key={name} style={{ gap: 7 }} onLayout={(event) => { sectionPositions.current[name] = event.nativeEvent.layout.y; }}>
                   <Controller
                     control={control}
                     name={name}
@@ -562,7 +629,7 @@ export function ReportForm({
                         value={field.value}
                         onChangeText={field.onChange}
                         onBlur={field.onBlur}
-                        inputRef={field.ref}
+                        inputRef={(input) => { field.ref(input); if (name === "title") titleInputRef.current = input; else descriptionInputRef.current = input; }}
                         required
                         minLength={name === "title" ? 8 : name === "description" ? 20 : 0}
                         hint={name === "title" ? "Required · 8–160 characters." : name === "description" ? "Required · 20–4000 characters. Explain what happened and avoid private personal details." : "Optional · up to 240 characters."}
@@ -581,7 +648,7 @@ export function ReportForm({
                   />
                 </View>
               ))}
-              <View style={[s.card, { gap: 10, padding: 13, borderRadius: 18, backgroundColor: "#fbfdfd" }]}>
+              <View onLayout={(event) => { sectionPositions.current.photos = event.nativeEvent.layout.y; }} style={[s.card, { gap: 10, padding: 13, borderRadius: 18, backgroundColor: "#fbfdfd" }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                   <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="camera-outline" size={20} color={colors.brand} /></View>
                   <View style={{ flex: 1, gap: 2 }}><Text style={[s.fieldLabel, { fontSize: 14 }]}>Add a photo</Text><Text style={s.small}>Optional · Photograph the issue from a safe distance.</Text></View>
@@ -596,18 +663,14 @@ export function ReportForm({
                   <Pressable accessibilityRole="button" accessibilityLabel="Upload a photo" onPress={() => void pick()} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 58, padding: 8, borderRadius: 15, borderWidth: 1, borderColor: "#dce6f2", backgroundColor: "#f4f7fc", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 }, pressed && { opacity: 0.78 }]}><View style={{ width: 32, height: 32, borderRadius: 11, backgroundColor: "#e5ecf8", alignItems: "center", justifyContent: "center" }}><Ionicons name="images" size={17} color="#526c9c" /></View><Text style={{ color: "#526c9c", fontSize: 12, fontWeight: "700" }}>Upload photo</Text></Pressable>
                 </View>}
               </View>
-            </>
+            </View>
           )}
           {step === 1 && (
-            <>
-              <View style={{ gap: 6 }}>
-                <Text style={s.title}>Pinpoint the issue</Text>
-                <Text style={s.small}>Every report needs a valid pin. Use your current location or tap the issue's location on the map.</Text>
-              </View>
+            <View style={{ gap: 14 }}>
               <View style={[s.card, { gap: 7, padding: 14, backgroundColor: "#f6fbfa", borderColor: "#dcefeb" }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                   <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: "#e1f5ef", alignItems: "center", justifyContent: "center" }}><Ionicons name="location-outline" size={22} color={colors.brand} /></View>
-                  <View style={{ flex: 1, gap: 3 }}><Text style={s.fieldLabel}>Find the location</Text><Text style={s.small}>GPS places the pin automatically. Use it only if you are at the reported issue.</Text></View>
+                  <View style={{ flex: 1, gap: 3 }}><Text style={s.fieldLabel}>Find the location</Text><Text style={s.small}>Use your current location or tap the map to place the exact issue pin.</Text></View>
                 </View>
                 <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || locating, busy: locating }} disabled={busy || locating} onPress={async () => {
                   const request = ++locationRequest.current;
@@ -695,9 +758,10 @@ export function ReportForm({
                 </View>
                 <Controller control={control} name="landmark" render={({ field }) => <Field label="Additional location details (optional)" validationKind="address" value={field.value || ""} placeholder="Street name, nearby landmark or house number" maxLength={240} multiline error={errors.landmark?.message} inputRef={field.ref} onBlur={field.onBlur} onChangeText={field.onChange} />} />
               </View>
-            </>
+            </View>
           )}
           {step === 2 && (
+            <View style={{ gap: 12 }} onLayout={(event) => { sectionPositions.current.review = event.nativeEvent.layout.y; }}>
             <ReportReviewCard
               category={selectedCategory?.name ?? "Report"}
               problem={values.problem_type === "other" ? values.problem_other || "Other" : problemLabel || "Specific problem selected"}
@@ -711,31 +775,38 @@ export function ReportForm({
               latitude={values.latitude}
               longitude={values.longitude}
               photo={photo}
-              onMapPageScroll={onMapPageScroll}
+              onEditDetails={(field) => navigateToStep(0, field)}
+              onEditLocation={() => navigateToStep(1, "location")}
+              onEditPhotos={() => navigateToStep(0, "photos")}
             />
+            </View>
           )}
-          {step < 2 ? (
+          {step === 0 ? (
             <Button
               title="Continue"
-              disabled={busy || (step === 1 && !locationReady)}
+              icon="arrow-forward"
+              disabled={busy}
               onPress={async () => {
                 clearMessage();
-                if (step === 1) { await reviewReport(); return; }
-                if (await trigger(["category_id", "problem_type", "problem_other", "title", "description"])) { clearMessage(); setStep(1); }
+                if (await trigger(["category_id", "problem_type", "problem_other", "title", "description"])) { navigateToStep(1, "location"); }
                     else showMessage(issueDetailsMessage(values), "warning");
               }}
             />
+          ) : step === 1 ? (
+            <View style={s.actionRow}>
+              <Button secondary grow icon="arrow-back" title="Back to details" disabled={busy} onPress={() => navigateToStep(0, "details")} />
+              <Button grow icon="arrow-forward" title="Continue" disabled={busy || !locationReady} onPress={() => void reviewReport()} />
+            </View>
           ) : (
-            <Button
-              title={busy ? "Sending report…" : "Submit report"}
-              disabled={busy || !requestId}
-              onPress={() => void handleSubmit(submit, (invalid) => {
+            <View style={s.actionRow}>
+              <Button secondary grow icon="arrow-back" title="Back to location" disabled={busy} onPress={() => navigateToStep(1, "location")} />
+              <Button grow icon="document-text-outline" title={busy ? "Sending report…" : "Submit report"} disabled={busy || !requestId} onPress={() => void handleSubmit(submit, (invalid) => {
                 const detailFields = ["category_id", "problem_type", "problem_other", "title", "description"];
                 const detailsIncomplete = Object.keys(invalid).some((field) => detailFields.includes(field));
-                setStep(detailsIncomplete ? 0 : 1);
+                navigateToStep(detailsIncomplete ? 0 : 1, detailsIncomplete ? "details" : "location");
                 showMessage(detailsIncomplete ? issueDetailsMessage(values) : "Choose and confirm the issue location and barangay before submitting.", "warning");
-              })()}
-            />
+              })()} />
+            </View>
           )}
         </>
       )}

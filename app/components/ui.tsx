@@ -311,6 +311,7 @@ export const styles = StyleSheet.create({
 export function Button({
   title,
   onPress,
+  icon,
   disabled = false,
   secondary = false,
   loading = false,
@@ -318,6 +319,7 @@ export function Button({
 }: {
   title: string;
   onPress: () => void;
+  icon?: IconName;
   disabled?: boolean;
   secondary?: boolean;
   loading?: boolean;
@@ -340,6 +342,7 @@ export function Button({
     >
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 }}>
         {loading && <ActivityIndicator size="small" color={secondary ? colors.brand : "white"} />}
+        {!loading && icon && <Ionicons name={icon} size={18} color={secondary ? colors.brand : "white"} />}
         <Text style={[styles.buttonText, secondary && { color: colors.brand }]}>{title}</Text>
       </View>
     </Pressable>

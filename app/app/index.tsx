@@ -130,6 +130,11 @@ export default function Home() {
     if (tab === "Explore" && !selected) exploreScrollY.current = nextY;
     scroll.current?.scrollTo({ y: nextY, animated: false });
   }, [tab, selected]);
+  const onScrollToReportSection = useCallback((y: number) => {
+    const nextY = Math.max(0, y);
+    mainScrollY.current = nextY;
+    scroll.current?.scrollTo({ y: nextY, animated: true });
+  }, []);
   const openExploreReport = useCallback((report: Report) => {
     setReportReturnTab("Explore");
     setSelected(report);
@@ -438,6 +443,7 @@ export default function Home() {
                     initialCategory={category}
                     initialBarangay={q.data.profile.barangay_id || ""}
                     onMapPageScroll={onMapPageScroll}
+                    onScrollToReportSection={onScrollToReportSection}
                     onSaved={() => {
                       setTab("Home");
                       setPage(0);
@@ -1253,7 +1259,8 @@ function ProfileForm({
   barangays: Lookup[];
   onNavigate: (destination: "Home" | "Community", communityTab?: "consultations" | "meetings") => void;
 }) {
-  const [firstName, setFirstName] = useState(p.first_name || ""),
+  const [profilePage, setProfilePage] = useState<"profile" | "settings" | "help">("profile"),
+    [firstName, setFirstName] = useState(p.first_name || ""),
     [middleName, setMiddleName] = useState(p.middle_name || ""),
     [lastName, setLastName] = useState(p.last_name || ""),
     [age, setAge] = useState(p.age == null ? "" : String(p.age)),
@@ -1277,6 +1284,11 @@ function ProfileForm({
   const qc = useQueryClient();
   const writeLock = useRef(false);
   const photoLock = useRef(false);
+  const { width: screenWidth } = useWindowDimensions();
+  const contentWidth = Math.min(screenWidth, 620) - 36;
+  const compactProfile = contentWidth < 320;
+  const wideProfile = contentWidth >= 500;
+  const avatarSize = compactProfile ? 82 : 96;
   useEffect(() => {
     if (Platform.OS === "web") return;
     let active = true;
@@ -1510,31 +1522,47 @@ function ProfileForm({
     { key: "data", title: "Account data", icon: "document-text-outline" as const, body: "Your profile, reports, community activity, and meeting requests remain linked to your account so you can track them. Historical report locations are not changed when you update your home barangay." },
   ];
   const helpItems = [
-    { key: "report", title: "How to report an issue", body: "Choose an issue type, describe it, add a photo if useful, confirm the location and barangay, then review before submitting." },
-    { key: "tracking", title: "Track a report", body: "Open a report from Home to see its current status and recorded progress updates. Follow a report to keep it easy to find." },
-    { key: "community", title: "Join community discussions", body: "Community conversations share local topics and official replies. You can also submit a meeting request for staff review." },
+    { key: "report", title: "Report a community issue", bisayaTitle: "Pagreport og problema sa komunidad", icon: "add-circle-outline" as const, english: ["Tap Report in the bottom menu.", "Choose the issue type, then enter a short title and a clear description. Add a photo if it helps and it is safe to take one.", "Use your current location or tap the map where the issue is. Check that the pin and barangay are correct.", "Review the details and tap Submit report. Keep the report number so you can find it again."], bisaya: ["Pindota ang Report sa ubos nga menu.", "Pilia ang klase sa problema, dayon butangi og mubo nga ulohan ug klaro nga detalye. Pagdugang og litrato kung makatabang ug luwas kini kuhaan.", "Gamita ang imong kasamtangang lokasyon o pindota ang mapa sa eksaktong lugar. Siguroa nga sakto ang pin ug barangay.", "Susiha ang mga detalye ug pindota ang Submit report. I-save ang report number aron dali nimo kining makita pag-usab."] },
+    { key: "tracking", title: "Follow updates on a report", bisayaTitle: "Pagsubay sa update sa report", icon: "time-outline" as const, english: ["Open Home and find Your reports, or open a report from Explore.", "Tap a report to see its current status and updates recorded by the barangay or responsible office.", "If Follow is available, tap it to keep the report easy to find and receive updates in the app when notifications are on."], bisaya: ["Ablihi ang Home ug pangitaa ang Your reports, o ablihi ang report gikan sa Explore.", "Pindota ang report aron makita ang kahimtang niini ug ang mga update gikan sa barangay o opisina nga nag-atiman.", "Kung naa ang Follow, pindota kini aron dali nimo masubay ang report ug makadawat ka og update sa app kung naka-on ang notifications."] },
+    { key: "community", title: "Join a discussion or request a meeting", bisayaTitle: "Apil sa panaghisgot o hangyo og meeting", icon: "chatbubbles-outline" as const, english: ["Open Community from the bottom menu.", "Choose a discussion or consultation to read and join. Keep comments respectful and do not post passwords, private addresses, or other sensitive details.", "To ask for an in-person conversation, open Meeting requests and submit what you want to discuss. The barangay will review the request and send meeting details when arranged."], bisaya: ["Ablihi ang Community sa ubos nga menu.", "Pilia ang panaghisgot o consultation nga gusto nimong basahon ug apilan. Magtinahuray sa comments ug ayaw pagbutang og password, pribadong adres, o sensitibong detalye.", "Kung gusto kag personal nga panagkita, ablihi ang Meeting requests ug isulat ang gusto nimong hisgotan. Susihon kini sa barangay ug ipadala ang detalye kung ma-arrange na ang meeting."] },
+    { key: "announcements", title: "Read city and barangay announcements", bisayaTitle: "Pagbasa sa mga pahibalo sa siyudad ug barangay", icon: "megaphone-outline" as const, english: ["Open Announcements from Home or the Community area.", "Choose an announcement to read its details, date, and any attached image.", "Check back for schedule changes or new official information."], bisaya: ["Ablihi ang Announcements gikan sa Home o Community.", "Pilia ang pahibalo aron mabasa ang detalye, petsa, ug litrato kung naa.", "Balik-balik og tan-aw kung adunay kausaban sa iskedyul o bag-ong opisyal nga impormasyon."] },
   ];
   return (
     <>
-      <View style={{ minHeight: 124, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 18, borderRadius: 22, backgroundColor: "#e8f4ef", borderWidth: 1, borderColor: "#dcece5", overflow: "hidden" }}>
-        <View style={{ flex: 1, gap: 4 }}>
-          <Text accessibilityRole="header" style={[s.heading, { fontSize: 28, lineHeight: 34, marginBottom: 0 }]}>Your profile</Text>
-          <Text style={[s.subtitle, { maxWidth: 230, marginBottom: 0 }]}>Manage your details and how Iligan Connect keeps in touch.</Text>
+      {profilePage === "profile" && <>
+        <View style={{ height: wideProfile ? 182 : compactProfile ? 126 : 148, borderRadius: 22, backgroundColor: colors.brandDark, overflow: "hidden" }}>
+          <Image source={require("../assets/iligan-community-profile-header.jpg")} accessible={false} resizeMode="cover" style={{ position: "absolute", width: "100%", height: "100%" }} />
+          <View pointerEvents="none" style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "#063d4380" }} />
+          <View style={{ flex: 1, justifyContent: "flex-end", padding: 15 }}><View style={{ alignSelf: "flex-start", gap: 2, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: "#073f47cc" }}><Text style={{ color: "#a8eee3", fontSize: 9, fontWeight: "800", letterSpacing: 1.25 }}>ILIGAN CONNECT</Text><Text style={{ color: "white", fontSize: 12, fontWeight: "600" }}>Your community profile</Text></View></View>
         </View>
-        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ width: 54, height: 54, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "#d5ebe2" }}>
-          <Ionicons name="person-circle-outline" size={34} color={colors.brand} />
+        <View style={{ flexDirection: "row", alignItems: "flex-end", gap: compactProfile ? 10 : 14, marginTop: -avatarSize * 0.48, paddingHorizontal: compactProfile ? 8 : 16 }}>
+          <View style={{ alignSelf: "flex-start", position: "relative", flexShrink: 0 }}>
+            <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Change profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2, borderWidth: 4, borderColor: colors.paper, backgroundColor: "#e2f4ee", alignItems: "center", justifyContent: "center", overflow: "hidden", shadowColor: colors.brandDark, shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }, pressed && { opacity: 0.82 }]}>
+              {avatar.data ? <Image source={{ uri: avatar.data }} accessibilityLabel="Your profile photo" resizeMode="cover" style={{ width: "100%", height: "100%" }} /> : <Text accessibilityLabel={`Avatar initials ${initials}`} style={{ color: colors.brand, fontSize: compactProfile ? 25 : 30, fontWeight: "800" }}>{initials}</Text>}
+              {photoBusy && <View style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center", backgroundColor: "#071b2770" }}><Ionicons name="hourglass-outline" size={20} color="white" /></View>}
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Edit profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ position: "absolute", right: 0, bottom: 1, width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: colors.paper, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center", opacity: photoBusy ? 0.6 : pressed ? 0.75 : 1 }]}><Ionicons name="camera-outline" size={17} color="white" /></Pressable>
+          </View>
+          <View style={{ flex: 1, minWidth: 0, gap: 5, paddingBottom: 4 }}>
+            <Text accessibilityRole="header" adjustsFontSizeToFit numberOfLines={2} style={{ color: colors.brandDark, fontSize: compactProfile ? 20 : wideProfile ? 25 : 23, lineHeight: compactProfile ? 24 : 29, fontWeight: "800", letterSpacing: -0.45 }}>{p.display_name.trim() || "Resident"}</Text>
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 5 }}><Ionicons name="location-outline" size={15} color={colors.brand} style={{ marginTop: 1 }} /><Text numberOfLines={2} style={[s.small, { flex: 1, minWidth: 0, fontSize: 11 }]}>{homeBarangay} · Iligan City</Text></View>
+            <View style={{ alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: "#e8f5f1" }}><Text style={{ color: colors.brand, fontSize: 10, fontWeight: "800" }}>{label(p.role)}</Text></View>
+          </View>
         </View>
-      </View>
+        <View style={{ marginTop: 12, paddingHorizontal: compactProfile ? 8 : 16 }}><Button icon="create-outline" title={editing ? "Editing profile details" : "Edit profile"} onPress={() => { setMessage(""); setEditing(true); }} /></View>
+      </>}
 
-      <View style={{ minHeight: 112, flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: 22, backgroundColor: "#073f47", borderWidth: 1, borderColor: "#073f47", overflow: "hidden", shadowColor: "#073f47", shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 3 }}>
-        <View pointerEvents="none" style={{ position: "absolute", right: -30, top: -66, width: 190, height: 190, borderRadius: 100, borderWidth: 1, borderColor: "#ffffff20" }} />
-        <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Change profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ width: 62, height: 62, borderRadius: 22, backgroundColor: "#dff5ef", alignItems: "center", justifyContent: "center", overflow: "hidden" }, pressed && { opacity: 0.8 }]}>{avatar.data ? <Image source={{ uri: avatar.data }} accessibilityLabel="Your profile photo" resizeMode="cover" style={{ width: 62, height: 62 }} /> : <Text accessibilityLabel={`Avatar initials ${initials}`} style={{ color: colors.brand, fontSize: 23, fontWeight: "800" }}>{initials}</Text>}{photoBusy && <View style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center", backgroundColor: "#071b2770" }}><Ionicons name="hourglass-outline" size={19} color="white" /></View>}</Pressable>
-        <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Text style={{ color: "#70d8ca", fontSize: 10, fontWeight: "800", letterSpacing: 1.35 }}>ILIGAN CONNECT ACCOUNT</Text><Text numberOfLines={2} style={{ color: "white", fontSize: 18, lineHeight: 22, fontWeight: "800" }}>{p.display_name.trim() || "Resident"}</Text><Text numberOfLines={1} style={{ color: "#d2e5e5", fontSize: 12 }}>{label(p.role)} · Iligan City</Text></View>
-        <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Edit profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, borderRadius: 12, borderWidth: 1, borderColor: "#44cbb7", opacity: photoBusy ? 0.6 : pressed ? 0.75 : 1 }]}><Ionicons name="camera-outline" size={17} color="#b8fff3" /><Text numberOfLines={1} style={{ color: "white", fontSize: 11, fontWeight: "700" }}>{photoBusy ? "Saving" : "Edit photo"}</Text></Pressable>
-      </View>
+      {profilePage !== "profile" && <>
+        <AppBackNavigation label="Back to profile" onBack={() => setProfilePage("profile")} />
+        <View style={{ gap: 4, paddingHorizontal: 2 }}>
+          <Text accessibilityRole="header" style={s.heading}>{profilePage === "settings" ? "Settings" : "Help & support"}</Text>
+          <Text style={s.subtitle}>{profilePage === "settings" ? "Choose how your account and updates work." : "Simple answers in English and Binisaya."}</Text>
+        </View>
+      </>}
 
       {message && <View accessibilityRole="alert" style={{ flexDirection: "row", gap: 7, alignItems: "flex-start", padding: 10, borderRadius: 13, backgroundColor: /updated|removed|up to date|are on|are off|allowed/i.test(message) ? "#eff9f5" : "#fff2f0" }}><Ionicons name={/updated|removed|up to date|are on|are off|allowed/i.test(message) ? "checkmark-circle-outline" : "alert-circle-outline"} size={18} color={/updated|removed|up to date|are on|are off|allowed/i.test(message) ? colors.brand : "#a43d35"} /><Text style={{ flex: 1, color: /updated|removed|up to date|are on|are off|allowed/i.test(message) ? colors.brand : "#a43d35", fontSize: 12, lineHeight: 17 }}>{message}</Text></View>}
 
+      {profilePage === "profile" && <>
       <View style={{ gap: 8 }}>
         <View style={{ minHeight: 38, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="person-circle-outline" size={21} color={colors.brand} /><Text style={[s.title, { flex: 1, marginBottom: 0 }]}>Personal details</Text><Pressable accessibilityRole="button" accessibilityLabel={editing ? "Cancel profile editing" : "Edit personal details"} onPress={() => { setMessage(""); if (editing) { setFirstName(p.first_name || ""); setMiddleName(p.middle_name || ""); setLastName(p.last_name || ""); setAge(p.age == null ? "" : String(p.age)); setPhone(p.phone || ""); setBarangay(p.barangay_id || ""); } setEditing(!editing); }} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 12, borderRadius: 13, backgroundColor: "#e8f7f3" }, pressed && { opacity: 0.75 }]}><Ionicons name={editing ? "close-outline" : "create-outline"} size={17} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>{editing ? "Cancel" : "Edit"}</Text></Pressable></View>
         <View style={[s.card, { padding: 12, gap: 0, borderRadius: 18 }]}>
@@ -1555,7 +1583,9 @@ function ProfileForm({
           </>}
         </View>
       </View>
+      </>}
 
+      {profilePage === "settings" && <>
       <View style={{ gap: 8 }}>
         <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="options-outline" size={20} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>Notification preferences</Text></View>
         <View style={[s.card, { padding: 12, gap: 8, borderRadius: 18 }]}>
@@ -1571,7 +1601,9 @@ function ProfileForm({
           </View>}
         </View>
       </View>
+      </>}
 
+      {profilePage === "profile" && <>
       <View style={{ gap: 8 }}>
         <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="stats-chart-outline" size={20} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>My activity</Text></View>
         <View style={{ flexDirection: "row", gap: 7 }}>
@@ -1584,6 +1616,14 @@ function ProfileForm({
         {activity.error && <Pressable accessibilityRole="button" onPress={() => void activity.refetch()} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 2 }}><Ionicons name="refresh-outline" size={15} color={colors.brand} /><Text style={[s.small, { color: colors.brand }]}>Activity counts unavailable · Retry</Text></Pressable>}
       </View>
 
+      <View style={[s.card, { padding: 8, gap: 2, borderRadius: 18 }]}>
+        <ProfileMenuRow icon="settings-outline" title="Settings" detail="Notifications, privacy and account security" onPress={() => { setMessage(""); setProfilePage("settings"); }} />
+        <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 49 }} />
+        <ProfileMenuRow icon="help-circle-outline" title="Help & support" detail="Step-by-step help in English and Bisaya" onPress={() => { setMessage(""); setProfilePage("help"); }} />
+      </View>
+      </>}
+
+      {profilePage === "settings" && <>
       <View style={{ gap: 8 }}>
         <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="lock-closed-outline" size={19} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>Account & security</Text></View>
         <View style={[s.card, { padding: 12, gap: 2, borderRadius: 18 }]}>
@@ -1613,25 +1653,43 @@ function ProfileForm({
       </View>
 
       <View style={{ gap: 8 }}>
-        <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="help-circle-outline" size={20} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>Help & support</Text></View>
-        <View style={[s.card, { padding: 12, gap: 1, borderRadius: 18 }]}>
-          {helpItems.map((item, index) => <View key={item.key}>
-            {index > 0 && <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 2 }} />}
-            <Pressable accessibilityRole="button" accessibilityState={{ expanded: help === item.key }} onPress={() => setHelp(help === item.key ? "" : item.key)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 2 }, pressed && { opacity: 0.78 }]}><Text style={{ flex: 1, color: colors.brandDark, fontSize: 13, fontWeight: "700" }}>{item.title}</Text><Ionicons name={help === item.key ? "chevron-up" : "chevron-down"} size={16} color={colors.muted} /></Pressable>
-            {help === item.key && <Text style={[s.small, { paddingHorizontal: 2, paddingBottom: 10 }]}>{item.body}</Text>}
-          </View>)}
-          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, marginTop: 7, padding: 10, borderRadius: 13, backgroundColor: "#eef5fb" }}><Ionicons name="information-circle-outline" size={18} color="#3776b7" style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1, color: "#355675" }]}>Iligan Connect helps report and coordinate civic issues. It is not an emergency response service. For immediate danger, contact local emergency services.</Text></View>
-          <Text style={[s.small, { paddingHorizontal: 3, marginTop: 5 }]}>No in-app support contact is configured. Use official Iligan City channels for account-specific assistance.</Text>
-        </View>
-      </View>
-
-      <View style={{ gap: 8 }}>
         <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="information-circle-outline" size={20} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>About Iligan Connect</Text></View>
         <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 11, padding: 13, borderRadius: 18 }]}><View style={{ width: 42, height: 42, borderRadius: 15, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name="leaf-outline" size={20} color={colors.brand} /></View><View style={{ flex: 1, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>Iligan Connect</Text><Text style={s.small}>A cleaner · safer · stronger Iligan</Text></View><Text style={[s.small, { fontWeight: "700" }]}>v{version}</Text></View>
       </View>
 
       <Pressable accessibilityRole="button" onPress={() => setSignOutConfirm(true)} style={({ pressed }) => [{ minHeight: 52, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, borderRadius: 15, borderWidth: 1, borderColor: "#f1d9d7", backgroundColor: "white" }, pressed && { opacity: 0.78 }]}><Ionicons name="log-out-outline" size={20} color="#ad403d" /><Text style={{ flex: 1, color: "#ad403d", fontSize: 14, fontWeight: "800" }}>Sign out</Text><Ionicons name="chevron-forward" size={17} color="#ad403d" /></Pressable>
+      </>}
 
+      {profilePage === "help" && <View style={{ gap: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 14, borderRadius: 17, backgroundColor: "#eaf6f3", borderWidth: 1, borderColor: "#dcece5" }}>
+          <View style={{ width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "white" }}><Ionicons name="book-outline" size={20} color={colors.brand} /></View>
+          <View style={{ flex: 1, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>How to use Iligan Connect</Text><Text style={s.small}>Pili og topic sa ubos para makita ang mga lakang ug sabton kini sa English ug Bisaya.</Text></View>
+        </View>
+        <View style={[s.card, { padding: 10, gap: 2, borderRadius: 18 }]}>
+          {helpItems.map((item, index) => <View key={item.key}>
+            {index > 0 && <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 48 }} />}
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: help === item.key }} onPress={() => setHelp(help === item.key ? "" : item.key)} style={({ pressed }) => [{ minHeight: 58, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 2 }, pressed && { opacity: 0.78 }]}>
+              <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name={item.icon} size={19} color={colors.brand} /></View>
+              <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "800" }}>{item.title}</Text><Text style={s.small}>{item.bisayaTitle}</Text></View>
+              <Ionicons name={help === item.key ? "chevron-up" : "chevron-down"} size={17} color={colors.muted} />
+            </Pressable>
+            {help === item.key && <View style={{ marginLeft: contentWidth < 360 ? 0 : 48, marginRight: 3, marginBottom: 12, padding: 11, borderRadius: 14, borderWidth: 1, borderColor: "#e5eeeb", backgroundColor: "#f8fbfa" }}>
+              {item.english.map((step, stepIndex) => <View key={stepIndex}>
+                {stepIndex > 0 && <View style={{ height: 1, marginVertical: 9, marginLeft: 30, backgroundColor: colors.line }} />}
+                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9 }}>
+                  <View style={{ width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: "#e4f4f0" }}><Text style={{ color: colors.brand, fontSize: 11, fontWeight: "800" }}>{stepIndex + 1}</Text></View>
+                  <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+                    <Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 19 }}>{step}</Text>
+                    <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18 }}>{item.bisaya[stepIndex]}</Text>
+                  </View>
+                </View>
+              </View>)}
+            </View>}
+          </View>)}
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 12, borderRadius: 14, backgroundColor: "#eef5fb" }}><Ionicons name="alert-circle-outline" size={19} color="#3776b7" style={{ marginTop: 1 }} /><View style={{ flex: 1, gap: 4 }}><Text style={{ color: "#244a6c", fontSize: 12, lineHeight: 17 }}>Iligan Connect is for reporting and coordinating community concerns. It is not an emergency service. If someone is in immediate danger, contact local emergency responders.</Text><Text style={{ color: "#355675", fontSize: 12, lineHeight: 17 }}>Ang Iligan Connect para sa pagreport ug pag-coordinate sa mga problema sa komunidad. Dili kini emergency service. Kung adunay nameligro karon, tawag o duol dayon sa lokal nga emergency responders.</Text></View></View>
+        <View style={[s.card, { flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 12, borderRadius: 14 }]}><Ionicons name="chatbox-ellipses-outline" size={19} color={colors.brand} style={{ marginTop: 1 }} /><View style={{ flex: 1, gap: 4 }}><Text style={{ color: colors.brandDark, fontSize: 12, lineHeight: 17 }}>For account-specific help, contact your barangay office or use an official Iligan City contact channel. Never share your password.</Text><Text style={s.small}>Kung nanginahanglan kag tabang sa imong account, kontaka ang barangay office o gamita ang opisyal nga contact channel sa Iligan City. Ayaw ihatag ang imong password.</Text></View></View>
+      </View>}
 
       <Modal visible={signOutConfirm} transparent animationType="fade" onRequestClose={() => !signOutBusy && setSignOutConfirm(false)}>
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 22, backgroundColor: "#071b27aa" }}>
@@ -1664,6 +1722,14 @@ function ProfileForm({
 function PhotoAction({ icon, title, onPress, destructive = false }: { icon: "images-outline" | "camera-outline" | "trash-outline"; title: string; onPress: () => void; destructive?: boolean }) {
   const color = destructive ? "#ad403d" : colors.brand;
   return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [{ minHeight: 52, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 13, borderRadius: 14, borderWidth: 1, borderColor: destructive ? "#f1d9d7" : "#dcece9", backgroundColor: destructive ? "#fff8f7" : "#f7fbfa" }, pressed && { opacity: 0.78 }]}><Ionicons name={icon} size={20} color={color} /><Text style={{ color, fontSize: 14, fontWeight: "700" }}>{title}</Text></Pressable>;
+}
+
+function ProfileMenuRow({ icon, title, detail, onPress }: { icon: "settings-outline" | "help-circle-outline"; title: string; detail: string; onPress: () => void }) {
+  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [{ minHeight: 66, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 4, paddingVertical: 8, borderRadius: 13 }, pressed && { backgroundColor: "#f5fbf9" }]}>
+    <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name={icon} size={20} color={colors.brand} /></View>
+    <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>{title}</Text><Text numberOfLines={2} style={s.small}>{detail}</Text></View>
+    <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+  </Pressable>;
 }
 
 function ProfileInfoRow({ icon, label, value, last = false }: { icon: "person-outline" | "calendar-outline" | "location-outline" | "mail-outline" | "call-outline"; label: string; value: string; last?: boolean }) {

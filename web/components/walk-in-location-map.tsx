@@ -19,6 +19,7 @@ export function WalkInLocationMap({ barangayId, barangays, value, onChange }: {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
   const marker = useRef<MapLibreMarker | null>(null);
+  const maplibre = useRef<typeof import("maplibre-gl") | null>(null);
   const latestChange = useRef(onChange);
   const [ready, setReady] = useState(false);
   const [pinError, setPinError] = useState("");
@@ -35,7 +36,6 @@ export function WalkInLocationMap({ barangayId, barangays, value, onChange }: {
     const activeBoundary = boundary;
     let disposed = false;
     let instance: MapLibreMap | null = null;
-    let pin: MapLibreMarker | null = null;
     let resizeObserver: ResizeObserver | null = null;
     setReady(false);
     setMapError("");
@@ -49,6 +49,7 @@ export function WalkInLocationMap({ barangayId, barangays, value, onChange }: {
       // Use the same static worker bundle as the main GIS map. This also works
       // when the dialog mounts before it becomes visible.
       maplibregl.setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
+      maplibre.current = maplibregl;
       const mapInstance = new maplibregl.Map({
         container: element,
         center: [124.2452, 8.228],
@@ -86,15 +87,8 @@ export function WalkInLocationMap({ barangayId, barangays, value, onChange }: {
             return;
           }
           setPinError("");
-          pin?.remove();
-          pin = new maplibregl.Marker({ color: "#087f78", scale: 0.9 }).setLngLat(point).addTo(mapInstance);
-          marker.current = pin;
           latestChange.current({ latitude: point[1], longitude: point[0] });
         });
-        if (value) {
-          pin = new maplibregl.Marker({ color: "#087f78", scale: 0.9 }).setLngLat([value.longitude, value.latitude]).addTo(mapInstance);
-          marker.current = pin;
-        }
         setReady(true);
         mapInstance.resize();
       });
@@ -122,28 +116,27 @@ export function WalkInLocationMap({ barangayId, barangays, value, onChange }: {
     return () => {
       disposed = true;
       resizeObserver?.disconnect();
-      pin?.remove();
+      marker.current?.remove();
+      marker.current = null;
       instance?.remove();
       if (map.current === instance) map.current = null;
-      marker.current = null;
+      if (maplibre.current) maplibre.current = null;
     };
     // The map is intentionally recreated only when the jurisdiction changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boundary, barangay?.name, mapAttempt]);
 
   useEffect(() => {
-    if (!value || !map.current) return;
     marker.current?.remove();
-    void import("maplibre-gl").then((maplibregl) => {
-      if (!map.current) return;
-      marker.current = new maplibregl.Marker({ color: "#087f78", scale: 0.9 })
-        .setLngLat([value.longitude, value.latitude]).addTo(map.current);
-    });
-  }, [value]);
+    marker.current = ready && value && map.current && maplibre.current
+      ? new maplibre.current.Marker({ color: "#087f78", scale: 0.9 })
+        .setLngLat([value.longitude, value.latitude]).addTo(map.current)
+      : null;
+  }, [ready, value?.latitude, value?.longitude]);
 
   return <div className="walk-in-map-field">
     <div className="walk-in-map-heading"><div><strong>Pinpoint the reported location <span aria-hidden="true">*</span></strong><small>Click inside the outlined {barangay?.name || "barangay"} boundary. This pin is required.</small></div>
-      {value && <button type="button" className="text-button" onClick={() => { setPinError(""); latestChange.current(null); marker.current?.remove(); marker.current = null; }}>Clear pin</button>}
+      {value && <button type="button" className="text-button" onClick={() => { setPinError(""); latestChange.current(null); }}>Clear pin</button>}
     </div>
     {boundary ? <div className="walk-in-map-canvas-wrap"><div ref={container} className="walk-in-map-canvas" role="region" aria-label={`Map of ${barangay?.name || "the assigned barangay"}. Click to pinpoint the report location.`} />
       {!ready && <div className="walk-in-map-loading" role="status">Loading barangay map…</div>}

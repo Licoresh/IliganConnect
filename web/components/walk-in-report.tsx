@@ -118,6 +118,7 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
 
   return <Dialog title="Record walk-in report" description={`${barangayName} · Record a concern raised in person`} icon={<FilePlus2 size={22} />} close={() => { if (!busy) onClose(); }} className="walk-in-report-dialog">
     <form className="walk-in-report-form" onSubmit={submit} noValidate>
+      <div className="walk-in-report-content">
       <div className="walk-in-report-intro"><span className="walk-in-intro-icon"><UserRound size={18} aria-hidden="true" /></span><p><strong>For a resident visiting the barangay office</strong><span>No resident account or photo is needed to record it. Staff can add evidence later from the report workspace.</span></p></div>
 
       <section className="walk-in-report-section" aria-labelledby="walk-in-reporter-heading">
@@ -153,6 +154,7 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
 
       <div className="walk-in-report-note"><MapPin size={17} aria-hidden="true" /><p>After saving, this report enters the barangay’s <strong>Needs review</strong> queue. Staff can assess severity and urgency, route it to an eligible office, and attach photos from the report workspace.</p></div>
       {error && <p className="walk-in-submit-error" role="alert">{error}</p>}
+      </div>
       <footer className="walk-in-report-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="submit" disabled={busy}><FilePlus2 size={16} aria-hidden="true" />{busy ? "Saving report…" : "Save and review report"}</button></footer>
     </form>
   </Dialog>;

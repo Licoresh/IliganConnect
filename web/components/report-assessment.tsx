@@ -2,7 +2,7 @@
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ClipboardCheck, RefreshCw, Save } from "lucide-react";
-import { SEVERITY_OPTIONS, URGENCY_OPTIONS, reportAssessmentSchema, type Status } from "@community/shared";
+import { SEVERITY_OPTIONS, URGENCY_OPTIONS, reportAssessmentSchema, textInputError, type Status } from "@community/shared";
 import { db, result } from "../lib/client";
 
 type Errors = Partial<Record<"severity" | "urgency" | "note", string>>;
@@ -33,15 +33,16 @@ export function AssessmentFields({ idPrefix, severity, urgency, errors = {}, dis
         ["urgency", "Urgency · time sensitivity", URGENCY_OPTIONS, ratingValues.urgency],
       ] as const).map(([name, title, options, value]) => {
         const id = `${idPrefix}-${name}`;
+        const fieldError = options.some((option) => String(option.value) === value) ? "" : errors[name];
         return <div key={name} className="assessment-rating-field">
           <label htmlFor={id}>{title} <span aria-hidden="true">*</span></label>
-          <select id={id} name={name} value={value} required aria-invalid={!!errors[name] || undefined}
-            aria-describedby={`${id}-hint${errors[name] ? ` ${id}-error` : ""}`} onChange={(event) => updateRating(name, event.target.value)}>
+          <select id={id} name={name} value={value} required aria-invalid={!!fieldError || undefined}
+            aria-describedby={`${id}-hint${fieldError ? ` ${id}-error` : ""}`} onChange={(event) => updateRating(name, event.target.value)}>
             <option value="">Choose {name}</option>
             {options.map((option) => <option key={option.value} value={option.value}>{option.value} · {option.label}</option>)}
           </select>
           <small id={`${id}-hint`}>{options.find((option) => String(option.value) === value)?.description || `Choose an assessed ${name} from 1 to 5.`}</small>
-          {errors[name] && <p id={`${id}-error`} className="field-validation-message" role="alert">{errors[name]}</p>}
+          {fieldError && <p id={`${id}-error`} className="field-validation-message" role="alert">{fieldError}</p>}
         </div>;
       })}
     </div>
@@ -100,7 +101,10 @@ export function ReportAssessment({ reportId, canReview }: { reportId: string; ca
           <AssessmentFields idPrefix={`reassess-${reportId}`} severity={q.data.current.severity} urgency={q.data.current.urgency} errors={errors} disabled={busy} />
           <label htmlFor={`assessment-note-${reportId}`}>Assessment rationale <span aria-hidden="true">*</span></label>
           <textarea id={`assessment-note-${reportId}`} name="note" required minLength={5} maxLength={4000} disabled={busy} aria-invalid={!!errors.note || undefined}
-            aria-describedby={`assessment-note-hint-${reportId}${errors.note ? ` assessment-note-error-${reportId}` : ""}`} placeholder="Explain the observed impact, time sensitivity and supporting evidence." />
+            aria-describedby={`assessment-note-hint-${reportId}${errors.note ? ` assessment-note-error-${reportId}` : ""}`} onChange={(event) => {
+              const note = textInputError(event.currentTarget.value, { min: 5, max: 4000, required: true });
+              setErrors((current) => Object.hasOwn(current, "note") ? { ...current, note } : current);
+            }} placeholder="Explain the observed impact, time sensitivity and supporting evidence." />
           <small id={`assessment-note-hint-${reportId}`}>5–4,000 characters. Visible only to authorized staff.</small>
           {errors.note && <p id={`assessment-note-error-${reportId}`} className="field-validation-message" role="alert">{errors.note}</p>}
           <div className="assessment-form-actions"><button type="submit" disabled={busy}><Save size={17} aria-hidden="true" />{busy ? "Saving assessment…" : "Save assessment"}</button><button type="button" className="secondary" disabled={busy} onClick={() => { setEditing(false); setMessage(""); setErrors({}); }}>Cancel</button></div>

@@ -34,6 +34,7 @@ export function FormValidation() {
     }
     function validate(field: Control) {
       if (!field.willValidate || field.disabled) return "";
+      field.dataset.validationTouched = "true";
       field.setCustomValidity("");
       let message = "";
       const secret = field instanceof HTMLInputElement && (field.type === "password" || field.autocomplete.includes("password"));
@@ -88,15 +89,15 @@ export function FormValidation() {
     const invalid = (event: Event) => { if (isControl(event.target)) validate(event.target); };
     const input = (event: Event) => {
       if (!isControl(event.target)) return;
-      if (event.target.dataset.validationError) validate(event.target);
+      if (event.target.dataset.validationTouched === "true") validate(event.target);
       if (event.target.name === "password") {
         const confirmation = event.target.form?.elements.namedItem("confirm");
-        if (confirmation instanceof HTMLInputElement && confirmation.dataset.validationError) validate(confirmation);
+        if (confirmation instanceof HTMLInputElement && confirmation.dataset.validationTouched === "true") validate(confirmation);
       }
       const endFieldByStart: Record<string, string> = { opens: "closes", starts: "ends", starts_at: "ends_at", start_date: "end_date", start: "end" };
       if (Object.hasOwn(endFieldByStart, event.target.name)) {
         const closing = event.target.form?.elements.namedItem(endFieldByStart[event.target.name]);
-        if (closing instanceof HTMLInputElement && closing.dataset.validationError) validate(closing);
+        if (closing instanceof HTMLInputElement && closing.dataset.validationTouched === "true") validate(closing);
       }
     };
     const blur = (event: Event) => {
@@ -119,7 +120,12 @@ export function FormValidation() {
       }
       validate(field);
     };
-    const reset = (event: Event) => { if (event.target instanceof HTMLFormElement) Array.from(event.target.elements).filter(isControl).forEach(field => mark(field, "")); };
+    const reset = (event: Event) => {
+      if (event.target instanceof HTMLFormElement) Array.from(event.target.elements).filter(isControl).forEach(field => {
+        mark(field, "");
+        delete field.dataset.validationTouched;
+      });
+    };
     for (const [type, handler] of [["submit", submit], ["invalid", invalid], ["input", input], ["change", input], ["blur", blur], ["reset", reset]] as const) document.addEventListener(type, handler, true);
     return () => { for (const [type, handler] of [["submit", submit], ["invalid", invalid], ["input", input], ["change", input], ["blur", blur], ["reset", reset]] as const) document.removeEventListener(type, handler, true); };
   }, []);

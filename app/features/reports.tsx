@@ -154,6 +154,8 @@ export function ReportForm({
     formState: { errors },
   } = useForm<ReportInput>({
     resolver: zodResolver(createReportSchema(categories)),
+    mode: "onChange",
+    reValidateMode: "onChange",
     defaultValues: {
       title: "",
       description: "",

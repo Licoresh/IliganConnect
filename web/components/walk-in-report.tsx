@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { FilePlus2, MapPin, UserRound } from "lucide-react";
-import { createReportSchema, emailInputError, mobileInputError, normalizePhilippineMobile, personNameInputError } from "@community/shared";
+import { addressInputError, createReportSchema, emailInputError, mobileInputError, normalizePhilippineMobile, personNameInputError, textInputError } from "@community/shared";
 import { db, result } from "../lib/client";
 import { Dialog } from "./dialog";
 import { WalkInLocationMap, type WalkInPin } from "./walk-in-location-map";
@@ -105,12 +105,30 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
     }
   }
 
-  function setFieldError(field: Field) {
-    if (fieldErrors[field]) setFieldErrors((current) => ({ ...current, [field]: undefined }));
+  function setFieldError(field: Field, value: unknown, activeProblemType = problemType || initialProblemType) {
+    setFieldErrors((current) => {
+      if (!Object.hasOwn(current, field)) return current;
+      const text = typeof value === "string" ? value : "";
+      let message = "";
+      switch (field) {
+        case "reporter_name": message = personNameInputError(text, true, 100); break;
+        case "reporter_email": message = text.trim() ? emailInputError(text) : ""; break;
+        case "reporter_phone": message = text.trim() ? mobileInputError(text) : ""; break;
+        case "category_id": message = text ? "" : "Choose a report type."; break;
+        case "problem_type": message = refs.categories.some((item) => item.problem_types?.some((option) => option.code === text)) ? "" : "Choose the specific problem for this category."; break;
+        case "problem_other": message = activeProblemType !== "other" ? "" : !text.trim() ? "Please describe the other problem." : textInputError(text, { max: 240 }); break;
+        case "title": message = textInputError(text, { min: 8, max: 160, required: true }); break;
+        case "description": message = textInputError(text, { min: 20, max: 4000, required: true }); break;
+        case "purok": case "zone": message = addressInputError(text, { max: 80 }); break;
+        case "landmark": message = addressInputError(text, { max: 240 }); break;
+        case "latitude": message = value ? "" : "Place a pin on the map or use your current location before continuing."; break;
+      }
+      return { ...current, [field]: message || undefined };
+    });
   }
   function validateOptionalContact(field: "reporter_email" | "reporter_phone", value: string) {
     const message = !value.trim() ? "" : field === "reporter_email" ? emailInputError(value) : mobileInputError(value);
-    setFieldErrors((current) => ({ ...current, [field]: message || undefined }));
+    setFieldErrors((current) => !Object.hasOwn(current, field) && !message ? current : ({ ...current, [field]: message || undefined }));
   }
   const fieldHint = (field: Field, hint?: string, hintId?: string) => fieldErrors[field]
     ? <small className="walk-in-field-error" id={`walk-in-${field}-error`}>{fieldErrors[field]}</small>
@@ -124,31 +142,31 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
       <section className="walk-in-report-section" aria-labelledby="walk-in-reporter-heading">
         <div className="walk-in-section-heading"><span>1</span><div><h3 id="walk-in-reporter-heading">Reporter</h3><p>Record who brought the concern to the office.</p></div></div>
         <div className="walk-in-field-grid walk-in-reporter-grid">
-          <label className="walk-in-field"><span>Reporter’s full name <b aria-hidden="true">*</b></span><input id="walk-in-reporter_name" name="reporter_name" autoComplete="name" maxLength={100} required aria-invalid={!!fieldErrors.reporter_name} aria-describedby={fieldErrors.reporter_name ? "walk-in-reporter_name-error" : "walk-in-reporter-hint"} onChange={() => setFieldError("reporter_name")} />{fieldHint("reporter_name", "This is recorded for staff follow-up; it does not create an account.", "walk-in-reporter-hint")}</label>
-          <label className="walk-in-field"><span>Email address <small>Optional</small></span><input id="walk-in-reporter_email" name="reporter_email" type="email" inputMode="email" autoComplete="email" maxLength={254} placeholder="name@example.com" aria-invalid={!!fieldErrors.reporter_email} aria-describedby={fieldErrors.reporter_email ? "walk-in-reporter_email-error" : "walk-in-email-hint"} onBlur={(event) => validateOptionalContact("reporter_email", event.currentTarget.value)} onChange={() => setFieldError("reporter_email")} />{fieldHint("reporter_email", "If provided, this address receives email updates when the report changes.", "walk-in-email-hint")}</label>
-          <label className="walk-in-field"><span>Phone number <small>Optional</small></span><input id="walk-in-reporter_phone" name="reporter_phone" type="tel" inputMode="tel" autoComplete="tel" maxLength={24} placeholder="0917 123 4567" aria-invalid={!!fieldErrors.reporter_phone} aria-describedby={fieldErrors.reporter_phone ? "walk-in-reporter_phone-error" : "walk-in-phone-hint"} onBlur={(event) => validateOptionalContact("reporter_phone", event.currentTarget.value)} onChange={() => setFieldError("reporter_phone")} />{fieldHint("reporter_phone", "For staff follow-up only; no automatic SMS is sent.", "walk-in-phone-hint")}</label>
+          <label className="walk-in-field"><span>Reporter’s full name <b aria-hidden="true">*</b></span><input id="walk-in-reporter_name" name="reporter_name" autoComplete="name" maxLength={100} required aria-invalid={!!fieldErrors.reporter_name} aria-describedby={fieldErrors.reporter_name ? "walk-in-reporter_name-error" : "walk-in-reporter-hint"} onChange={(event) => setFieldError("reporter_name", event.currentTarget.value)} />{fieldHint("reporter_name", "This is recorded for staff follow-up; it does not create an account.", "walk-in-reporter-hint")}</label>
+          <label className="walk-in-field"><span>Email address <small>Optional</small></span><input id="walk-in-reporter_email" name="reporter_email" type="email" inputMode="email" autoComplete="email" maxLength={254} placeholder="name@example.com" aria-invalid={!!fieldErrors.reporter_email} aria-describedby={fieldErrors.reporter_email ? "walk-in-reporter_email-error" : "walk-in-email-hint"} onBlur={(event) => validateOptionalContact("reporter_email", event.currentTarget.value)} onChange={(event) => setFieldError("reporter_email", event.currentTarget.value)} />{fieldHint("reporter_email", "If provided, this address receives email updates when the report changes.", "walk-in-email-hint")}</label>
+          <label className="walk-in-field"><span>Phone number <small>Optional</small></span><input id="walk-in-reporter_phone" name="reporter_phone" type="tel" inputMode="tel" autoComplete="tel" maxLength={24} placeholder="0917 123 4567" aria-invalid={!!fieldErrors.reporter_phone} aria-describedby={fieldErrors.reporter_phone ? "walk-in-reporter_phone-error" : "walk-in-phone-hint"} onBlur={(event) => validateOptionalContact("reporter_phone", event.currentTarget.value)} onChange={(event) => setFieldError("reporter_phone", event.currentTarget.value)} />{fieldHint("reporter_phone", "For staff follow-up only; no automatic SMS is sent.", "walk-in-phone-hint")}</label>
         </div>
       </section>
 
       <section className="walk-in-report-section" aria-labelledby="walk-in-details-heading">
         <div className="walk-in-section-heading"><span>2</span><div><h3 id="walk-in-details-heading">Report details</h3><p>Describe the issue clearly so it can be assessed and routed correctly.</p></div></div>
         <div className="walk-in-field-grid">
-          <label className="walk-in-field"><span>Report category <b aria-hidden="true">*</b></span><select id="walk-in-category_id" value={categoryId} required aria-invalid={!!fieldErrors.category_id} onChange={(event) => { setCategoryId(event.target.value); setProblemType(""); setFieldError("category_id"); setFieldError("problem_type"); }}><option value="">Choose a category</option>{refs.categories.filter((item) => item.problem_types?.length).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{fieldHint("category_id")}</label>
-          <label className="walk-in-field"><span>Specific issue <b aria-hidden="true">*</b></span><select id="walk-in-problem_type" value={problemType || initialProblemType} required disabled={!category} aria-invalid={!!fieldErrors.problem_type} onChange={(event) => { setProblemType(event.target.value); setFieldError("problem_type"); }}><option value="">Choose a specific issue</option>{problemTypes.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}</select>{fieldHint("problem_type")}</label>
-          {problemType === "other" && <label className="walk-in-field walk-in-field-wide"><span>Describe the other issue <b aria-hidden="true">*</b></span><input id="walk-in-problem_other" name="problem_other" maxLength={240} required aria-invalid={!!fieldErrors.problem_other} onChange={() => setFieldError("problem_other")} />{fieldHint("problem_other", "Up to 240 characters.")}</label>}
-          <label className="walk-in-field walk-in-field-wide"><span>Report title <b aria-hidden="true">*</b></span><input id="walk-in-title" name="title" required minLength={8} maxLength={160} placeholder="Example: Damaged drainage cover near the market" aria-invalid={!!fieldErrors.title} onChange={() => setFieldError("title")} />{fieldHint("title", "8–160 characters. Use a short, specific description.")}</label>
-          <label className="walk-in-field walk-in-field-wide"><span>What happened? <b aria-hidden="true">*</b></span><textarea id="walk-in-description" name="description" required minLength={20} maxLength={4000} rows={4} placeholder="Describe the concern, when it was noticed, and who or what may be affected." aria-invalid={!!fieldErrors.description} onChange={() => setFieldError("description")} />{fieldHint("description", "20–4,000 characters. Avoid including sensitive personal details.")}</label>
+          <label className="walk-in-field"><span>Report category <b aria-hidden="true">*</b></span><select id="walk-in-category_id" value={categoryId} required aria-invalid={!!fieldErrors.category_id} onChange={(event) => { const nextCategoryId = event.target.value; const nextProblemType = refs.categories.find((item) => item.id === nextCategoryId)?.problem_types?.[0]?.code || ""; setCategoryId(nextCategoryId); setProblemType(""); setFieldError("category_id", nextCategoryId); setFieldError("problem_type", nextProblemType); setFieldError("problem_other", "", nextProblemType); }}><option value="">Choose a category</option>{refs.categories.filter((item) => item.problem_types?.length).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{fieldHint("category_id")}</label>
+          <label className="walk-in-field"><span>Specific issue <b aria-hidden="true">*</b></span><select id="walk-in-problem_type" value={problemType || initialProblemType} required disabled={!category} aria-invalid={!!fieldErrors.problem_type} onChange={(event) => { const nextProblemType = event.target.value; setProblemType(nextProblemType); setFieldError("problem_type", nextProblemType); setFieldError("problem_other", "", nextProblemType); }}><option value="">Choose a specific issue</option>{problemTypes.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}</select>{fieldHint("problem_type")}</label>
+          {problemType === "other" && <label className="walk-in-field walk-in-field-wide"><span>Describe the other issue <b aria-hidden="true">*</b></span><input id="walk-in-problem_other" name="problem_other" maxLength={240} required aria-invalid={!!fieldErrors.problem_other} onChange={(event) => setFieldError("problem_other", event.currentTarget.value)} />{fieldHint("problem_other", "Up to 240 characters.")}</label>}
+          <label className="walk-in-field walk-in-field-wide"><span>Report title <b aria-hidden="true">*</b></span><input id="walk-in-title" name="title" required minLength={8} maxLength={160} placeholder="Example: Damaged drainage cover near the market" aria-invalid={!!fieldErrors.title} onChange={(event) => setFieldError("title", event.currentTarget.value)} />{fieldHint("title", "8–160 characters. Use a short, specific description.")}</label>
+          <label className="walk-in-field walk-in-field-wide"><span>What happened? <b aria-hidden="true">*</b></span><textarea id="walk-in-description" name="description" required minLength={20} maxLength={4000} rows={4} placeholder="Describe the concern, when it was noticed, and who or what may be affected." aria-invalid={!!fieldErrors.description} onChange={(event) => setFieldError("description", event.currentTarget.value)} />{fieldHint("description", "20–4,000 characters. Avoid including sensitive personal details.")}</label>
         </div>
       </section>
 
       <section className="walk-in-report-section" aria-labelledby="walk-in-location-heading">
         <div className="walk-in-section-heading"><span>3</span><div><h3 id="walk-in-location-heading">Location</h3><p>The report pin must be inside your assigned barangay.</p></div></div>
         <div className="walk-in-field-grid walk-in-address-grid">
-          <label className="walk-in-field"><span>Purok <small>Optional</small></span><input id="walk-in-purok" name="purok" maxLength={80} placeholder="Purok number or name" />{fieldHint("purok", "Up to 80 characters.")}</label>
-          <label className="walk-in-field"><span>Zone <small>Optional</small></span><input id="walk-in-zone" name="zone" maxLength={80} placeholder="Zone number or name" />{fieldHint("zone", "Up to 80 characters.")}</label>
-          <label className="walk-in-field walk-in-field-wide"><span>Street, landmark, or directions <small>Optional</small></span><input id="walk-in-landmark" name="landmark" maxLength={240} placeholder="Near a recognizable place or access point" />{fieldHint("landmark", "Up to 240 characters.")}</label>
+          <label className="walk-in-field"><span>Purok <small>Optional</small></span><input id="walk-in-purok" name="purok" maxLength={80} placeholder="Purok number or name" onChange={(event) => setFieldError("purok", event.currentTarget.value)} />{fieldHint("purok", "Up to 80 characters.")}</label>
+          <label className="walk-in-field"><span>Zone <small>Optional</small></span><input id="walk-in-zone" name="zone" maxLength={80} placeholder="Zone number or name" onChange={(event) => setFieldError("zone", event.currentTarget.value)} />{fieldHint("zone", "Up to 80 characters.")}</label>
+          <label className="walk-in-field walk-in-field-wide"><span>Street, landmark, or directions <small>Optional</small></span><input id="walk-in-landmark" name="landmark" maxLength={240} placeholder="Near a recognizable place or access point" onChange={(event) => setFieldError("landmark", event.currentTarget.value)} />{fieldHint("landmark", "Up to 240 characters.")}</label>
         </div>
-        <div id="walk-in-location"><WalkInLocationMap barangayId={barangayId} barangays={refs.barangays} value={pin} onChange={(next) => { setPin(next); setFieldError("latitude"); }} /></div>
+        <div id="walk-in-location"><WalkInLocationMap barangayId={barangayId} barangays={refs.barangays} value={pin} onChange={(next) => { setPin(next); setFieldError("latitude", next); }} /></div>
         {fieldErrors.latitude && <p className="walk-in-field-error" id="walk-in-latitude-error" role="alert">{fieldErrors.latitude}</p>}
       </section>
 

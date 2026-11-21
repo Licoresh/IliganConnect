@@ -8,12 +8,71 @@ import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor,
 import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, colors } from "./ui";
 import "maplibre-gl/dist/maplibre-gl.css";
 const EMPTY_POINTS: NonNullable<MapProps["points"]> = [];
+function enablePopupDragging(map: maplibre.Map, popup: maplibre.Popup, handle: HTMLButtonElement) {
+  let drag: { pointerId: number; x: number; y: number; origin: { x: number; y: number } } | null = null;
+  let restoreMapPan = false;
+  const moveTo = (x: number, y: number) => {
+    const bounds = map.getContainer().getBoundingClientRect();
+    const edge = Math.min(8, bounds.width / 2, bounds.height / 2);
+    popup.setLngLat(map.unproject([
+      Math.max(edge, Math.min(bounds.width - edge, x)),
+      Math.max(edge, Math.min(bounds.height - edge, y)),
+    ]));
+  };
+  const finish = () => {
+    if (!drag) return;
+    drag = null;
+    handle.classList.remove("is-dragging");
+    if (restoreMapPan && !map.dragPan.isEnabled()) map.dragPan.enable();
+  };
+  handle.addEventListener("pointerdown", (event) => {
+    if (!event.isPrimary || event.button !== 0) return;
+    const location = popup.getLngLat();
+    if (!location) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const origin = map.project(location);
+    drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, origin };
+    restoreMapPan = map.dragPan.isEnabled();
+    if (restoreMapPan) map.dragPan.disable();
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add("is-dragging");
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    moveTo(drag.origin.x + event.clientX - drag.x, drag.origin.y + event.clientY - drag.y);
+  });
+  handle.addEventListener("pointerup", (event) => {
+    if (drag?.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    finish();
+  });
+  handle.addEventListener("pointercancel", finish);
+  handle.addEventListener("lostpointercapture", finish);
+  handle.addEventListener("keydown", (event) => {
+    const delta = event.shiftKey ? 24 : 12;
+    const direction: Record<string, [number, number]> = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] };
+    const movement = direction[event.key];
+    const location = popup.getLngLat();
+    if (!movement || !location) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const point = map.project(location);
+    moveTo(point.x + movement[0], point.y + movement[1]);
+  });
+  popup.on("close", finish);
+}
 export default function LocationMap({
   point,
   pointLabel,
   points = EMPTY_POINTS,
   onChoose,
   onPointPress,
+  onOpenPointDetails,
+  onClearPointSelection,
   onDensityCellPress,
   onLocate,
   locating = false,
@@ -21,6 +80,7 @@ export default function LocationMap({
   density = false,
   showPoints = true,
   selectedPointId,
+  reportPopupBehavior = "default",
   height = 300,
   onExpand,
   mapStyle,
@@ -41,6 +101,8 @@ export default function LocationMap({
     map = useRef<maplibre.Map | null>(null),
     choose = useRef(onChoose),
     pointPress = useRef(onPointPress),
+    pointDetails = useRef(onOpenPointDetails),
+    clearPointSelection = useRef(onClearPointSelection),
     densityCellPress = useRef(onDensityCellPress),
     barangayPress = useRef(onBarangayPress),
     backgroundPress = useRef(onMapBackgroundPress),
@@ -50,6 +112,8 @@ export default function LocationMap({
     aggregateMarkers = useRef<maplibre.Marker[]>([]);
   choose.current = onChoose;
   pointPress.current = onPointPress;
+  pointDetails.current = onOpenPointDetails;
+  clearPointSelection.current = onClearPointSelection;
   densityCellPress.current = onDensityCellPress;
   barangayPress.current = onBarangayPress;
   backgroundPress.current = onMapBackgroundPress;
@@ -222,7 +286,7 @@ export default function LocationMap({
     markers.current = [...(point ? [point] : []), ...(userPoint ? [userPoint] : []), ...(showPoints && !showBarangayBoundaries && (zoomBehavior === "issue-map" || zoomLevel >= INDIVIDUAL_REPORT_PIN_ZOOM) ? reportPoints : [])].map((p, index) => {
       const isUser = p === userPoint;
       const markerKey = isUser ? "user" : p === point ? "chosen" : p.id ?? `${p.latitude}:${p.longitude}:${index}`;
-      const signature = JSON.stringify([p.latitude, p.longitude, p.title, p.subtitle, p.categoryName, p.color, p.createdAt, p.photoUrl, p.statusLabel, p.barangayName, p === point ? pointLabel : "", !!onChoose]);
+      const signature = JSON.stringify([p.latitude, p.longitude, p.title, p.subtitle, p.categoryName, p.color, p.createdAt, p.photoUrl, p.statusLabel, p.barangayName, p === point ? pointLabel : "", !!onChoose, reportPopupBehavior]);
       const existing = previous.get(markerKey);
       previous.delete(markerKey);
       if (existing?.getElement().dataset.signature === signature) return existing;
@@ -275,7 +339,7 @@ export default function LocationMap({
       const marker = new maplibre.Marker({ element: pin, anchor: "bottom", draggable: p === point && !!onChoose })
         .setLngLat([p.longitude, p.latitude])
         .addTo(map.current!);
-      if (p.title || p === userPoint) {
+      if ((p.title || p === userPoint) && (isUser || reportPopupBehavior !== "hidden")) {
         const popup = new maplibre.Popup({ closeButton: false, offset: 18, maxWidth: "280px", className: "report-pin-popup" });
         const card = document.createElement("article");
         card.className = "report-pin-card";
@@ -291,7 +355,7 @@ export default function LocationMap({
         close.type = "button";
         close.setAttribute("aria-label", "Close report preview");
         close.textContent = "×";
-        close.addEventListener("click", (event) => { event.stopPropagation(); popup.remove(); });
+        close.addEventListener("click", (event) => { event.stopPropagation(); clearPointSelection.current?.(); popup.remove(); });
         top.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:9px";
         top.append(eyebrow);
         if (!isUser && p.statusLabel) {
@@ -300,6 +364,17 @@ export default function LocationMap({
           status.textContent = p.statusLabel;
           status.style.cssText = `flex:none;padding:4px 7px;border-radius:12px;background:${statusTone.background};color:${statusTone.foreground};font-size:9px;font-weight:700;white-space:nowrap`;
           top.append(status);
+        }
+        let dragHandle: HTMLButtonElement | undefined;
+        if (!isUser && reportPopupBehavior === "draggable") {
+          dragHandle = document.createElement("button");
+          dragHandle.className = "report-pin-card__drag-handle";
+          dragHandle.type = "button";
+          dragHandle.setAttribute("aria-label", "Move report preview");
+          dragHandle.title = "Drag to move · use arrow keys";
+          dragHandle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h.01M12 5h.01M16 5h.01M8 12h.01M12 12h.01M16 12h.01M8 19h.01M12 19h.01M16 19h.01"/></svg>';
+          top.append(dragHandle);
+          card.classList.add("report-pin-card--draggable");
         }
         top.append(close);
         const title = document.createElement("strong");
@@ -382,7 +457,7 @@ export default function LocationMap({
           action.type = "button";
           action.textContent = "View report details";
           action.style.cssText = `width:100%;min-height:48px;margin-top:10px;border:0;border-radius:12px;background:${colors.brandSoft};color:${colors.brand};font-size:12px;font-weight:800;cursor:pointer`;
-          action.addEventListener("click", (event) => { event.stopPropagation(); pointPress.current?.(p); popup.remove(); });
+          action.addEventListener("click", (event) => { event.stopPropagation(); if (pointDetails.current) { pointDetails.current(p); clearPointSelection.current?.(); } else pointPress.current?.(p); popup.remove(); });
           const note = document.createElement("p");
           note.className = "report-pin-card__note";
           note.textContent = "Approximate location · shown for privacy";
@@ -390,6 +465,7 @@ export default function LocationMap({
           card.append(action, note);
         }
         popup.setDOMContent(card);
+        if (dragHandle) enablePopupDragging(map.current!, popup, dragHandle);
         marker.setPopup(popup);
         if (reopenPopup) popup.setLngLat([p.longitude, p.latitude]).addTo(map.current!);
       }
@@ -401,7 +477,7 @@ export default function LocationMap({
       return marker;
     });
     previous.forEach((marker) => marker.remove());
-  }, [point?.latitude, point?.longitude, pointLabel, ready, userPoint?.latitude, userPoint?.longitude, !!onChoose, reportPoints, showPoints, showBarangayBoundaries, zoomLevel, zoomBehavior]);
+  }, [point?.latitude, point?.longitude, pointLabel, ready, userPoint?.latitude, userPoint?.longitude, !!onChoose, reportPoints, showPoints, showBarangayBoundaries, zoomLevel, zoomBehavior, reportPopupBehavior]);
   useEffect(() => {
     aggregateMarkers.current.forEach((marker) => marker.remove());
     aggregateMarkers.current = [];
@@ -445,9 +521,16 @@ export default function LocationMap({
     if (point) map.current.easeTo({ center: [point.longitude, point.latitude] });
     else if (selectedPointId) {
       const selected = points.find((p) => p.id === selectedPointId);
-      if (selected) map.current.easeTo({ center: [selected.longitude, selected.latitude], zoom: 14, duration: 250 });
+      if (selected) {
+        map.current.easeTo({ center: [selected.longitude, selected.latitude], zoom: 14, duration: 250 });
+        if (reportPopupBehavior === "draggable") {
+          const marker = markers.current.find((item) => item.getElement().dataset.reportId === selectedPointId);
+          const popup = marker?.getPopup();
+          if (popup && !popup.isOpen()) popup.setLngLat([selected.longitude, selected.latitude]).addTo(map.current);
+        }
+      }
     } else if (userPoint) map.current.easeTo({ center: [userPoint.longitude, userPoint.latitude], zoom: 13 });
-  }, [point?.latitude, point?.longitude, pointsKey, ready, userPoint?.latitude, userPoint?.longitude, selectedPointId]);
+  }, [point?.latitude, point?.longitude, pointsKey, ready, userPoint?.latitude, userPoint?.longitude, selectedPointId, reportPopupBehavior]);
   return (
     <>
       <style>{`
@@ -462,6 +545,10 @@ export default function LocationMap({
         .report-map-pin:hover .report-map-pin__hover,.report-map-pin:focus-visible .report-map-pin__hover{display:block}
         .report-pin-popup .maplibregl-popup-content{padding:0;border-radius:18px;box-shadow:none}
         .report-pin-card__close{margin-left:auto;min-width:48px;min-height:48px;border:0;border-radius:50%;background:#eef5f3;color:#12343d;font-size:24px;cursor:pointer}
+        .report-pin-card--draggable .report-pin-card__drag-handle{display:grid;flex:none;width:36px;height:36px;margin-left:auto;padding:8px;place-items:center;border:0;border-radius:10px;background:#e5f6f2;color:#08756b;cursor:grab;touch-action:none}
+        .report-pin-card--draggable .report-pin-card__close{margin-left:0}
+        .report-pin-card__drag-handle svg{width:20px;height:20px;fill:currentColor}
+        .report-pin-card__drag-handle.is-dragging{cursor:grabbing;background:#d6f0e9}
         .maplibregl-ctrl-attrib.maplibregl-compact{min-width:48px;min-height:48px;padding:0;box-sizing:border-box}
         .maplibregl-ctrl-attrib.maplibregl-compact-show{padding:8px 54px 8px 10px;max-width:min(280px,calc(100vw - 64px))}
         .maplibregl-ctrl-attrib-button{width:48px;height:48px;background-repeat:no-repeat;background-position:center;background-size:24px 24px}

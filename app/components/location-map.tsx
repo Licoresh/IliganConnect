@@ -30,6 +30,8 @@ export type MapProps = {
   points?: Point[];
   onChoose?: (p: Point) => void;
   onPointPress?: (p: Point) => void;
+  onOpenPointDetails?: (p: Point) => void;
+  onClearPointSelection?: () => void;
   onDensityCellPress?: (count: number) => void;
   selectedCellCount?: number | null;
   onLocate?: () => void;
@@ -38,6 +40,7 @@ export type MapProps = {
   density?: boolean;
   showPoints?: boolean;
   selectedPointId?: string;
+  reportPopupBehavior?: "default" | "hidden" | "draggable";
   height?: number;
   onExpand?: () => void;
   onGestureActiveChange?: (active: boolean) => void;
@@ -57,7 +60,7 @@ export type MapProps = {
   barangayMetric?: "count" | "density";
   summaryColor?: string;
 };
-const ReportPin = memo(function ReportPin({ selected, onPointPress, ...p }: Point & { selected: boolean; onPointPress?: MapProps["onPointPress"] }) {
+const ReportPin = memo(function ReportPin({ selected, onPointPress, reportPopupBehavior = "default", ...p }: Point & { selected: boolean; onPointPress?: MapProps["onPointPress"]; reportPopupBehavior?: MapProps["reportPopupBehavior"] }) {
   const tone = categoryToneFor(p.categoryName || "");
   const pinColor = p.color || tone.foreground;
   const [tracking, setTracking] = useState(true);
@@ -74,7 +77,7 @@ const ReportPin = memo(function ReportPin({ selected, onPointPress, ...p }: Poin
                 <Ionicons name={categoryIconFor(p.categoryName || "")} size={16} color="white" />
               </View>
             </View>
-            <Callout tooltip onPress={() => onPointPress?.(p)}>
+            {reportPopupBehavior !== "hidden" && <Callout tooltip onPress={() => onPointPress?.(p)}>
               <View style={{ width: 276, borderRadius: 18, padding: 12, backgroundColor: "#fff", borderWidth: 1, borderColor: "#e0e9e6", shadowColor: "#173b3a", shadowOpacity: 0.2, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8 }}>
                 <View style={{ flexDirection: "row", gap: 10, alignItems: "stretch" }}>
                   {p.photoUrl ? <PhotoViewer source={{ uri: p.photoUrl }} label={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community"} report photo`} style={{ width: 76, height: 94, borderRadius: 12, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 76, height: 94, borderRadius: 12, backgroundColor: categoryToneFor(p.categoryName || "").background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(p.categoryName || "")} size={31} color={categoryToneFor(p.categoryName || "").foreground} /></View>}
@@ -88,7 +91,7 @@ const ReportPin = memo(function ReportPin({ selected, onPointPress, ...p }: Poin
                 <Pressable accessibilityRole="button" onPress={() => onPointPress?.(p)} style={{ minHeight: 48, marginTop: 10, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>View report details  ›</Text></Pressable>
                 <Text style={{ color: "#82908c", fontSize: 10, marginTop: 6, textAlign: "center" }}>Approximate location for privacy</Text>
               </View>
-            </Callout>
+            </Callout>}
           </Marker>);
 });
 
@@ -106,6 +109,7 @@ export default function LocationMap({
   density = false,
   showPoints = true,
   selectedPointId,
+  reportPopupBehavior = "default",
   height = 300,
   onExpand,
   onGestureActiveChange,
@@ -338,7 +342,7 @@ export default function LocationMap({
           <View style={{ minWidth: 38, height: 38, paddingHorizontal: 5, borderRadius: 20, borderWidth: 2.5, borderColor: "white", backgroundColor: cluster.color, alignItems: "center", justifyContent: "center", shadowColor: "#10263f", shadowOpacity: 0.24, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 5 }}><Text style={{ color: "white", fontSize: cluster.count > 99 ? 10 : 12, fontWeight: "900" }}>{cluster.count.toLocaleString("en-PH")}</Text></View>
         </Marker>)}
         {showPoints && !showBarangayBoundaries && (zoomBehavior === "issue-map" || zoomLevel >= INDIVIDUAL_REPORT_PIN_ZOOM) && reportPoints.map((p, i) => (
-          <ReportPin key={p.id || i} {...p} selected={p.id === selectedPointId} onPointPress={focusPoint} />
+          <ReportPin key={p.id || i} {...p} selected={p.id === selectedPointId} onPointPress={focusPoint} reportPopupBehavior={reportPopupBehavior} />
         ))}
       </MapView>
       {mapStyleSelector === "tabs" ? <View style={{ position: "absolute", left: 9, top: 9, flexDirection: "row", alignItems: "center", gap: 2, padding: 4, borderRadius: 23, backgroundColor: "#ffffffed", elevation: 3 }}>

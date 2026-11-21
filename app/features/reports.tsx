@@ -1540,7 +1540,10 @@ export function Explore({
             onGestureActiveChange={onMapGestureActiveChange}
             onPageScroll={onMapPageScroll}
             selectedPointId={selectedReportId ?? undefined}
+            reportPopupBehavior={desktopExplore ? "draggable" : "hidden"}
             onPointPress={selectMapPoint}
+            onOpenPointDetails={(point) => { const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }}
+            onClearPointSelection={() => setSelectedReportId(null)}
             onExpand={expandMap}
             showBarangayBoundaries={showBarangayMap}
             barangayCounts={barangayCounts}
@@ -1605,7 +1608,7 @@ export function Explore({
           </Modal>}
           {!showBarangayMap && !density && !showPins && <Text style={s.small}>Both layers are off. Turn on Pins or Heat to see reports.</Text>}
           {!showBarangayMap && !mapQuery.isPending && !mapQuery.error && !mapPoints.length && <View style={s.card}><Text style={s.title}>{mapReports.length ? "These reports use manual addresses" : "No reports match these map filters"}</Text><Text style={s.small}>{mapReports.length ? "Their barangay and address details are available in List. No map pins were provided." : "Try Any distance, All statuses, another barangay, or a wider date range."}</Text>{!!mapReports.length && <Button secondary title="View report list" onPress={() => setShowMap(false)} />}</View>}
-          {selectedMapReport && (() => {
+          {!desktopExplore && selectedMapReport && (() => {
             const tone = categoryToneFor(selectedMapReport.categoryName);
             const status = statusToneFor(selectedMapReport.statusLabel);
             const failed = failedPhotos[selectedMapReport.id!];

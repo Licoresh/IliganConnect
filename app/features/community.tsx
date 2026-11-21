@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, Image, Keyboard, Linking, Platform, Pressable, Text, TextInput, View, useWindowDimensions } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { textInputError, SHORT_REASON_LIMIT, characterLimitHint, Lookup, label, consultationPhase, formatMeetingTimeRange, normalizeGoogleMeetUrl } from "@community/shared";
+import { textInputError, SHORT_REASON_LIMIT, characterLimitHint, Lookup, label, consultationPhase, formatMeetingTimeRange, meetingDateInput, normalizeGoogleMeetUrl } from "@community/shared";
 import { db, result } from "../lib/client";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryDescriptionFor, categoryDisplayName, categoryIconFor, categoryToneFor } from "../components/ui";
 import { ListSkeleton } from "../components/loading";
@@ -392,19 +392,27 @@ export function Community({
             const acceptedBarangayInvitations = r.barangayInvitations.filter((invitation) => invitation.status === "accepted").length;
             const waitingBarangayInvitations = r.barangayInvitations.filter((invitation) => invitation.status === "pending").length;
             const joined = r.participants.some((participant) => participant.resident_id === residentId);
+            const meetingDate = r.schedule ? meetingDateInput(r.schedule.starts_at) : "";
+            const hasMeetingDate = !!meetingDate;
+            const meetingDay = hasMeetingDate ? meetingDate.slice(-2) : "";
+            const meetingMonth = hasMeetingDate
+              ? new Intl.DateTimeFormat("en-PH", { month: "short", timeZone: "Asia/Manila" }).format(new Date(r.schedule!.starts_at)).toUpperCase()
+              : "";
             const canJoin = r.participation_mode === "open" && r.status === "approved" && !r.schedule?.completed && (
               r.resident_id === residentId || r.barangay_id === defaultBarangay ||
               r.barangayInvitations.some((invitation) => invitation.barangay_id === defaultBarangay && invitation.status === "accepted")
             );
             return <View style={[s.card, { gap: 14, padding: 18 }]} key={r.id}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: "#edf3fb", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={22} color="#426ca6" /></View>
+                <View accessible accessibilityRole="image" accessibilityLabel={hasMeetingDate ? `Meeting date ${meetingDay} ${meetingMonth}` : "Meeting date not set"} style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: hasMeetingDate ? "#e4f6f1" : "#edf3fb", alignItems: "center", justifyContent: "center", gap: 0 }}>
+                  {hasMeetingDate ? <><Text style={{ color: colors.brandDark, fontSize: 17, lineHeight: 19, fontWeight: "800" }}>{meetingDay}</Text><Text style={{ color: colors.brand, fontSize: 9, lineHeight: 12, fontWeight: "800", letterSpacing: 0.7 }}>{meetingMonth}</Text></> : <Ionicons name="calendar-outline" size={22} color="#426ca6" />}
+                </View>
                 <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Text style={[s.eyebrow, { marginBottom: 0 }]}>MEETING REQUEST</Text><View style={{ alignSelf: "flex-start", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 4, backgroundColor: state.background }}><Text style={{ color: state.foreground, fontSize: 11, lineHeight: 15, fontWeight: "700" }}>{state.label}</Text></View></View>
                 <Ionicons name={expandedMeeting === r.id ? "chevron-up" : "chevron-forward"} size={18} color={colors.muted} />
               </View>
               <Text style={[s.title, { fontSize: 18, lineHeight: 24 }]}>{r.title}</Text>
               <View style={{ alignSelf: "flex-start", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: r.participation_mode === "open" ? "#e4f6ef" : "#f0f3f6" }}><Text style={{ color: r.participation_mode === "open" ? "#146f50" : colors.muted, fontSize: 11, fontWeight: "800" }}>{r.participation_mode === "open" ? "OPEN TO JOIN" : "CLOSED MEETING"}</Text></View>
-              {r.is_sample && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 11, borderRadius: 13, borderWidth: 1, borderColor: "#d6eee8", backgroundColor: "#f0faf7" }}><Ionicons name="information-circle-outline" size={18} color={colors.brand} style={{ marginTop: 1 }} /><View style={{ flex: 1, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 12, lineHeight: 16, fontWeight: "800" }}>Sample meeting · safe to try</Text><Text style={[s.small, { lineHeight: 17 }]}>Join to see the participant flow, then leave with the same button. This is sample data, not a real event.</Text></View></View>}
+              {r.is_sample && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 11, borderRadius: 13, borderWidth: 1, borderColor: "#d6eee8", backgroundColor: "#f0faf7" }}><Ionicons name="information-circle-outline" size={18} color={colors.brand} style={{ marginTop: 1 }} /><View style={{ flex: 1, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 12, lineHeight: 16, fontWeight: "800" }}>Practice meeting</Text><Text style={[s.small, { lineHeight: 17 }]}>You can try joining and leaving here. This is not an official event.</Text></View></View>}
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}><Ionicons name="location-outline" size={15} color={colors.brand} /><Text style={s.small}>{barangays.find((item) => item.id === r.barangay_id)?.name ?? "Iligan City"}{categoryName ? ` · ${categoryName}` : ""}</Text></View>
               <Text style={[s.small, { color: colors.brandDark }]}>{state.detail}</Text>
               {!!r.schedule && <View style={{ flexDirection: "row", alignItems: "center", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f0f8f6" }}><Ionicons name="calendar-outline" size={16} color={colors.brand} /><Text style={[s.small, { flex: 1, color: colors.brandDark, fontWeight: "700" }]}>{formatMeetingTimeRange(r.schedule.starts_at, r.schedule.ends_at)}</Text></View>}
@@ -415,9 +423,9 @@ export function Community({
                 <Text style={{ color: colors.brandDark, fontSize: 12, fontWeight: "800" }}>Participants ({r.participants[0].participant_count})</Text>
                 <Text style={s.small}>{r.participants.slice(0, 5).map((participant) => participant.resident_name).join(", ")}{r.participants[0].participant_count > 5 ? ` and ${r.participants[0].participant_count - 5} more` : ""}</Text>
               </View>}
-              {canJoin && <Button secondary disabled={busy} title={joined ? (r.is_sample ? "Joined sample · Leave meeting" : "Joined · Leave meeting") : (r.is_sample ? "Join sample meeting" : "Join open meeting")} onPress={() => void save(
+              {canJoin && <Button secondary disabled={busy} title={joined ? "Joined · Leave meeting" : "Join open meeting"} onPress={() => void save(
                 joined ? db!.rpc("leave_meeting_request", { p_request: r.id }) : db!.rpc("join_meeting_request", { p_request: r.id }),
-                joined ? (r.is_sample ? "You left the sample meeting." : "You left this meeting.") : (r.is_sample ? "You joined the sample meeting. Use the same button to leave when you’re done." : "You joined this meeting. Meeting updates will be sent to your notifications."),
+                joined ? (r.is_sample ? "You left this practice meeting." : "You left this meeting.") : (r.is_sample ? "You joined this practice meeting. Use the same button to leave when you’re done." : "You joined this meeting. Meeting updates will be sent to your notifications."),
                 "We couldn’t update your participation. Please try again.",
               )} />}
               {r.participation_mode === "open" && r.status !== "approved" && <Text style={s.small}>Residents can join after the meeting request is approved.</Text>}

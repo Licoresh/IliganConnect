@@ -1214,6 +1214,7 @@ function Meeting({
   const [meetingInputErrorMode, setMeetingInputErrorMode] = useState<MeetingInputErrorMode>("save");
   const [venueType, setVenueType] = useState<"venue" | "online">("venue");
   const [barangayInvite, setBarangayInvite] = useState("");
+  const [barangayInviteOpen, setBarangayInviteOpen] = useState(false);
   const q = useQuery({
     queryKey: ["meeting", row.id],
     queryFn: async () => {
@@ -1306,28 +1307,6 @@ function Meeting({
           <span className="meeting-section-icon"><Users size={20} /></span>
           <div><h3>{row.participation_mode === "open" ? "Open meeting participation" : "Closed meeting"}</h3><p>{row.participation_mode === "open" ? "Residents can join after approval. Cross-barangay residents need an accepted barangay invitation." : "This meeting is limited to the organizer and barangay staff."}</p></div>
         </div>
-        {canRespondToBarangayInvitation && <div className="meeting-barangay-invitation-response">
-          <p>Your barangay has been invited to this open meeting. Accepting will let residents in your barangay join.</p>
-          <div className="meeting-form-actions">
-            <button type="button" disabled={busy} onClick={() => void run(db!.rpc("respond_meeting_barangay_invitation", { p_request: row.id, p_barangay: profileBarangayId, p_accept: true }))}>{busy ? "Saving…" : "Accept invitation"}</button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => void run(db!.rpc("respond_meeting_barangay_invitation", { p_request: row.id, p_barangay: profileBarangayId, p_accept: false }))}>Decline</button>
-          </div>
-        </div>}
-        {!!barangayInvitations.length && <div className="meeting-office-invitations" aria-live="polite">
-          {barangayInvitations.map((invitation) => <span className={`meeting-invitation-status ${invitation.status}`} key={invitation.barangay_id}>
-            <strong>{refs.barangays.find((item) => item.id === invitation.barangay_id)?.name ?? "Invited barangay"}</strong>
-            <span>{invitation.status === "pending" ? "Reply needed" : label(invitation.status)}</span>
-          </span>)}
-        </div>}
-        {canInvite && row.participation_mode === "open" && requestOpen && availableBarangays.length > 0 && <form className="meeting-form" onSubmit={(event) => {
-          event.preventDefault();
-          if (!barangayInvite) return;
-          void run(db!.rpc("invite_meeting_barangay", { p_request: row.id, p_barangay: barangayInvite })).then((saved) => { if (saved) setBarangayInvite(""); });
-        }}>
-          <label className="meeting-field"><span>Invite another barangay</span><select value={barangayInvite} required onChange={(event) => setBarangayInvite(event.target.value)}><option value="">Choose a barangay</option>{availableBarangays.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          <div className="meeting-form-actions"><button type="submit" disabled={busy || !barangayInvite}>{busy ? "Sending…" : "Send invitation"}</button></div>
-        </form>}
-        {canInvite && row.participation_mode === "open" && requestOpen && !availableBarangays.length && <p className="meeting-feedback">Every other barangay has already been invited.</p>}
       </section>
 
       {(row.report_id || row.decision_reason) && (
@@ -1492,6 +1471,53 @@ function Meeting({
               <button disabled={busy || !availableOrganizations.length}><Plus size={17} /> Invite office</button>
             </form>}
           </section>
+      )}
+
+      {q.data && (barangayInvitations.length > 0 || canInvite && requestOpen) && (
+        <section className="meeting-section meeting-barangay-invitations">
+          <div className="meeting-section-heading">
+            <span className="meeting-section-icon"><MapPin size={20} /></span>
+            <div><h3>{canInvite ? "Barangay invitations" : "Your barangay invitation"}</h3><p>{canInvite
+              ? "Invite another barangay separately from participating offices. Invited staff can respond to the meeting invitation."
+              : "Review and respond to the invitation sent to your barangay."}</p></div>
+          </div>
+          {!!barangayInvitations.length && <div className="meeting-office-invitations" aria-live="polite">
+            {barangayInvitations.map((invitation) => <span className={`meeting-invitation-status ${invitation.status}`} key={invitation.barangay_id}>
+              <strong>{refs.barangays.find((item) => item.id === invitation.barangay_id)?.name ?? "Invited barangay"}</strong>
+              <span>{invitation.status === "pending" ? "Reply needed" : label(invitation.status)}</span>
+            </span>)}
+          </div>}
+          {canRespondToBarangayInvitation && <div className="meeting-barangay-invitation-response">
+            <p>Your barangay has been invited. Accept to confirm staff participation. Residents can join only when the meeting is open.</p>
+            <div className="meeting-form-actions">
+              <button type="button" disabled={busy} onClick={() => void run(db!.rpc("respond_meeting_barangay_invitation", { p_request: row.id, p_barangay: profileBarangayId, p_accept: true }))}>{busy ? "Saving…" : "Accept invitation"}</button>
+              <button type="button" className="secondary" disabled={busy} onClick={() => void run(db!.rpc("respond_meeting_barangay_invitation", { p_request: row.id, p_barangay: profileBarangayId, p_accept: false }))}>Decline</button>
+            </div>
+          </div>}
+          {canInvite && requestOpen && availableBarangays.length > 0 && <>
+            <button
+              type="button"
+              className="meeting-invite-barangay-trigger"
+              aria-expanded={barangayInviteOpen}
+              aria-controls={`meeting-barangay-invite-${row.id}`}
+              onClick={() => { setBarangayInvite(""); setBarangayInviteOpen((open) => !open); }}
+            >
+              {barangayInviteOpen ? <X size={16} /> : <Plus size={16} />}
+              {barangayInviteOpen ? "Cancel invitation" : "Invite another barangay"}
+            </button>
+            {barangayInviteOpen && <form id={`meeting-barangay-invite-${row.id}`} className="meeting-form meeting-barangay-invite-form" onSubmit={(event) => {
+              event.preventDefault();
+              if (!barangayInvite) return;
+              void run(db!.rpc("invite_meeting_barangay", { p_request: row.id, p_barangay: barangayInvite })).then((saved) => {
+                if (saved) { setBarangayInvite(""); setBarangayInviteOpen(false); }
+              });
+            }}>
+              <label className="meeting-field"><span>Barangay to invite</span><select value={barangayInvite} required onChange={(event) => setBarangayInvite(event.target.value)}><option value="">Choose a barangay</option>{availableBarangays.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+              <div className="meeting-form-actions"><button type="submit" disabled={busy || !barangayInvite}>{busy ? "Sending…" : "Send invitation"}</button></div>
+            </form>}
+          </>}
+          {canInvite && requestOpen && !availableBarangays.length && <p className="meeting-empty">Every other barangay has already been invited.</p>}
+        </section>
       )}
 
       {meeting && (

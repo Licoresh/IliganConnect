@@ -3654,6 +3654,9 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-form { display: grid; min-width: 0; gap: 12px; margin: 0; }
 .meeting-barangay-invitation-response { display: grid; gap: 10px; padding: 12px; border: 1px solid #d8ebe6; border-radius: 10px; background: #f4faf8; }
 .meeting-barangay-invitation-response p { margin: 0; color: #38596a; font-size: 12px; line-height: 1.5; }
+.meeting-invite-barangay-trigger { display: inline-flex; min-height: 40px; width: fit-content; align-items: center; justify-content: center; gap: 7px; padding: 8px 13px; border: 1px solid #b8ddd7; border-radius: 9px; background: #f0f9f7; color: var(--brand-hover); font-size: 12px; font-weight: 700; }
+.meeting-invite-barangay-trigger:hover { border-color: var(--brand); background: #e6f5f1; }
+.meeting-barangay-invite-form { max-width: 560px; padding: 12px; border: 1px solid #e0ebe9; border-radius: 10px; background: #fbfdfc; }
 .meeting-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 .meeting-time-range { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 9px; }
 .meeting-time-separator { padding-bottom: 12px; color: var(--muted); font-size: 12px; font-weight: 600; }
@@ -3749,6 +3752,8 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
   .meeting-mode-option small { font-size: 9px; }
   .meeting-field { font-size: 11px; }
   .meeting-field input, .meeting-field select, .meeting-field textarea { min-height: 41px; padding: 9px 10px; font-size: 12px; }
+  .meeting-invite-barangay-trigger { width: 100%; min-height: 44px; }
+  .meeting-barangay-invite-form { max-width: none; padding: 10px; }
   .meeting-details-form .meeting-field :is(input, select, textarea) { font-size: 16px; }
   .meeting-field textarea { min-height: 76px; }
   .meeting-add-office { grid-template-columns: 1fr; }

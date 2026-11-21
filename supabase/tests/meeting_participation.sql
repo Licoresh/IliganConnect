@@ -214,12 +214,32 @@ begin
   exception when insufficient_privilege then rejected := true;
   end;
   assert rejected, 'Resident joined a closed meeting';
+  perform public.invite_meeting_barangay(v_closed_request_id, invited_barangay);
+  assert exists (select 1 from public.meeting_request_barangays
+    where request_id = v_closed_request_id and barangay_id = invited_barangay and status = 'pending'),
+    'Closed meeting invitation was not created';
+  reset role;
+
+  perform set_config('request.jwt.claim.sub', invited_barangay_staff::text, true);
+  set local role authenticated;
+  assert exists (select 1 from public.meeting_requests where id = v_closed_request_id),
+    'Invited barangay staff cannot view the closed meeting';
+  perform public.respond_meeting_barangay_invitation(v_closed_request_id, invited_barangay, true);
+  assert exists (select 1 from public.meeting_request_barangays
+    where request_id = v_closed_request_id and barangay_id = invited_barangay and status = 'accepted'),
+    'Invited barangay staff could not accept a closed meeting';
+  reset role;
+
+  perform set_config('request.jwt.claim.sub', invited_resident::text, true);
+  set local role authenticated;
+  assert not exists (select 1 from public.meeting_requests where id = v_closed_request_id),
+    'Invited barangay residents can see a closed meeting';
   rejected := false;
   begin
-    perform public.invite_meeting_barangay(v_closed_request_id, invited_barangay);
-  exception when check_violation then rejected := true;
+    perform public.join_meeting_request(v_closed_request_id);
+  exception when insufficient_privilege then rejected := true;
   end;
-  assert rejected, 'A closed meeting invited another barangay';
+  assert rejected, 'An invited resident joined a closed meeting';
   reset role;
 
   assert exists (select 1 from public.notifications
@@ -230,6 +250,14 @@ begin
     where user_id = meeting_barangay_staff and meeting_request_id = v_request_id
       and title = 'A resident joined an open community meeting'),
     'Meeting barangay did not receive the participant notification';
+  assert exists (select 1 from public.notifications
+    where user_id = invited_barangay_staff and meeting_request_id = v_closed_request_id
+      and title = 'Your barangay was invited to a community meeting'),
+    'Invited barangay staff did not receive a closed meeting invitation notification';
+  assert exists (select 1 from public.notifications
+    where user_id = local_resident and meeting_request_id = v_closed_request_id
+      and title = 'A barangay accepted the invitation to your meeting'),
+    'Organizer did not receive the closed meeting acceptance notification';
   assert exists (select 1 from public.notifications
     where user_id = invited_resident and meeting_request_id = v_request_id
       and title = 'An open community meeting has a new update'),

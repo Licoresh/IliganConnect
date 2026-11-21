@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapView, { Callout, Marker, Polygon, type Region } from "react-native-maps";
 import { Pressable, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -262,6 +262,10 @@ export default function LocationMap({
       longitudeDelta: Math.max(0.002, current.longitudeDelta / factor),
     }, 320);
   };
+  const focusPoint = useCallback((selected: Point) => {
+    map.current?.animateToRegion({ ...selected, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 250);
+    onPointPress?.(selected);
+  }, [onPointPress]);
   useEffect(() => {
     if (bounds) map.current?.setMapBoundaries(bounds.northEast, bounds.southWest);
   }, [bounds]);
@@ -334,7 +338,7 @@ export default function LocationMap({
           <View style={{ minWidth: 38, height: 38, paddingHorizontal: 5, borderRadius: 20, borderWidth: 2.5, borderColor: "white", backgroundColor: cluster.color, alignItems: "center", justifyContent: "center", shadowColor: "#10263f", shadowOpacity: 0.24, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 5 }}><Text style={{ color: "white", fontSize: cluster.count > 99 ? 10 : 12, fontWeight: "900" }}>{cluster.count.toLocaleString("en-PH")}</Text></View>
         </Marker>)}
         {showPoints && !showBarangayBoundaries && (zoomBehavior === "issue-map" || zoomLevel >= INDIVIDUAL_REPORT_PIN_ZOOM) && reportPoints.map((p, i) => (
-          <ReportPin key={p.id || i} {...p} selected={p.id === selectedPointId} onPointPress={onPointPress} />
+          <ReportPin key={p.id || i} {...p} selected={p.id === selectedPointId} onPointPress={focusPoint} />
         ))}
       </MapView>
       {mapStyleSelector === "tabs" ? <View style={{ position: "absolute", left: 9, top: 9, flexDirection: "row", alignItems: "center", gap: 2, padding: 4, borderRadius: 23, backgroundColor: "#ffffffed", elevation: 3 }}>

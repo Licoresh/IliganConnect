@@ -267,7 +267,10 @@ export default function LocationMap({
           hover.append(sub);
         }
         pin.append(hover);
-        pin.addEventListener("click", () => pointPress.current?.(p));
+        pin.addEventListener("click", () => {
+          map.current?.easeTo({ center: [p.longitude, p.latitude], zoom: Math.max(map.current.getZoom(), 14), duration: 300 });
+          pointPress.current?.(p);
+        });
       }
       const marker = new maplibre.Marker({ element: pin, anchor: "bottom", draggable: p === point && !!onChoose })
         .setLngLat([p.longitude, p.latitude])
@@ -440,11 +443,10 @@ export default function LocationMap({
   useEffect(() => {
     if (!ready || !map.current) return;
     if (point) map.current.easeTo({ center: [point.longitude, point.latitude] });
-    else if (userPoint) map.current.easeTo({ center: [userPoint.longitude, userPoint.latitude], zoom: 13 });
     else if (selectedPointId) {
       const selected = points.find((p) => p.id === selectedPointId);
       if (selected) map.current.easeTo({ center: [selected.longitude, selected.latitude], zoom: 14, duration: 250 });
-    }
+    } else if (userPoint) map.current.easeTo({ center: [userPoint.longitude, userPoint.latitude], zoom: 13 });
   }, [point?.latitude, point?.longitude, pointsKey, ready, userPoint?.latitude, userPoint?.longitude, selectedPointId]);
   return (
     <>

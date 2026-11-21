@@ -866,6 +866,7 @@ export default function IssueMap({
       m.on("click", "points", (e) => {
         const f = e.features?.[0];
         if (!f || f.geometry.type !== "Point") return;
+        m.easeTo({ center: e.lngLat, zoom: Math.max(m.getZoom(), 14), duration: 350 });
         const node = document.createElement("article");
         node.className = "map-popup-card";
         const { header, handle } = createPopupHeader("COMMUNITY REPORT");

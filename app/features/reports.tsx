@@ -1442,7 +1442,7 @@ export function Explore({
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
               <Ionicons name={icon} size={desktopExplore ? 17 : 19} color={active ? desktopExplore ? colors.brand : "white" : desktopExplore ? colors.muted : colors.brand} />
-              <Text numberOfLines={1} style={{ color: active ? colors.brand : desktopExplore ? colors.muted : colors.brandDark, fontSize: 12, fontWeight: active ? "800" : "600" }}>{title}</Text>
+              <Text numberOfLines={1} style={{ color: active ? desktopExplore ? colors.brand : "white" : desktopExplore ? colors.muted : colors.brandDark, fontSize: 12, fontWeight: active ? "800" : "600" }}>{title}</Text>
             </View>
           </Pressable>;
         })}

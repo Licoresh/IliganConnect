@@ -452,9 +452,9 @@ export default function Home() {
                 active && variant !== "desktop" && s.navActionActive,
                 variant !== "mobile" && { width: 30, height: 30, marginTop: 0, marginBottom: 0, borderRadius: 15, shadowOpacity: 0, elevation: 0 },
                 variant === "tablet" && { width: 34, height: 34, borderRadius: 17 },
-                variant === "desktop" && { backgroundColor: desktopHighlighted ? "#ffffff26" : "transparent", shadowOpacity: 0 },
+                variant === "desktop" && { width: 20, height: 20, borderRadius: 10, backgroundColor: desktopHighlighted ? "#ffffff26" : "transparent", shadowOpacity: 0 },
               ]}>
-                <Ionicons name={icon} size={variant === "desktop" ? 18 : 22} color={variant === "desktop" ? desktopHighlighted ? "white" : "#60777c" : "white"} />
+                <Ionicons name={icon} size={variant === "desktop" ? 20 : 22} color={variant === "desktop" ? desktopHighlighted ? "white" : "#60777c" : "white"} />
               </View>
             ) : (
             <Ionicons name={icon} size={variant === "desktop" ? 20 : 22} color={variant === "desktop" ? desktopHighlighted ? "white" : "#60777c" : active ? colors.brand : colors.muted} />
@@ -477,11 +477,11 @@ export default function Home() {
     <SafeAreaView style={s.screen}>
       <View style={{ width: "100%", borderBottomWidth: 1, borderColor: colors.line, backgroundColor: "white" }}>
       <View style={{
-        paddingHorizontal: desktopWeb ? 32 : tabletWeb ? (viewportWidth < 840 ? 16 : 20) : 18,
+        paddingHorizontal: desktopWeb ? 24 : tabletWeb ? (viewportWidth < 840 ? 16 : 20) : 18,
         paddingVertical: 8,
         minHeight: desktopWeb ? 68 : tabletWeb ? (compactTablet ? 58 : 64) : 58,
         width: "100%",
-        maxWidth: desktopWeb ? 1600 : tabletWeb ? tabletContentMaxWidth : undefined,
+        maxWidth: desktopWeb ? undefined : tabletWeb ? tabletContentMaxWidth : undefined,
         alignSelf: "center",
         flexDirection: "row",
         justifyContent: "space-between",

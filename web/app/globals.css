@@ -247,9 +247,6 @@ form button {
   max-width: 470px;
   color: #bdcfce;
 }
-.login-story .eyebrow {
-  color: #79ceb9;
-}
 .story-line {
   display: flex;
   flex-wrap: wrap;
@@ -377,7 +374,7 @@ form button {
 .sidebar nav button.active {
   background: #264b48;
   color: #fff;
-  box-shadow: inset 3px 0 #77d3ba;
+  font-weight: 700;
 }
 .sidebar-footer {
   margin-top: auto;
@@ -1027,10 +1024,6 @@ tbody tr:hover,
   margin: 14px 0;
   background: #fbfcfa;
 }
-.reply {
-  margin-left: 24px;
-  border-left: 3px solid #c6a451;
-}
 .inline-form {
   display: flex;
   flex-wrap: wrap;
@@ -1117,9 +1110,6 @@ pre {
   }
   .modal > .panel-heading {
     top: -20px;
-  }
-  .reply {
-    margin-left: 10px;
   }
   .inline-form {
     width: 100%;
@@ -1223,9 +1213,9 @@ main,
   display: grid;
   gap: 4px;
   padding: 13px 16px;
-  border-left: 3px solid var(--brand);
+  border: 1px solid #e6d9d1;
   background: #f5eeea;
-  border-radius: 0 6px 6px 0;
+  border-radius: 10px;
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -1440,8 +1430,8 @@ main,
 .report-button:hover { background: #f6f9f7; }
 .report-workspace { padding: 0; overflow: hidden; }
 .queue-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--line); padding: 12px 24px 0; overflow-x: auto; }
-.queue-tabs button { background: transparent; color: var(--muted); border-radius: 0; border: 0; border-bottom: 3px solid transparent; white-space: nowrap; padding: 14px 10px; font-size: 13px; }
-.queue-tabs button.active { color: var(--brand); border-bottom-color: var(--brand); }
+.queue-tabs button { background: transparent; color: var(--muted); border-radius: 0; border: 0; white-space: nowrap; padding: 14px 10px; font-size: 13px; }
+.queue-tabs button.active { color: var(--brand); }
 .routing-guidance-empty { border: 1px dashed #b8ccc5; border-radius: 10px; background: var(--warm-surface); padding: 16px; color: var(--ink); font-size: 13px; line-height: 1.55; }
 .routing-guidance-empty p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
 .detail .route-warning { margin: 0; padding: 14px; font-size: 13px; }
@@ -1564,7 +1554,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--brand); outline:
 .nav-group .nav-caption { margin: 12px 10px 5px; color: #d8c2a5; font-size: 9px; letter-spacing: 1.35px; }
 .sidebar nav button { min-height: 44px; padding: 10px 12px; border-radius: 11px; color: #dbe9e9; font-size: 12px; font-weight: 550; }
 .sidebar nav button:hover:not(:disabled) { transform: none; background: #ffffff10; color: #fff; box-shadow: none; }
-.sidebar nav button.active { background: #194a52; color: #fff; box-shadow: inset 3px 0 #52c8b6; }
+.sidebar nav button.active { background: #194a52; color: #fff; font-weight: 700; }
 .sidebar nav button.active svg { color: #75dfce; }
 .sidebar-footer { margin-top: auto; padding: 15px 4px 0; gap: 10px; border-top-color: #ffffff18; }
 .sidebar-footer > div strong { color: #f2f8f8; font-size: 12px; }
@@ -2960,14 +2950,14 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .discussion-section-heading h3 { margin: 3px 0 0; color: var(--ink); font-size: 16px; }
 .discussion-count { color: var(--muted); font-size: 10px; }
 .discussion-comment { min-width: 0; margin: 0; padding: 15px; border-color: #e4edef; border-radius: 14px; background: #fff; box-shadow: 0 3px 12px var(--ink)08; }
-.discussion-comment.reply { margin-left: 24px; border-left: 3px solid #a8ded5; }
+.discussion-comment.reply { margin-left: 24px; border-color: #d2e8e2; background: #f7fbfa; }
 .discussion-comment-head { display: flex; align-items: center; gap: 10px; }
 .discussion-author-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 12px; background: #edf3fb; color: #4a6b93; }
 .discussion-author-icon.official { background: var(--brand-soft); color: var(--brand); }
 .discussion-comment-meta { display: flex; min-width: 0; flex: 1; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 7px; }
 .discussion-comment-meta > div { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .discussion-comment-meta time { color: var(--muted); font-size: 10px; }
-.discussion-reply-context { margin: 12px 0 0; padding: 8px 10px; border-left: 2px solid #c6a451; border-radius: 0 8px 8px 0; background: #f4faf9; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.discussion-reply-context { margin: 12px 0 0; padding: 8px 10px; border: 1px solid #d3e8e3; border-radius: 8px; background: #f4faf9; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .discussion-comment-body { margin: 12px 0; color: #2c4860; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
 .discussion-flag { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: #fff3ef; color: #a64639; font-size: 11px; }
 .discussion-comment-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 10px; border-top: 1px solid #eff3f4; }
@@ -2992,7 +2982,7 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .discussion-compose-heading { display: flex; align-items: center; gap: 11px; }
 .discussion-compose-icon { width: 40px; height: 40px; border-radius: 12px; }
 .discussion-compose-heading p { margin: 3px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
-.discussion-replying { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-left: 3px solid #0a9488; border-radius: 0 9px 9px 0; background: #eaf6f2; color: #516f83; font-size: 11px; }
+.discussion-replying { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border: 1px solid #cce5df; border-radius: 9px; background: #eaf6f2; color: #516f83; font-size: 11px; }
 .discussion-replying > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .discussion-compose-form, .discussion-outcome-form form { display: grid; gap: 11px; }
 .discussion-compose-form label, .discussion-outcome-form label { display: grid; gap: 7px; color: var(--ink); font-size: 11px; font-weight: 650; }
@@ -3545,14 +3535,14 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .discussion-count svg { color: #173c5e; }
 .discussion-comment { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: start; gap: 0 14px; padding: 15px 17px; border-radius: 13px; box-shadow: none; }
 .discussion-comment.reply { margin-left: 0; }
-.discussion-comment.official { border-left: 4px solid #73d8c9; padding-left: 14px; background: linear-gradient(90deg, #fbfefd, #fff 48%); }
+.discussion-comment.official { border: 1px solid #cde8e2; padding: 15px 16px; background: #f8fcfb; }
 .discussion-author-icon { width: 52px; height: 52px; border-radius: 14px; }
 .discussion-comment-content { min-width: 0; }
 .discussion-comment-meta { align-items: flex-start; }
 .discussion-comment-meta time { font-size: 12px; }
 .discussion-comment-meta .badge { min-height: 30px; padding: 6px 12px; border-radius: 18px; font-size: 12px; }
 .discussion-comment-body { margin: 10px 0; font-size: 14px; line-height: 1.55; }
-.discussion-reply-context { margin-top: 9px; padding: 9px 11px; border: 0; border-left: 3px solid #67cabb; border-radius: 0 8px 8px 0; background: #eff9f7; font-size: 12px; }
+.discussion-reply-context { margin-top: 9px; padding: 9px 11px; border: 1px solid #d3e8e3; border-radius: 8px; background: #eff9f7; font-size: 12px; }
 .discussion-flag { display: flex; align-items: center; gap: 10px; margin: 8px 0; padding: 10px 12px; border: 1px solid #ffdfdc; border-radius: 9px; background: #fff2f1; color: #c43b35; font-size: 13px; }
 .discussion-flag svg { flex: 0 0 auto; }
 .discussion-comment-actions { display: grid; grid-template-columns: auto minmax(220px, 1fr) auto; align-items: end; gap: 8px 12px; padding-top: 8px; border-top: 0; }
@@ -3633,6 +3623,7 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-office-view-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--brand); }
 .meeting-section { display: grid; min-width: 0; gap: 12px; padding: 15px 16px; border: 1px solid #e1ebe8; border-radius: 13px; background: #fff; }
 .meeting-overview { grid-template-columns: minmax(0, 1.15fr) minmax(245px, .85fr); align-items: center; gap: 18px; background: linear-gradient(110deg, #f7fafb, #fff); }
+.meeting-overview-heading { grid-column: 1 / -1; }
 .meeting-overview-main { min-width: 0; }
 .meeting-overview-main p { margin: 9px 0 0; color: #294662; font-size: 14px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
 .meeting-detail-status { display: inline-flex; min-height: 27px; align-items: center; padding: 5px 11px; border-radius: 999px; background: #e9f1f7; color: #33546e; font-size: 12px; font-weight: 700; }
@@ -3647,7 +3638,11 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-section-icon.is-blue { background: #eaf3ff; color: #2477d3; }
 .meeting-section-heading h3 { margin: 0; color: var(--ink); font-size: 16px; font-weight: 750; line-height: 1.35; }
 .meeting-section-heading p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
-.meeting-context-note { margin: 0; padding: 12px 14px; border-left: 3px solid #69cabb; border-radius: 0 9px 9px 0; background: #f0f9f7; color: #294662; font-size: 13px; line-height: 1.5; }
+.meeting-workflow-heading { display: grid; gap: 3px; padding: 2px 2px 1px; }
+.meeting-workflow-heading h3 { margin: 0; color: var(--ink); font-size: 17px; font-weight: 750; line-height: 1.35; }
+.meeting-workflow-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.meeting-invitations-group { display: grid; min-width: 0; gap: 8px; }
+.meeting-context-note { margin: 0; padding: 12px 14px; border: 1px solid #cfe6e1; border-radius: 9px; background: #f0f9f7; color: #294662; font-size: 13px; line-height: 1.5; }
 .meeting-report-id { display: grid; grid-template-columns: 85px minmax(0, 1fr); align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid #e0eaee; border-radius: 9px; }
 .meeting-report-id span { color: #6b8298; font-size: 11px; }
 .meeting-report-id code { min-width: 0; color: #193954; font-size: 12px; overflow-wrap: anywhere; }
@@ -3685,9 +3680,11 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-field textarea { min-height: 82px; resize: vertical; line-height: 1.5; }
 .meeting-field :is(input, select, textarea):focus { border-color: var(--brand-hover); outline: 3px solid #7a2a481a; }
 .meeting-completed { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border: 1px solid #dfe9ed; border-radius: 10px; background: var(--warm-surface); cursor: pointer; }
-.meeting-details-form > .meeting-form-section { display: grid; gap: 13px; padding: 15px; border: 1px solid #e1eaee; border-radius: 14px; background: #fff; }
+.meeting-details-form { gap: 0; }
+.meeting-details-heading { padding-bottom: 14px; }
+.meeting-details-form > .meeting-form-section { display: grid; gap: 13px; padding: 15px 0; border: 0; border-top: 1px solid #e1eaee; border-radius: 0; background: transparent; }
 .meeting-details-form > .meeting-form-section .meeting-section-heading { margin: 0; }
-.meeting-form-completion { background: #f8fbfa !important; }
+.meeting-form-completion { background: transparent !important; }
 .meeting-form-completion > div { display: grid; gap: 4px; }
 .meeting-form-completion > div h3 { margin: 0; color: var(--ink); font-size: 14px; }
 .meeting-form-completion > div p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
@@ -3698,6 +3695,7 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-calendar-help { display: flex; min-width: 0; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid #dcebe8; border-radius: 9px; background: #f7fbfa; color: #5e7887; font-size: 11px; line-height: 1.5; }
 .meeting-calendar-help svg { flex: 0 0 auto; margin-top: 1px; color: var(--brand); }
 .meeting-form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.meeting-details-form > .meeting-form-actions { padding-top: 13px; border-top: 1px solid #e1eaee; }
 .meeting-form-actions button, .meeting-add-office > button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 7px; padding: 9px 15px; border-radius: 9px; font-size: 12px; }
 .meeting-feedback { margin: 0; padding: 10px 12px; border-radius: 9px; background: #f0f8f7; color: #087b70; font-size: 12px; }
 .meeting-feedback.error { background: #fff1f0; color: #b73733; }
@@ -4555,9 +4553,17 @@ main#main, main#main.overview-main, main#main.reports-main { width: 100%; max-wi
  .administration-navigation button { justify-content: flex-start; min-height: 46px; gap: 8px; padding: 10px 12px; font-size: 14px; }
 }
 @media (max-width: 600px) {
- .administration-navigation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 16px; }
- .administration-navigation button { padding: 10px 8px; font-size: 13px; }
+ .organization-navigation.administration-navigation { display: flex; flex-wrap: nowrap; width: 100%; gap: 4px; margin-bottom: 16px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x proximity; scrollbar-color: #9cbeb7 transparent; scrollbar-width: thin; }
+ .administration-navigation button { flex: 0 0 auto; min-width: max-content; padding: 10px 12px; scroll-snap-align: start; white-space: nowrap; }
+ .administration-navigation::-webkit-scrollbar { height: 4px; }
+ .administration-navigation::-webkit-scrollbar-thumb { border-radius: 4px; background: #9cbeb7; }
  .administration-navigation svg { width: 16px; height: 16px; flex: 0 0 16px; }
+ .organization-section-heading { flex-wrap: wrap; }
+ .management-section-count { margin-left: 0; }
+ .administration-account-grid, .administration-configuration-grid { gap: 14px; }
+ .administration-account-management, .administration-category-panel, .administration-assessment-panel { gap: 13px; padding: 15px; }
+ .administration-audit-heading { display: grid; gap: 14px; }
+ .administration-audit-heading > label { width: 100%; max-width: none; flex: 1 1 auto; }
  .organization-directory > .organization-section-heading { display: grid; grid-template-columns: 42px minmax(0, 1fr); }
  .management-section-count { grid-column: 2; justify-self: start; margin: 0; }
 }
@@ -4634,7 +4640,7 @@ main#main, main#main.overview-main, main#main.reports-main { width: 100%; max-wi
   .resident-edit-fields .resident-edit-notifications, .resident-edit-fields .resident-edit-reason, .resident-edit-fields > .report-form-hint, .resident-edit-fields > .resident-edit-error { grid-column: 1; }
 }
 @media (max-width: 600px), (max-height: 500px) and (max-width: 1023px) {
-  .modal.resident-edit-dialog { border-radius: 0; }
+  .modal.resident-edit-dialog { inset: 0; width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; }
   .resident-edit-dialog .community-dialog-heading { padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); }
   .resident-edit-dialog .community-dialog-body { padding: 16px max(16px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
   .resident-edit-meta { padding: 13px; }

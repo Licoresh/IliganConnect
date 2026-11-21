@@ -70,8 +70,13 @@ export function Community({
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   const qc = useQueryClient();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const compactMobile = screenWidth < 600;
+  const tabletWeb = Platform.OS === "web" && screenWidth >= 768 && screenWidth < 1200;
+  const compactTablet = tabletWeb && screenHeight < 760;
+  const desktopWeb = Platform.OS === "web" && screenWidth >= 1200;
   const requestSubmission = useRef(false);
+  const categoryPickerAnchorRef = useRef<View>(null);
   function navigateTab(next: string) {
     if (next !== tab) onPageNavigate?.();
     setTab(next);
@@ -334,24 +339,24 @@ export function Community({
       ];
   return (
     <>
-      <View style={{ minHeight: 140, justifyContent: "center", overflow: "hidden", paddingHorizontal: 18, paddingVertical: 18, borderRadius: 24, borderWidth: 1, borderColor: "#dcece8", backgroundColor: "#edf8f5" }}>
+      {!desktopWeb && <View style={{ minHeight: tabletWeb ? compactTablet ? 112 : 124 : 140, justifyContent: "center", overflow: "hidden", paddingHorizontal: tabletWeb ? 15 : 18, paddingVertical: tabletWeb ? 12 : 18, borderRadius: tabletWeb ? 20 : 24, borderWidth: 1, borderColor: "#dcece8", backgroundColor: "#edf8f5" }}>
         <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={{ position: "absolute", right: 0, bottom: 0, width: "100%", height: "100%", opacity: 0.78 }}>
           <Image source={require("../assets/iligan-community-profile-header.jpg")} resizeMode="cover" resizeMethod="resize" style={{ width: "100%", height: "100%" }} />
         </View>
         <View pointerEvents="none" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "70%", backgroundColor: "#ffffff35" }} />
-        <Text accessibilityRole="header" style={[s.heading, { maxWidth: 270, fontSize: 32, lineHeight: 39, marginBottom: 8 }]}>Community</Text>
-        <Text style={[s.subtitle, { maxWidth: 260, marginBottom: 0, fontSize: 15, lineHeight: 22 }]}>Local conversations, meeting updates, and ways to take part.</Text>
-      </View>
-      <View style={{ minHeight: 92, flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: 22, backgroundColor: "#f1fbf8", borderWidth: 1, borderColor: "#dcefe9" }}>
-        <View style={{ width: 52, height: 52, borderRadius: 18, backgroundColor: "#e2f6f1", alignItems: "center", justifyContent: "center" }}><Ionicons name="people-outline" size={25} color={colors.brand} /></View>
-        <View style={{ flex: 1, gap: 5 }}><Text style={{ color: colors.brandDark, fontSize: 16, lineHeight: 21, fontWeight: "800" }}>Your community, in one place</Text><Text style={[s.small, { fontSize: 13, lineHeight: 19 }]}>Read local updates and help shape what happens next.</Text></View>
-      </View>
-      <View style={{ flexDirection: "row", gap: 5, padding: 5, borderRadius: 20, borderWidth: 1, borderColor: "#e2ebf1", backgroundColor: "white" }}>
+        <Text accessibilityRole="header" style={[s.heading, { maxWidth: 270, fontSize: tabletWeb ? 28 : 32, lineHeight: tabletWeb ? 34 : 39, marginBottom: tabletWeb ? 5 : 8 }]}>Community</Text>
+        <Text style={[s.subtitle, { maxWidth: 260, marginBottom: 0, fontSize: tabletWeb ? 14 : 15, lineHeight: tabletWeb ? 20 : 22 }]}>Local conversations, meeting updates, and ways to take part.</Text>
+      </View>}
+      {!desktopWeb && <View style={{ minHeight: tabletWeb ? compactTablet ? 68 : 76 : 92, flexDirection: "row", alignItems: "center", gap: tabletWeb ? 10 : 14, padding: tabletWeb ? 12 : 16, borderRadius: tabletWeb ? 18 : 22, backgroundColor: "#f1fbf8", borderWidth: 1, borderColor: "#dcefe9" }}>
+        <View style={{ width: tabletWeb ? 44 : 52, height: tabletWeb ? 44 : 52, borderRadius: tabletWeb ? 15 : 18, backgroundColor: "#e2f6f1", alignItems: "center", justifyContent: "center" }}><Ionicons name="people-outline" size={25} color={colors.brand} /></View>
+        <View style={{ flex: 1, gap: 4 }}><Text style={{ color: colors.brandDark, fontSize: tabletWeb ? 15 : 16, lineHeight: tabletWeb ? 19 : 21, fontWeight: "800" }}>Your community, in one place</Text><Text style={[s.small, { fontSize: tabletWeb ? 12 : 13, lineHeight: tabletWeb ? 17 : 19 }]}>Read local updates and help shape what happens next.</Text></View>
+      </View>}
+      <View style={desktopWeb ? { flexDirection: "row", gap: 18, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: "#dfe9e7" } : { flexDirection: "row", gap: tabletWeb ? 4 : 5, padding: tabletWeb ? 4 : 5, borderRadius: tabletWeb ? 17 : 20, borderWidth: 1, borderColor: "#e2ebf1", backgroundColor: "white" }}>
         {communityTabs.map((item) => {
           const active = tab === item.id;
-          return <Pressable key={item.id} accessibilityRole="tab" accessibilityLabel={item.id === "request" ? "Request a meeting" : item.name} accessibilityState={{ selected: active }} onPress={() => navigateTab(item.id)} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 72, paddingHorizontal: 7, paddingVertical: 7, borderRadius: 15, flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, backgroundColor: active ? "#e8f7f3" : "transparent" }, pressed && { opacity: 0.78 }]}>
-            <Ionicons name={item.icon} size={20} color={active ? colors.brand : colors.muted} />
-            <Text style={{ flexShrink: 1, textAlign: "center", color: active ? colors.brand : colors.muted, fontSize: 12, lineHeight: 16, fontWeight: active ? "800" : "600" }}>{item.name}</Text>
+          return <Pressable key={item.id} accessibilityRole="tab" accessibilityLabel={item.id === "request" ? "Request a meeting" : item.name} accessibilityState={{ selected: active }} onPress={() => navigateTab(item.id)} style={({ pressed }) => [desktopWeb ? { minWidth: 130, minHeight: 45, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 10, borderBottomWidth: active ? 2 : 0, borderBottomColor: colors.brand, opacity: pressed ? 0.78 : 1 } : { flex: 1, minWidth: 0, minHeight: tabletWeb ? compactTablet ? 48 : 54 : 72, paddingHorizontal: tabletWeb ? 5 : 7, paddingVertical: tabletWeb ? 5 : 7, borderRadius: tabletWeb ? 13 : 15, flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, backgroundColor: active ? "#e8f7f3" : "transparent", opacity: pressed ? 0.78 : 1 }]}>
+            <Ionicons name={item.icon} size={desktopWeb ? 17 : 20} color={active ? colors.brand : colors.muted} />
+            <Text style={{ flexShrink: 1, textAlign: desktopWeb ? "left" : "center", color: active ? colors.brand : colors.muted, fontSize: desktopWeb ? 12 : 12, lineHeight: 16, fontWeight: active ? "800" : "600" }}>{desktopWeb ? item.name.replace("\n", " ") : item.name}</Text>
           </Pressable>;
         })}
       </View>
@@ -362,39 +367,43 @@ export function Community({
       )}
       {tab === "consultations" && (
         <>
-        <View style={[s.card, { gap: 16, padding: 17 }]}>
-          <View style={{ gap: 10 }}><Text style={[s.fieldLabel, { fontSize: 16 }]}>Find a community update</Text><Field maxLength={200} label="Search topics" placeholder="Search conversations" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
-          <Choices compact title="Filter by barangay" sheetTitle="Choose a barangay" subtitle="See conversations from a specific barangay." items={[{ id: "", name: "All barangays" }, ...barangays]} value={area} onChange={(value) => { setArea(value); setPage(0); }} leadingIcon="location-outline" myBarangayId={defaultBarangay || undefined} />
-          <Choices columns={3} items={[{ id: "all", name: "All topics" }, { id: "open", name: "Open to join" }, { id: "closed", name: "Closed" }]} value={participation} onChange={(value) => { setParticipation(value); setPage(0); }} />
+        <View style={[s.card, desktopWeb ? { flexDirection: "row", alignItems: "flex-end", gap: 14, padding: 14, borderRadius: 12 } : tabletWeb ? { gap: 12, padding: 14, borderRadius: 16 } : { gap: 16, padding: 17 }]}>
+          <View style={desktopWeb ? { flex: 1, minWidth: 260, gap: 7 } : { gap: 10 }}>{!desktopWeb && <Text style={[s.fieldLabel, { fontSize: 16 }]}>Find a community update</Text>}<Field maxLength={200} label="Search topics" placeholder="Search conversations" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
+          <View style={desktopWeb ? { width: 260 } : undefined}><Choices compact title="Filter by barangay" sheetTitle="Choose a barangay" subtitle="See conversations from a specific barangay." items={[{ id: "", name: "All barangays" }, ...barangays]} value={area} onChange={(value) => { setArea(value); setPage(0); }} leadingIcon="location-outline" myBarangayId={defaultBarangay || undefined} /></View>
+          <View style={desktopWeb ? { width: 290 } : undefined}><Choices columns={3} items={[{ id: "all", name: "All topics" }, { id: "open", name: "Open to join" }, { id: "closed", name: "Closed" }]} value={participation} onChange={(value) => { setParticipation(value); setPage(0); }} /></View>
         </View>
         {(search || area || participation !== "all") && <Button secondary title="Clear community filters" onPress={() => { setSearch(""); setArea(""); setParticipation("all"); setPage(0); }} />}
         </>
       )}
-      {tab === "meetings" && <View style={[s.card, { gap: 16, padding: 17 }]}>
-        <View style={{ gap: 10 }}><Text style={[s.fieldLabel, { fontSize: 16 }]}>Find a meeting update</Text><Field maxLength={200} label="Search meetings" placeholder="Search meeting requests" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
-        <View style={{ gap: 10 }}>
-          <View style={{ gap: 3 }}><Text style={s.fieldLabel}>Browse meetings</Text><Text style={s.small}>Choose the list you want to see.</Text></View>
-          <View accessibilityRole="radiogroup" accessibilityLabel="Meeting list" style={{ flexDirection: screenWidth < 460 ? "column" : "row", gap: 9 }}>
+      {tab === "meetings" && <View style={[s.card, desktopWeb ? { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-end", gap: 14, padding: 15, borderRadius: 12 } : tabletWeb ? { gap: 12, padding: 14, borderRadius: 16 } : { gap: 16, padding: 17 }]}>
+        <View style={desktopWeb ? { width: 260, gap: 7 } : { gap: 10 }}>{!desktopWeb && <Text style={[s.fieldLabel, { fontSize: 16 }]}>Find a meeting update</Text>}<Field maxLength={200} label="Search meetings" placeholder="Search meeting requests" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
+        <View style={desktopWeb ? { flex: 1, minWidth: 350, gap: 8 } : { gap: 10 }}>
+          {!desktopWeb && <View style={{ gap: 3 }}><Text style={s.fieldLabel}>Browse meetings</Text>{!compactMobile && <Text style={s.small}>Choose the list you want to see.</Text>}</View>}
+          <View accessibilityRole="radiogroup" accessibilityLabel="Meeting list" style={{ flexDirection: "row", gap: 8 }}>
             {[
               { id: "barangay", name: "Barangay meetings", detail: "Local meetings and accepted invites", icon: "business-outline" as const },
               { id: "yours", name: "Your requests", detail: "Requests you sent to any barangay", icon: "person-outline" as const },
             ].map((option) => {
               const active = meetingScope === option.id;
-              return <Pressable key={option.id} accessibilityRole="radio" accessibilityState={{ checked: active }} onPress={() => { const next = option.id === "yours" ? "yours" : "barangay"; setMeetingScope(next); setMeetingFilter(next === "yours" ? "scheduled" : "open"); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 66, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 15, borderWidth: 1, borderColor: active ? colors.brand : colors.line, backgroundColor: active ? "#eff9f6" : "white" }, pressed && { opacity: 0.82 }]}>
+              return <Pressable key={option.id} accessibilityRole="radio" accessibilityLabel={`${option.name}. ${option.detail}`} accessibilityState={{ checked: active }} onPress={() => { const next = option.id === "yours" ? "yours" : "barangay"; setMeetingScope(next); setMeetingFilter(next === "yours" ? "scheduled" : "open"); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: desktopWeb ? 52 : tabletWeb ? 58 : 66, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 10, paddingVertical: 7, borderRadius: desktopWeb ? 9 : 15, borderWidth: 1, borderColor: active ? colors.brand : colors.line, backgroundColor: active ? "#eff9f6" : "white" }, pressed && { opacity: 0.82 }]}>
                 <View style={{ width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: active ? colors.brandSoft : "#f1f5f7" }}><Ionicons name={option.icon} size={19} color={active ? colors.brand : colors.muted} /></View>
-                <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 17, fontWeight: "800" }}>{option.name}</Text><Text style={[s.small, { fontSize: 11, lineHeight: 15 }]}>{option.detail}</Text></View>
+                <View style={{ flex: 1, minWidth: 0, gap: compactMobile ? 0 : 3 }}><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 17, fontWeight: "800" }}>{option.name}</Text>{!compactMobile && <Text style={[s.small, { fontSize: 11, lineHeight: 15 }]}>{option.detail}</Text>}</View>
                 <Ionicons name={active ? "checkmark-circle" : "ellipse-outline"} size={19} color={active ? colors.brand : colors.line} />
               </Pressable>;
             })}
           </View>
-          <Choices columns={2} title="Filter by status" sheetTitle="Filter meetings" subtitle={meetingScope === "yours" ? "Your requests start with upcoming approved meetings, sorted by date." : "Barangay meetings start with approved open meetings residents can join."} items={meetingFilterItems} value={meetingFilter} onChange={(value) => { setMeetingFilter(value as MeetingFilter); setPage(0); }} />
-          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f5f8fa" }}><Ionicons name="information-circle-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>{meetingScope === "yours" ? meetingFilter === "scheduled" ? "Upcoming approved meetings are ordered by their next scheduled date. Choose another status to review the rest of your requests." : "Your requests include meetings you sent to any barangay. Use the status filter to narrow this list." : meetingFilter === "open" ? "Open meetings are approved and available to join. Accepted invitations from other barangays are included." : "Meetings from your barangay and accepted cross-barangay invitations are included."}</Text></View>
+          <View style={desktopWeb ? { width: 220, gap: 6 } : { gap: 7 }}>
+            <Text style={s.fieldLabel}>Meeting status</Text>
+            <Choices compact title="Meeting status" sheetTitle="Filter meetings" searchable={false} subtitle={meetingScope === "yours" ? "Your requests start with upcoming approved meetings, sorted by date." : "Barangay meetings start with approved open meetings residents can join."} items={meetingFilterItems} value={meetingFilter} onChange={(value) => { setMeetingFilter(value as MeetingFilter); setPage(0); }} />
+          </View>
+          <View style={[{ flexDirection: "row", alignItems: "flex-start", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f5f8fa" }, desktopWeb && { width: "100%" }]}><Ionicons name="information-circle-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>{meetingScope === "yours" ? meetingFilter === "scheduled" ? "Upcoming approved meetings are ordered by their next scheduled date. Choose another status to review the rest of your requests." : "Your requests include meetings you sent to any barangay. Use the status filter to narrow this list." : meetingFilter === "open" ? "Open meetings are approved and available to join. Accepted invitations from other barangays are included." : "Meetings from your barangay and accepted cross-barangay invitations are included."}</Text></View>
         </View>
       </View>}
       {tab !== "request" && q.isPending && <ListSkeleton variant={tab === "consultations" ? "discussion" : "meeting"} count={3} label={`Loading ${tab === "consultations" ? "community discussions" : "meeting requests"}`} />}
       {tab !== "request" && q.error && <View style={s.card}><Text accessibilityRole="alert" style={s.error}>Couldn’t load community updates. Check your connection and try again.</Text><Button secondary title="Try again" loading={q.isFetching} onPress={() => void q.refetch()} /></View>}
       {tab === "consultations" && (
         <>
+          <View style={desktopWeb ? { flexDirection: "row", flexWrap: "wrap", alignItems: "stretch", gap: 14 } : { gap: 12 }}>
           {consultations?.map((c) => {
             const phase = consultationPhase(c);
             const open = phase === "open";
@@ -403,7 +412,7 @@ export function Community({
               accessibilityRole="button"
               accessibilityLabel={`${phase === "closed" ? "Read discussion" : "Open conversation"}: ${c.title}`}
               accessibilityHint={`${barangays.find((b) => b.id === c.barangay_id)?.name ?? "Iligan City"} community conversation`}
-              style={({ pressed }) => [s.card, { gap: 14, borderColor: "#e3ecef", padding: 18, shadowOpacity: 0.035 }, pressed && { backgroundColor: "#f6fbf9" }]}
+              style={({ pressed }) => [s.card, { gap: 14, borderColor: "#e3ecef", padding: desktopWeb ? 16 : 18, borderRadius: desktopWeb ? 12 : 18, width: desktopWeb ? "48%" : undefined, maxWidth: desktopWeb ? 620 : undefined, flexGrow: desktopWeb ? 1 : undefined, shadowOpacity: 0.035 }, pressed && { backgroundColor: "#f6fbf9" }]}
               key={c.id}
               onPress={() => { onPageNavigate?.(); setSelected(c.id); }}
             >
@@ -422,6 +431,7 @@ export function Community({
             </Pressable>
             );
           })}
+          </View>
           {!consultations?.length && !q.isPending && !q.error && (
             <View style={[s.card, { alignItems: "center", paddingVertical: 24, gap: 8 }]}><View style={{ width: 46, height: 46, borderRadius: 16, backgroundColor: "#eaf7f3", alignItems: "center", justifyContent: "center" }}><Ionicons name="chatbubbles-outline" size={22} color={colors.brand} /></View><Text style={s.title}>No conversations found</Text><Text style={[s.small, { textAlign: "center" }]}>Try another search or reset your community filters.</Text>{(search || area || participation !== "all") && <Button secondary title="Reset filters" onPress={() => { setSearch(""); setArea(""); setParticipation("all"); setPage(0); }} />}</View>
           )}
@@ -444,6 +454,7 @@ export function Community({
       {tab === "meetings" && (
         <>
           {!!meetingTarget && <Button secondary title="Show all meeting requests" onPress={() => { setMeetingTarget(""); setPage(0); }} />}
+          <View style={desktopWeb ? { flexDirection: "row", flexWrap: "wrap", alignItems: "stretch", gap: 14 } : { gap: 12 }}>
           {q.data?.requests.map((r) => {
             const state = meetingStatus(r.status, r.schedule, r.coordination_status);
             const categoryName = categories.find((item) => item.id === r.category_id)?.name;
@@ -463,7 +474,7 @@ export function Community({
               r.resident_id === residentId || r.barangay_id === defaultBarangay ||
               r.barangayInvitations.some((invitation) => invitation.barangay_id === defaultBarangay && invitation.status === "accepted")
             );
-            return <View style={[s.card, { gap: 14, padding: 18 }]} key={r.id}>
+            return <View style={[s.card, { gap: 14, padding: desktopWeb ? 16 : 18, borderRadius: desktopWeb ? 12 : 18, width: desktopWeb ? "48%" : undefined, maxWidth: desktopWeb ? 620 : undefined, flexGrow: desktopWeb ? 1 : undefined }]} key={r.id}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <View accessible accessibilityRole="image" accessibilityLabel={hasMeetingDate ? `Meeting date ${meetingDay} ${meetingMonth}` : "Meeting date not set"} style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: hasMeetingDate ? "#e4f6f1" : "#edf3fb", alignItems: "center", justifyContent: "center", gap: 0 }}>
                   {hasMeetingDate ? <><Text style={{ color: colors.brandDark, fontSize: 17, lineHeight: 19, fontWeight: "800" }}>{meetingDay}</Text><Text style={{ color: colors.brand, fontSize: 9, lineHeight: 12, fontWeight: "800", letterSpacing: 0.7 }}>{meetingMonth}</Text></> : <Ionicons name="calendar-outline" size={22} color="#426ca6" />}
@@ -517,11 +528,12 @@ export function Community({
               {expandedMeeting === r.id && <MeetingDetails requestId={r.id} requestStatus={r.status} schedule={r.schedule} />}
             </View>;
           })}
+          </View>
           {!q.data?.requests.length && !q.isPending && !q.error && <View style={[s.card, { alignItems: "center", paddingVertical: 22, gap: 7 }]}><View style={{ width: 44, height: 44, borderRadius: 15, backgroundColor: "#eaf7f3", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={21} color={colors.brand} /></View><Text style={s.title}>{meetingScope === "yours" ? "No requests yet" : "No barangay meetings found"}</Text><Text style={[s.small, { textAlign: "center" }]}>{search ? "Try a different meeting search." : meetingScope === "yours" ? "Meeting requests you send to any barangay will appear here." : "Open meetings and accepted cross-barangay invitations will appear here."}</Text>{search ? <Button secondary title="Clear search" onPress={() => { setSearch(""); setPage(0); }} /> : <Button title="Request a meeting" onPress={() => navigateTab("request")} />}</View>}
         </>
       )}
       {tab === "request" && (
-          <View style={[s.card, { gap: 18, padding: 18 }]}>
+          <View style={[s.card, desktopWeb ? { width: "100%", maxWidth: 980, alignSelf: "center", gap: 20, padding: 24, borderRadius: 12 } : tabletWeb ? { gap: 14, padding: 15, borderRadius: 16 } : { gap: 18, padding: 18 }]}>
           <View style={{ minHeight: 104, flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: 18, backgroundColor: "#f0faf7" }}><View style={{ width: 52, height: 52, borderRadius: 17, backgroundColor: "#def4ee", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-number-outline" size={24} color={colors.brand} /></View><View style={{ flex: 1, gap: 5 }}><Text style={[s.title, { fontSize: 18, lineHeight: 24 }]}>Request a meeting</Text><Text style={[s.small, { fontSize: 13, lineHeight: 19 }]}>Your barangay reviews the request and posts its decision here.</Text></View></View>
           <View accessibilityLabel="Meeting request steps" style={{ position: "relative", flexDirection: "row", alignItems: "flex-start", paddingVertical: 5 }}>
             <View pointerEvents="none" style={{ position: "absolute", top: 18, left: "16.667%", right: "16.667%", height: 2, backgroundColor: "#b8ded6" }} />
@@ -584,7 +596,7 @@ export function Community({
             <View style={{ gap: 6 }}><Text style={s.fieldLabel}>Which barangay should review it? <Text style={{ color: "#b4453e" }}>*</Text></Text><Text style={s.small}>Choose the barangay connected to this meeting.</Text><Choices compact title="Choose a barangay" sheetTitle="Choose a barangay" items={barangays} value={barangay} onChange={setBarangay} leadingIcon="location-outline" myBarangayId={defaultBarangay || undefined} /></View>
           <View style={{ gap: 7 }}>
             <Text style={s.fieldLabel}>Related category (optional)</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel={selectedMeetingCategory ? `Change related category, currently ${categoryDisplayName(selectedMeetingCategory.name)}` : "Choose a related category, optional"} accessibilityState={{ expanded: categoryPickerOpen }} accessibilityHint="Opens the searchable report category selector" onPress={() => setCategoryPickerOpen(true)} style={({ pressed }) => [{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, borderRadius: 15, borderWidth: 1, borderColor: categoryPickerOpen ? colors.brand : colors.line, backgroundColor: "white" }, pressed && { opacity: 0.82 }]}>
+            <Pressable ref={categoryPickerAnchorRef} accessibilityRole="button" accessibilityLabel={selectedMeetingCategory ? `Change related category, currently ${categoryDisplayName(selectedMeetingCategory.name)}` : "Choose a related category, optional"} accessibilityState={{ expanded: categoryPickerOpen }} accessibilityHint="Opens the searchable report category selector" onPress={() => setCategoryPickerOpen((open) => !open)} style={({ pressed }) => [{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, borderRadius: 15, borderWidth: 1, borderColor: categoryPickerOpen ? colors.brand : colors.line, backgroundColor: "white" }, pressed && { opacity: 0.82 }]}>
               <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: selectedMeetingCategoryTone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={selectedMeetingCategory ? categoryIconFor(selectedMeetingCategory.name) : "grid-outline"} size={19} color={selectedMeetingCategoryTone.foreground} /></View>
               <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                 <Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 13, fontWeight: "700" }}>{selectedMeetingCategory ? categoryDisplayName(selectedMeetingCategory.name) : "Not specified"}</Text>
@@ -595,6 +607,7 @@ export function Community({
             <SelectionSheet
               visible={categoryPickerOpen}
               onClose={() => setCategoryPickerOpen(false)}
+              anchorRef={categoryPickerAnchorRef}
               title="Choose a report type"
               subtitle="Select the category related to your meeting request, or leave it unspecified."
               searchPlaceholder="Search report type"

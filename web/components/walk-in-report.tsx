@@ -28,8 +28,6 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const initialProblemType = problemTypes[0]?.code || "";
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
@@ -48,8 +46,8 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
       purok: String(form.get("purok") || ""),
       zone: String(form.get("zone") || ""),
       location_source: pin ? "pin" : null,
-      problem_type: problemType || initialProblemType,
-      problem_other: String(form.get("problem_other") || ""),
+      problem_type: problemType,
+      problem_other: problemType === "other" ? String(form.get("problem_other") || "") : null,
     });
     const nextErrors: Partial<Record<Field, string>> = {};
     const reporterNameError = personNameInputError(reporterName, true, 100);
@@ -105,7 +103,7 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
     }
   }
 
-  function setFieldError(field: Field, value: unknown, activeProblemType = problemType || initialProblemType) {
+  function setFieldError(field: Field, value: unknown, activeProblemType = problemType) {
     setFieldErrors((current) => {
       if (!Object.hasOwn(current, field)) return current;
       const text = typeof value === "string" ? value : "";
@@ -151,8 +149,8 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
       <section className="walk-in-report-section" aria-labelledby="walk-in-details-heading">
         <div className="walk-in-section-heading"><span>2</span><div><h3 id="walk-in-details-heading">Report details</h3><p>Describe the issue clearly so it can be assessed and routed correctly.</p></div></div>
         <div className="walk-in-field-grid">
-          <label className="walk-in-field"><span>Report category <b aria-hidden="true">*</b></span><select id="walk-in-category_id" value={categoryId} required aria-invalid={!!fieldErrors.category_id} onChange={(event) => { const nextCategoryId = event.target.value; const nextProblemType = refs.categories.find((item) => item.id === nextCategoryId)?.problem_types?.[0]?.code || ""; setCategoryId(nextCategoryId); setProblemType(""); setFieldError("category_id", nextCategoryId); setFieldError("problem_type", nextProblemType); setFieldError("problem_other", "", nextProblemType); }}><option value="">Choose a category</option>{refs.categories.filter((item) => item.problem_types?.length).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{fieldHint("category_id")}</label>
-          <label className="walk-in-field"><span>Specific issue <b aria-hidden="true">*</b></span><select id="walk-in-problem_type" value={problemType || initialProblemType} required disabled={!category} aria-invalid={!!fieldErrors.problem_type} onChange={(event) => { const nextProblemType = event.target.value; setProblemType(nextProblemType); setFieldError("problem_type", nextProblemType); setFieldError("problem_other", "", nextProblemType); }}><option value="">Choose a specific issue</option>{problemTypes.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}</select>{fieldHint("problem_type")}</label>
+          <label className="walk-in-field"><span>Report category <b aria-hidden="true">*</b></span><select id="walk-in-category_id" value={categoryId} required aria-invalid={!!fieldErrors.category_id} onChange={(event) => { const nextCategoryId = event.target.value; const nextProblemType = refs.categories.find((item) => item.id === nextCategoryId)?.problem_types?.[0]?.code || ""; setCategoryId(nextCategoryId); setProblemType(nextProblemType); setFieldError("category_id", nextCategoryId); setFieldError("problem_type", nextProblemType); setFieldError("problem_other", "", nextProblemType); }}><option value="">Choose a category</option>{refs.categories.filter((item) => item.problem_types?.length).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{fieldHint("category_id")}</label>
+          <label className="walk-in-field"><span>Specific issue <b aria-hidden="true">*</b></span><select id="walk-in-problem_type" value={problemType} required disabled={!category} aria-invalid={!!fieldErrors.problem_type} onChange={(event) => { const nextProblemType = event.target.value; setProblemType(nextProblemType); setFieldError("problem_type", nextProblemType); setFieldError("problem_other", "", nextProblemType); }}><option value="">Choose a specific issue</option>{problemTypes.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}</select>{fieldHint("problem_type")}</label>
           {problemType === "other" && <label className="walk-in-field walk-in-field-wide"><span>Describe the other issue <b aria-hidden="true">*</b></span><input id="walk-in-problem_other" name="problem_other" maxLength={240} required aria-invalid={!!fieldErrors.problem_other} onChange={(event) => setFieldError("problem_other", event.currentTarget.value)} />{fieldHint("problem_other", "Up to 240 characters.")}</label>}
           <label className="walk-in-field walk-in-field-wide"><span>Report title <b aria-hidden="true">*</b></span><input id="walk-in-title" name="title" required minLength={8} maxLength={160} placeholder="Example: Damaged drainage cover near the market" aria-invalid={!!fieldErrors.title} onChange={(event) => setFieldError("title", event.currentTarget.value)} />{fieldHint("title", "8–160 characters. Use a short, specific description.")}</label>
           <label className="walk-in-field walk-in-field-wide"><span>What happened? <b aria-hidden="true">*</b></span><textarea id="walk-in-description" name="description" required minLength={20} maxLength={4000} rows={4} placeholder="Describe the concern, when it was noticed, and who or what may be affected." aria-invalid={!!fieldErrors.description} onChange={(event) => setFieldError("description", event.currentTarget.value)} />{fieldHint("description", "20–4,000 characters. Avoid including sensitive personal details.")}</label>

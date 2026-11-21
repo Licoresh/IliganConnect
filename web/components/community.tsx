@@ -1273,6 +1273,7 @@ function Meeting({
   const canEditOfficeActions = isOffice && acceptedOfficeIds.length > 0;
   const canEditActionItem = (item: { organization_id: string | null }) => manage || (canEditOfficeActions && !!item.organization_id && acceptedOfficeIds.includes(item.organization_id));
   const requestOpen = row.status === "pending" || row.status === "approved";
+  const hasInvitationSections = canInvite || officeIds.length > 0 || invitations.length > 0 || barangayInvitations.length > 0;
   const availableOrganizations = refs.organizations.filter(
     (organization) => {
       const office = organization as typeof organization & { active?: boolean; can_consult?: boolean; can_coordinate?: boolean };
@@ -1288,6 +1289,10 @@ function Meeting({
       {(isOffice || manage && !manageSchedule) && <p className="meeting-office-view-note"><Eye size={15} aria-hidden="true" />{isOffice ? "Meeting details are managed by the barangay. You can respond to your invitation and update action items assigned to an office you have accepted for." : "The assigned barangay manages the venue and schedule. You can review the request, invitations, and agreed actions."}</p>}
 
       <section className="meeting-section meeting-overview">
+        <div className="meeting-section-heading meeting-overview-heading">
+          <span className="meeting-section-icon"><FileText size={20} /></span>
+          <div><h3>Request overview</h3><p>Review the request, its current status, and scheduled time.</p></div>
+        </div>
         <div className="meeting-overview-main">
           <span className={`meeting-detail-status ${meeting?.completed ? "is-complete" : meeting ? "is-scheduled" : ""}`}>
             {meeting?.completed ? "Completed" : meeting ? "Scheduled" : isOffice && row.status === "pending" ? q.data ? !ownInvitations.length ? "Not invited" : ownInvitations.every((invitation) => invitation.status === "declined") ? "Invitation declined" : ownInvitations.some((invitation) => invitation.status === "pending") ? "Invitation pending" : "Awaiting barangay" : "Checking invitation" : label(row.status)}
@@ -1305,7 +1310,7 @@ function Meeting({
       <section className="meeting-section">
         <div className="meeting-section-heading">
           <span className="meeting-section-icon"><Users size={20} /></span>
-          <div><h3>{row.participation_mode === "open" ? "Open meeting participation" : "Closed meeting"}</h3><p>{row.participation_mode === "open" ? "Residents can join after approval. Cross-barangay residents need an accepted barangay invitation." : "This meeting is limited to the organizer and barangay staff."}</p></div>
+          <div><h3>Who can participate</h3><p>{row.participation_mode === "open" ? "Open meeting. Residents can join after approval; residents from another barangay need an accepted invitation." : "Closed meeting. Participation is limited to the organizer and barangay staff."}</p></div>
         </div>
       </section>
 
@@ -1313,7 +1318,7 @@ function Meeting({
         <section className="meeting-section">
           <div className="meeting-section-heading">
             <span className="meeting-section-icon"><FileText size={20} /></span>
-            <div><h3>Meeting report</h3><p>Linked report and approval context.</p></div>
+            <div><h3>Related report and decision</h3><p>Report linked to this request and the barangay’s decision.</p></div>
           </div>
           {row.decision_reason && <p className="meeting-context-note">{row.decision_reason}</p>}
           {row.report_id && <div className="meeting-report-id"><span>Report ID</span><code>{row.report_id}</code></div>}
@@ -1370,10 +1375,14 @@ function Meeting({
             }
           });
         }}>
+          <div className="meeting-section-heading meeting-details-heading">
+            <span className="meeting-section-icon"><CalendarDays size={20} /></span>
+            <div><h3>Plan the meeting</h3><p>Set the format and timing, then share an update with residents.</p></div>
+          </div>
           <section className="meeting-form-section">
           <div className="meeting-section-heading">
             <span className="meeting-section-icon"><CalendarDays size={20} /></span>
-            <div><h3>Schedule & attendance</h3><p>Set where residents will meet and the Philippine date and time.</p></div>
+            <div><h3>Format, date, time, and location</h3><p>Choose how and when the meeting will happen.</p></div>
           </div>
           <fieldset className="meeting-mode-fieldset">
             <legend>Meeting format <b>*</b></legend>
@@ -1402,12 +1411,15 @@ function Meeting({
           <section className="meeting-form-section">
             <div className="meeting-section-heading">
               <span className="meeting-section-icon"><FileText size={20} /></span>
-              <div><h3>Public update</h3><p>Share the meeting summary, decisions, and key discussion points with residents.</p></div>
+              <div><h3>Resident update</h3><p>Publish the meeting summary, decisions, and key discussion points.</p></div>
             </div>
           <label className="meeting-field"><span>Public summary and minutes</span><textarea name="outcome" maxLength={2000} defaultValue={meeting?.outcome || ""} placeholder="Write a summary, decisions, and key discussion points…" /></label>
           </section>
           <section className="meeting-form-section meeting-form-completion">
-            <div><h3>Meeting status</h3><p>Mark this after the planned activities and follow-up are finished.</p></div>
+            <div className="meeting-section-heading">
+              <span className="meeting-section-icon"><CheckCircle2 size={20} /></span>
+              <div><h3>Completion</h3><p>Mark the meeting complete after activities and follow-up are finished.</p></div>
+            </div>
             <label className="meeting-completed"><input name="completed" type="checkbox" defaultChecked={meeting?.completed} /><span><strong>Meeting completed</strong><small>Completed meetings are shown separately from upcoming schedules.</small></span></label>
           </section>
           <div className="meeting-form-actions"><button type="button" className="secondary" disabled={busy} onClick={(event) => {
@@ -1437,7 +1449,9 @@ function Meeting({
         </form>
       )}
 
-      {q.data && (canInvite || officeIds.length > 0 || invitations.length > 0) && (
+      {q.data && hasInvitationSections && <div className="meeting-invitations-group">
+          <div className="meeting-workflow-heading"><h3>Participants and invitations</h3><p>Office invitations and cross-barangay participation are managed separately.</p></div>
+          {(canInvite || officeIds.length > 0 || invitations.length > 0) && (
           <section className="meeting-section">
             <div className="meeting-section-heading">
               <span className="meeting-section-icon"><Users size={20} /></span>
@@ -1484,7 +1498,7 @@ function Meeting({
           </section>
       )}
 
-      {q.data && (barangayInvitations.length > 0 || canInvite && requestOpen) && (
+      {(barangayInvitations.length > 0 || canInvite && requestOpen) && (
         <section className="meeting-section meeting-barangay-invitations">
           <div className="meeting-section-heading">
             <span className="meeting-section-icon"><MapPin size={20} /></span>
@@ -1530,12 +1544,13 @@ function Meeting({
           {canInvite && requestOpen && !availableBarangays.length && <p className="meeting-empty">Every other barangay has already been invited.</p>}
         </section>
       )}
+      </div>}
 
       {meeting && (
           <section className="meeting-section">
             <div className="meeting-section-heading">
               <span className="meeting-section-icon"><CheckCircle2 size={20} /></span>
-              <div><h3>Agreed action items</h3><p>{isOffice ? canEditOfficeActions ? "View all agreed actions and update items assigned to your accepted office." : "View the recorded actions. Editing is available after your office accepts an invitation and receives an assigned action." : "Track decisions, owners, and follow-up dates."}</p></div>
+              <div><h3>Agreed actions and follow-up</h3><p>{isOffice ? canEditOfficeActions ? "View all agreed actions and update items assigned to your accepted office." : "View the recorded actions. Editing is available after your office accepts an invitation and receives an assigned action." : "Track decisions, owners, and follow-up dates."}</p></div>
             </div>
             {q.data?.actions.length ? <div className="meeting-action-list">{q.data.actions.map((a) => (
               <article className="meeting-action-item" key={a.id}>

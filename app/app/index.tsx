@@ -31,12 +31,13 @@ import { expoProjectId, getDevicePushPreference, hasRegisteredDevicePushToken, r
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, result, configured } from "../lib/client";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryIconFor, categoryToneFor, statusToneFor, categoryDisplayName } from "../components/ui";
-import { Profile, Lookup, Report, label, textInputError, residentNamePartsError, residentDisplayName, residentAgeError, emailInputError, mobileInputError, normalizePhilippineMobile, passwordInputError, MIN_PASSWORD_LENGTH, EMAIL_OTP_LENGTH, EMAIL_OTP_EXPIRY_SECONDS, EMAIL_RESEND_INTERVAL_SECONDS } from "@community/shared";
+import { Profile, Lookup, Report, Status, statuses, label, textInputError, residentNamePartsError, residentDisplayName, residentAgeError, emailInputError, mobileInputError, normalizePhilippineMobile, passwordInputError, MIN_PASSWORD_LENGTH, EMAIL_OTP_LENGTH, EMAIL_OTP_EXPIRY_SECONDS, EMAIL_RESEND_INTERVAL_SECONDS } from "@community/shared";
 import { ReportForm, ReportTracking, Explore as ExploreScreen } from "../features/reports";
 import { Community as CommunityScreen, Announcements } from "../features/community";
 import { ListSkeleton } from "../components/loading";
 const REPORT_PAGE_SIZE = 5;
 const RESIDENT_TERMS_VERSION = "2026-11-15";
+const RESIDENT_APP_VERSION = (require("../app.json") as { expo: { version: string } }).expo.version;
 const RESIDENT_TERMS = [
   { title: "1. What Iligan Connect is for", body: "Iligan Connect helps residents report local community concerns, follow case updates, and take part in public discussions. It is not an emergency service. For an immediate threat to life or safety, contact emergency services or the appropriate local responders." },
   { title: "2. Your account", body: "Provide accurate personal details, email, age, and home barangay. Keep your password and verification codes private. Do not impersonate another person, create misleading accounts, or use another person’s account without permission. If you are under 18, ask a parent or guardian to review these terms with you before using the service." },
@@ -65,6 +66,11 @@ function formatAuthError(error: unknown, step: "sign-in" | "verification" | "res
   return "We could not sign you in. Check your details, confirm your email if needed, and retry.";
 }
 const authRedirects = new Map<string, Promise<boolean>>();
+async function signOutResident(profileId: string) {
+  await removeDevicePushTokens(profileId).catch(() => undefined);
+  const { error } = await db!.auth.signOut();
+  if (error) throw error;
+}
 function completeAuthRedirect(url: string) {
   const existing = authRedirects.get(url);
   if (existing) return existing;
@@ -98,7 +104,15 @@ const tabs = [
   ["Profile", "person-outline"],
 ] as const;
 export default function Home() {
-  const compactPhone = useWindowDimensions().width < 360;
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const compactPhone = viewportWidth < 360;
+  const tabletWeb = Platform.OS === "web" && viewportWidth >= 768 && viewportWidth < 1200;
+  const desktopWeb = Platform.OS === "web" && viewportWidth >= 1200;
+  const compactTablet = tabletWeb && viewportHeight < 760;
+  const wideDashboard = desktopWeb || (tabletWeb && viewportWidth >= 1024);
+  const tabletContentMaxWidth = viewportWidth < 840
+    ? Math.max(700, viewportWidth - 32)
+    : viewportWidth < 1024 ? 820 : viewportWidth < 1080 ? 880 : 940;
   const [user, setUser] = useState<string | null>(null),
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState("Home"),
@@ -109,6 +123,7 @@ export default function Home() {
     [recovery, setRecovery] = useState(false),
     [authError, setAuthError] = useState(""),
     [page, setPage] = useState(0),
+    [reportStatusFilter, setReportStatusFilter] = useState<Status | "all">("all"),
     [showAllCategories, setShowAllCategories] = useState(false),
     [showAllReports, setShowAllReports] = useState(false),
     [reportsReturnTab, setReportsReturnTab] = useState<"Home" | "Profile">("Home"),
@@ -118,11 +133,18 @@ export default function Home() {
     [failedReportPhotos, setFailedReportPhotos] = useState<Record<string, boolean>>({}),
     [refreshing, setRefreshing] = useState(false),
     [exploreMapGestureActive, setExploreMapGestureActive] = useState(false),
+    [desktopNotificationsOpen, setDesktopNotificationsOpen] = useState(false),
     [notificationReturnTab, setNotificationReturnTab] = useState("Home"),
     [reportReturnTab, setReportReturnTab] = useState("Home"),
-    [communityInitialTab, setCommunityInitialTab] = useState<"consultations" | "meetings">("consultations");
+    [communityInitialTab, setCommunityInitialTab] = useState<"consultations" | "meetings">("consultations"),
+    [desktopHoveredNavigationTab, setDesktopHoveredNavigationTab] = useState<string | null>(null),
+    [desktopFocusedNavigationTab, setDesktopFocusedNavigationTab] = useState<string | null>(null),
+    [desktopSignOutConfirm, setDesktopSignOutConfirm] = useState(false),
+    [desktopSignOutBusy, setDesktopSignOutBusy] = useState(false),
+    [desktopSignOutError, setDesktopSignOutError] = useState("");
   const qc = useQueryClient();
   const sessionUser = useRef<string | null>(null);
+  const barangaysAnchorRef = useRef<View>(null);
   const scroll = useRef<ScrollView>(null);
   const exploreScrollY = useRef(0);
   const mainScrollY = useRef(0);
@@ -185,6 +207,7 @@ export default function Home() {
         setPage(0);
         setSelectedAnnouncement(null);
         setSelected(null);
+        setDesktopNotificationsOpen(false);
         setNotificationReturnTab("Home");
         setTab("Home");
       }
@@ -228,15 +251,28 @@ export default function Home() {
       return () => listener.remove();
     }
   }, [selected, tab, notificationReturnTab, reportReturnTab]);
+  useEffect(() => {
+    if (desktopWeb && tab === "Notifications") setTab(notificationReturnTab === "Notifications" ? "Home" : notificationReturnTab);
+  }, [desktopWeb, tab, notificationReturnTab]);
   const q = useQuery({
     queryKey: ["home", user],
     enabled: !!user,
     refetchInterval: 30_000,
     queryFn: async () => {
-      const [profile, categories, barangays, announcements, unread, settings] = await Promise.all([
-      result<Profile>(
+      const profile = await result<Profile>(
         db!.from("profiles").select("*").eq("id", user!).single(),
-      ),
+      );
+      if (profile.role !== "resident") {
+        return {
+          profile,
+          categories: [] as Lookup[],
+          barangays: [] as Lookup[],
+          announcements: [] as { id: string; title: string; kind: string }[],
+          unreadCount: 0,
+          includeSamples: false,
+        };
+      }
+      const [categories, barangays, announcements, unread, settings] = await Promise.all([
       result<Lookup[]>(
         db!
           .from("report_categories")
@@ -272,13 +308,15 @@ export default function Home() {
     }
   }, [q.data?.profile.id, q.data?.profile.barangay_id, q.data?.profile.role]);
   const reportsQuery = useQuery({
-    queryKey: ["my-reports", user, page, q.data?.includeSamples],
-    enabled: !!user && !!q.data && tab === "Home" && !selected,
+    queryKey: ["my-reports", user, page, q.data?.includeSamples, showAllReports ? reportStatusFilter : "all"],
+    enabled: !!user && q.data?.profile.role === "resident" && tab === "Home" && !selected,
     refetchInterval: 30_000,
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      const { data, count, error } = await db!.from("reports")
+      let reports = db!.from("reports")
         .select("*", { count: "exact" }).eq("resident_id", user!)
+      if (showAllReports && reportStatusFilter !== "all") reports = reports.eq("status", reportStatusFilter);
+      const { data, count, error } = await reports
         .order("created_at", { ascending: false }).order("id", { ascending: false })
         .range(page * REPORT_PAGE_SIZE, (page + 1) * REPORT_PAGE_SIZE - 1);
       if (error) throw error;
@@ -289,7 +327,7 @@ export default function Home() {
   const reportIds = (reportsQuery.data?.reports ?? []).map((item) => item.id);
   const reportPhotos = useQuery({
     queryKey: ["home-report-photos", user, page, reportIds],
-    enabled: !!user && tab === "Home" && !selected && reportIds.length > 0,
+    enabled: !!user && q.data?.profile.role === "resident" && tab === "Home" && !selected && reportIds.length > 0,
     staleTime: 45 * 60 * 1000,
     queryFn: async () => {
       const attachments = await result<{ report_id: string; path: string }[]>(db!.from("report_attachments").select("report_id,path").in("report_id", reportIds));
@@ -315,6 +353,19 @@ export default function Home() {
         </ScrollView>
       </SafeAreaView>
     );
+  if (q.data && q.data.profile.role !== "resident")
+    return (
+      <SafeAreaView style={s.screen}>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <View style={[s.card, { width: "100%", maxWidth: 460, alignItems: "center", gap: 12, padding: 24 }]}>
+            <Ionicons name="lock-closed-outline" size={28} color={colors.brand} />
+            <Text accessibilityRole="header" style={[s.heading, { textAlign: "center" }]}>Resident access only</Text>
+            <Text style={[s.body, { textAlign: "center" }]}>This website is for resident accounts. Your account belongs to the staff workspace. Sign out here and use the staff site to continue.</Text>
+            <Button icon="log-out-outline" title="Sign out" onPress={() => void db!.auth.signOut()} />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
   const report = (id = "") => {
     setCategory(id);
     setSelected(null);
@@ -323,21 +374,119 @@ export default function Home() {
   };
   const homeReports = reportsQuery.data?.reports ?? [];
   const navigationTab = showAllReports ? reportsReturnTab : tab;
+  async function confirmDesktopSignOut() {
+    if (desktopSignOutBusy || !q.data?.profile.id) return;
+    setDesktopSignOutBusy(true);
+    setDesktopSignOutError("");
+    try {
+      await signOutResident(q.data.profile.id);
+      setDesktopSignOutConfirm(false);
+    } catch (error) {
+      setDesktopSignOutError((error as Error).message || "Could not sign out. Please try again.");
+    } finally {
+      setDesktopSignOutBusy(false);
+    }
+  }
+  const chooseNavigationTab = (name: string) => {
+    if (tab === name && !selected && !(name === "Home" && showAllReports)) return;
+    setSelected(null);
+    setShowAllReports(false);
+    if (name === "Report") report();
+    else {
+      if (name === "Community") { setCommunityInitialTab("consultations"); setCommunityTarget({}); }
+      setTab(name);
+    }
+  };
+  const navigateFromNotification = async (
+    destination: string,
+    reportId?: string | null,
+    communitySection?: "consultations" | "meetings",
+    announcementId?: string | null,
+    consultationId?: string | null,
+    meetingRequestId?: string | null,
+    fromDesktopModal = false,
+  ) => {
+    if (reportId) {
+      let report = await result<Report | null>(db!.from("reports").select("*").eq("id", reportId).maybeSingle());
+      if (!report) report = (await result<Report[]>(db!.rpc("public_report_by_id", { p_id: reportId })))[0] ?? null;
+      if (!report) throw new Error("This report is no longer available to your account.");
+      setReportReturnTab(fromDesktopModal ? notificationReturnTab : "Notifications");
+      setSelected(report);
+    }
+    if (destination === "Community") {
+      setCommunityInitialTab(communitySection || "consultations");
+      setCommunityTarget({ consultationId, meetingRequestId });
+    }
+    if (destination === "Announcements") setSelectedAnnouncement(announcementId || null);
+    setTab(destination);
+    if (fromDesktopModal) setDesktopNotificationsOpen(false);
+  };
+  const renderNavigation = (variant: "mobile" | "tablet" | "desktop") => (
+    <View style={[
+      s.nav,
+      variant === "tablet" && { width: "100%", maxWidth: tabletContentMaxWidth, alignSelf: "center", marginHorizontal: 0, marginBottom: compactTablet ? 8 : 10, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 16, shadowOpacity: 0.06, elevation: 2 },
+      variant === "desktop" && { flexDirection: "column", width: "100%", marginHorizontal: 0, marginBottom: 0, paddingHorizontal: 0, paddingVertical: 6, gap: 4, borderWidth: 0, borderRadius: 0, backgroundColor: "transparent", shadowOpacity: 0, elevation: 0 },
+    ]}>
+      {tabs.map(([name, icon]) => {
+        const active = navigationTab === name;
+        const desktopHighlighted = variant === "desktop" && (active || desktopHoveredNavigationTab === name || desktopFocusedNavigationTab === name);
+        return (
+          <Pressable
+            key={name}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            onPress={() => chooseNavigationTab(name)}
+            onHoverIn={() => { if (variant === "desktop") setDesktopHoveredNavigationTab(name); }}
+            onHoverOut={() => { if (variant === "desktop") setDesktopHoveredNavigationTab((current) => current === name ? null : current); }}
+            onFocus={() => { if (variant === "desktop") setDesktopFocusedNavigationTab(name); }}
+            onBlur={() => { if (variant === "desktop") setDesktopFocusedNavigationTab((current) => current === name ? null : current); }}
+            style={[s.navItem,
+              variant === "tablet" && { minHeight: compactTablet ? 44 : 48, paddingVertical: 4, gap: 2 },
+              variant === "desktop" && { flex: 0, minHeight: 46, flexDirection: "row", justifyContent: "flex-start", paddingHorizontal: 12, paddingVertical: 7, gap: 11, borderRadius: 10 },
+              active && variant !== "desktop" && s.navItemActive,
+              desktopHighlighted && { backgroundColor: colors.brand },
+            ]}
+          >
+            {name === "Report" ? (
+              <View style={[s.navAction,
+                active && variant !== "desktop" && s.navActionActive,
+                variant !== "mobile" && { width: 30, height: 30, marginTop: 0, marginBottom: 0, borderRadius: 15, shadowOpacity: 0, elevation: 0 },
+                variant === "tablet" && { width: 34, height: 34, borderRadius: 17 },
+                variant === "desktop" && { backgroundColor: desktopHighlighted ? "#ffffff26" : "transparent", shadowOpacity: 0 },
+              ]}>
+                <Ionicons name={icon} size={variant === "desktop" ? 18 : 22} color={variant === "desktop" ? desktopHighlighted ? "white" : "#60777c" : "white"} />
+              </View>
+            ) : (
+            <Ionicons name={icon} size={variant === "desktop" ? 20 : 22} color={variant === "desktop" ? desktopHighlighted ? "white" : "#60777c" : active ? colors.brand : colors.muted} />
+            )}
+            <Text style={[s.navText,
+              variant !== "mobile" && { fontSize: variant === "desktop" ? 14 : 11 },
+              variant === "desktop" && { flex: 1, textAlign: "left" },
+              active && variant !== "desktop" && { color: colors.brand },
+              variant === "desktop" && { color: desktopHighlighted ? "white" : "#536d73" },
+            ]}>{name}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+  const contentMaxWidth = desktopWeb
+    ? 1360
+    : tabletWeb ? tabletContentMaxWidth : 620;
   return (
     <SafeAreaView style={s.screen}>
-      <View
-        style={{
-          paddingHorizontal: 18,
-          paddingVertical: 8,
-          minHeight: 58,
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-          borderBottomWidth: 1,
-          borderColor: colors.line,
-          backgroundColor: "white",
-        }}
-      >
+      <View style={{ width: "100%", borderBottomWidth: 1, borderColor: colors.line, backgroundColor: "white" }}>
+      <View style={{
+        paddingHorizontal: desktopWeb ? 32 : tabletWeb ? (viewportWidth < 840 ? 16 : 20) : 18,
+        paddingVertical: 8,
+        minHeight: desktopWeb ? 68 : tabletWeb ? (compactTablet ? 58 : 64) : 58,
+        width: "100%",
+        maxWidth: desktopWeb ? 1600 : tabletWeb ? tabletContentMaxWidth : undefined,
+        alignSelf: "center",
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}>
         <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 11 }}>
           <Image source={require("../assets/iligan-connect-logo.png")} accessibilityLabel="Iligan Connect logo" resizeMode="contain" style={{ width: 46, height: 46 }} />
           <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
@@ -345,63 +494,92 @@ export default function Home() {
             {!compactPhone && <Text numberOfLines={1} style={{ fontSize: 9, letterSpacing: 1.3, color: "#5d7378", fontWeight: "600" }}>A CLEANER · SAFER · STRONGER ILIGAN</Text>}
           </View>
         </View>
-        <Pressable
-          accessibilityLabel={q.data?.unreadCount ? `Notifications, ${q.data.unreadCount} unread` : "Notifications"}
-          accessibilityHint="Opens notifications and marks current updates as read"
-          accessibilityRole="button"
-          accessibilityState={{ selected: tab === "Notifications" }}
-          onPress={() => {
-            setSelected(null);
-            setNotificationReturnTab(tab === "Notifications" ? "Home" : tab);
-            setTab("Notifications");
-          }}
-          style={({ pressed }) => [
-            { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 16 },
-            (pressed || tab === "Notifications") && { backgroundColor: "#eaf5ef" },
-          ]}
-        >
-          <Ionicons
-            name="notifications-outline"
-            size={23}
-            color={colors.brandDark}
-          />
-          {!!q.data?.unreadCount && (
-            <View
-              style={{
-                position: "absolute",
-                right: 3,
-                top: 3,
-                minWidth: 19,
-                height: 19,
-                paddingHorizontal: 4,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "#d93025",
-                borderRadius: 10,
-                borderWidth: 1.5,
-                borderColor: "white",
-              }}
-              pointerEvents="none"
-              accessible={false}
-            >
-              <Text style={{ color: "white", fontSize: 10, lineHeight: 13, fontWeight: "800" }}>
-                {q.data.unreadCount > 99 ? "99+" : q.data.unreadCount}
-              </Text>
-            </View>
-          )}
-        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Pressable
+            accessibilityLabel={q.data?.unreadCount ? `Notifications, ${q.data.unreadCount} unread` : "Notifications"}
+            accessibilityHint="Opens your notifications"
+            accessibilityRole="button"
+            accessibilityState={{ selected: desktopWeb ? desktopNotificationsOpen : tab === "Notifications" }}
+            onPress={() => {
+              if (desktopWeb) {
+                setNotificationReturnTab(tab === "Notifications" ? "Home" : tab);
+                setDesktopNotificationsOpen(true);
+                return;
+              }
+              setSelected(null);
+              setNotificationReturnTab(tab === "Notifications" ? "Home" : tab);
+              setTab("Notifications");
+            }}
+            style={({ pressed }) => [
+              { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 16 },
+              (pressed || (desktopWeb ? desktopNotificationsOpen : tab === "Notifications")) && { backgroundColor: "#eaf5ef" },
+            ]}
+          >
+            <Ionicons name="notifications-outline" size={23} color={colors.brandDark} />
+            {!!q.data?.unreadCount && (
+              <View
+                style={{
+                  position: "absolute",
+                  right: 3,
+                  top: 3,
+                  minWidth: 19,
+                  height: 19,
+                  paddingHorizontal: 4,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "#d93025",
+                  borderRadius: 10,
+                  borderWidth: 1.5,
+                  borderColor: "white",
+                }}
+                pointerEvents="none"
+                accessible={false}
+              >
+                <Text style={{ color: "white", fontSize: 10, lineHeight: 13, fontWeight: "800" }}>
+                  {q.data.unreadCount > 99 ? "99+" : q.data.unreadCount}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+          {desktopWeb && <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+            onPress={() => { setDesktopSignOutError(""); setDesktopSignOutConfirm(true); }}
+            style={({ pressed }) => [{ minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingHorizontal: 13, borderRadius: 10, borderWidth: 1, borderColor: "#f0d9d7", backgroundColor: "#fff8f7", opacity: pressed ? 0.76 : 1 }]}
+          >
+            <Ionicons name="log-out-outline" size={17} color="#ad403d" />
+            <Text style={{ color: "#ad403d", fontSize: 12, fontWeight: "800" }}>Sign out</Text>
+          </Pressable>}
+        </View>
       </View>
+      </View>
+      <View style={[{ flex: 1, minHeight: 0 }, desktopWeb && { flexDirection: "row" }]}>
+      {desktopWeb && <View style={{ width: 232, paddingHorizontal: 16, paddingTop: 26, paddingBottom: 12, borderRightWidth: 1, borderColor: "#e2ece9", backgroundColor: "#fbfdfc" }}>
+        <Text style={{ marginLeft: 11, marginBottom: 12, color: "#70858a", fontSize: 10, fontWeight: "800", letterSpacing: 1.1 }}>YOUR WORKSPACE</Text>
+        {renderNavigation("desktop")}
+        <View style={{ flex: 1 }} />
+        <View style={{ margin: 4, marginBottom: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: "#e2ece9", backgroundColor: "#f2f8f6" }}><View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="location-outline" size={17} color={colors.brand} /><Text style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>Iligan City</Text></View><Text style={{ marginTop: 4, marginLeft: 25, color: "#60777c", fontSize: 10, lineHeight: 15 }}>Community reporting · Lanao del Norte</Text></View>
+        <View style={{ marginHorizontal: 8, paddingTop: 12, paddingBottom: 4, borderTopWidth: 1, borderTopColor: "#e2ece9", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <Text style={{ color: "#70858a", fontSize: 10, fontWeight: "700" }}>APP VERSION</Text>
+          <Text style={{ color: colors.brandDark, fontSize: 11, fontWeight: "800" }}>v{RESIDENT_APP_VERSION}</Text>
+        </View>
+      </View>}
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, minWidth: 0, backgroundColor: desktopWeb ? "#f5f8f7" : undefined }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
+        {tabletWeb && renderNavigation("tablet")}
         <ScrollView
-          style={Platform.select({ web: { flex: 1, scrollPaddingBottom: 124 } })}
+          style={Platform.select({ web: { flex: 1, width: "100%", scrollPaddingBottom: tabletWeb || desktopWeb ? 36 : 124 } })}
           ref={scroll}
           scrollEnabled={Platform.OS === "android" || !(tab === "Explore" && !selected && exploreMapGestureActive)}
           onScroll={(event) => { mainScrollY.current = event.nativeEvent.contentOffset.y; if (tab === "Explore" && !selected) exploreScrollY.current = mainScrollY.current; }}
           scrollEventThrottle={16}
-          contentContainerStyle={[s.scroll, tab === "Home" && { gap: 9, paddingTop: 12 }]}
+          contentContainerStyle={[
+            s.scroll,
+            tab === "Home" && { gap: 9, paddingTop: 12 },
+            (tabletWeb || desktopWeb) && { maxWidth: contentMaxWidth, paddingHorizontal: desktopWeb ? 40 : viewportWidth < 840 ? 16 : 20, paddingTop: desktopWeb ? 36 : compactTablet ? 14 : 20, paddingBottom: desktopWeb ? 48 : compactTablet ? 26 : 32, gap: desktopWeb ? 24 : compactTablet ? 12 : 15 },
+          ]}
           keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
@@ -415,6 +593,13 @@ export default function Home() {
             />
           }
         >
+          {desktopWeb && !selected && ["Home", "Explore", "Community", "Report", "Profile", "Notifications", "Announcements"].includes(tab) && <View style={{ minHeight: 82, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 24, marginBottom: 3, paddingBottom: 19, borderBottomWidth: 1, borderBottomColor: "#e0e9e7" }}>
+            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+              <Text accessibilityRole="header" style={{ color: "#173b45", fontSize: 27, lineHeight: 33, fontWeight: "700", letterSpacing: -0.65 }}>{tab === "Home" ? "Home" : tab === "Explore" ? "Explore Iligan" : tab === "Community" ? "Community" : tab === "Report" ? "Report a concern" : tab === "Profile" ? "Your profile" : tab === "Notifications" ? "Notifications" : "Announcements"}</Text>
+              <Text numberOfLines={1} style={{ color: "#61777d", fontSize: 13, lineHeight: 19 }}>{tab === "Home" ? "Reports and local updates from your community." : tab === "Explore" ? "Browse local reports, places and barangay activity." : tab === "Community" ? "Join conversations and follow meeting updates in your area." : tab === "Report" ? "Share an issue with the city and follow its progress." : tab === "Profile" ? "Personal details, settings, and help for your resident account." : tab === "Notifications" ? "Updates about your reports and community activity." : "Official updates from your barangay and Iligan City."}</Text>
+            </View>
+            {tab !== "Report" && tab !== "Home" && <Pressable accessibilityRole="button" accessibilityLabel="Start a report" onPress={() => report()} style={({ pressed }) => [{ minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 15, borderRadius: 9, backgroundColor: colors.brand, opacity: pressed ? 0.85 : 1 }]}><Ionicons name="add" size={18} color="white" /><Text style={{ color: "white", fontSize: 13, fontWeight: "700" }}>New report</Text></Pressable>}
+          </View>}
           {q.isPending ? (
             <ListSkeleton variant="home" count={1} label="Loading your home screen" />
           ) : q.error && !q.data ? (
@@ -466,7 +651,10 @@ export default function Home() {
                     onSaved={() => {
                       setTab("Home");
                       setPage(0);
-                      void qc.invalidateQueries();
+                      setReportStatusFilter("all");
+                      setReportsReturnTab("Home");
+                      setShowAllReports(true);
+                      void qc.invalidateQueries({ queryKey: ["my-reports", user] });
                     }}
                   />
                 ) : tab === "Explore" ? null : tab === "Community" ? (
@@ -482,26 +670,12 @@ export default function Home() {
                   />
                 ) : tab === "Announcements" ? (
                   <Announcements barangays={q.data.barangays} initialSelected={selectedAnnouncement} />
-                ) : tab === "Notifications" ? (
+                ) : tab === "Notifications" && !desktopWeb ? (
                   <NotificationCenter
                     profileId={q.data.profile.id}
                     backLabel={`Back to ${notificationReturnTab.toLowerCase()}`}
                     onBack={() => setTab(notificationReturnTab)}
-                    onNavigate={async (destination, reportId, communitySection, announcementId, consultationId, meetingRequestId) => {
-                      if (reportId) {
-                        let report = await result<Report | null>(db!.from("reports").select("*").eq("id", reportId).maybeSingle());
-                        if (!report) report = (await result<Report[]>(db!.rpc("public_report_by_id", { p_id: reportId })))[0] ?? null;
-                        if (!report) throw new Error("This report is no longer available to your account.");
-                        setReportReturnTab("Notifications");
-                        setSelected(report);
-                      }
-                      if (destination === "Community") {
-                        setCommunityInitialTab(communitySection || "consultations");
-                        setCommunityTarget({ consultationId, meetingRequestId });
-                      }
-                      if (destination === "Announcements") setSelectedAnnouncement(announcementId || null);
-                      setTab(destination);
-                    }}
+                    onNavigate={(destination, reportId, communitySection, announcementId, consultationId, meetingRequestId) => navigateFromNotification(destination, reportId, communitySection, announcementId, consultationId, meetingRequestId)}
                   />
                 ) : tab === "Profile" ? (
                   <ProfileForm
@@ -521,29 +695,32 @@ export default function Home() {
                     }}
                   />
                 ) : (
-                  <>
+                  <View style={wideDashboard && !showAllReports ? { flexDirection: "row", alignItems: "flex-start", gap: desktopWeb ? 28 : 24 } : { gap: 16 }}>
+                    <View style={wideDashboard && !showAllReports ? { flex: desktopWeb ? 1.15 : 1, minWidth: 0, gap: desktopWeb ? 22 : 18 } : { gap: 12 }}>
                     {showAllReports ? (
                       <Pressable accessibilityRole="button" accessibilityLabel={`Back to ${reportsReturnTab}`} onPress={() => { setShowAllReports(false); setPage(0); setTab(reportsReturnTab); scrollToPageTop(); }} style={({ pressed }) => [{ alignSelf: "flex-start", minHeight: 44, flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 12, borderRadius: 22, backgroundColor: "#def6f3" }, pressed && { opacity: 0.8 }]}><Ionicons name="arrow-back" size={17} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>Back to {reportsReturnTab}</Text></Pressable>
                     ) : <>
-                    <View style={{ minHeight: 120, justifyContent: "flex-end", paddingHorizontal: 3, paddingBottom: 4, overflow: "hidden" }}>
-                      <View pointerEvents="none" style={{ position: "absolute", right: -14, top: -8, width: "108%", height: 150 }}>
+                    <View style={desktopWeb ? { minHeight: 112, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 20, overflow: "visible" } : { minHeight: tabletWeb ? compactTablet ? 104 : 112 : 120, justifyContent: "flex-end", paddingHorizontal: 3, paddingBottom: 4, overflow: "hidden" }}>
+                      {!desktopWeb && <View pointerEvents="none" style={{ position: "absolute", right: -14, top: -8, width: "108%", height: 150 }}>
                         <Image source={require("../assets/iligan-home-header.jpg")} accessible={false} resizeMode="cover" style={{ width: "100%", height: "100%" }} />
+                      </View>}
+                      <View style={{ flex: 1, minWidth: 0, gap: desktopWeb ? 2 : 0 }}>
+                        <Text style={{ color: colors.muted, fontSize: desktopWeb ? 13 : 16, lineHeight: desktopWeb ? 19 : 21 }}>Good day,</Text>
+                        <Text accessibilityRole="header" adjustsFontSizeToFit numberOfLines={2} style={{ maxWidth: desktopWeb ? "100%" : "95%", color: "#10263f", fontSize: desktopWeb ? 32 : 29, lineHeight: desktopWeb ? 39 : 35, fontWeight: "800", letterSpacing: -0.8 }}>Welcome, {q.data.profile.display_name || "neighbor"}.</Text>
                       </View>
-                      <Text style={{ color: colors.muted, fontSize: 16, lineHeight: 21 }}>Good day,</Text>
-                      <Text accessibilityRole="header" adjustsFontSizeToFit numberOfLines={2} style={{ maxWidth: "95%", color: "#10263f", fontSize: 29, lineHeight: 35, fontWeight: "800", letterSpacing: -0.8 }}>Welcome, {q.data.profile.display_name || "neighbor"}.</Text>
-                      <Pressable accessibilityRole="button" accessibilityLabel="Choose your barangay" accessibilityHint="Updates the barangay on your profile" onPress={() => { setBarangayMessage(""); setBarangaysOpen(true); }} style={({ pressed }) => [{ minHeight: 48, alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 9, marginTop: 12, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 24, borderWidth: 1, borderColor: "#d9e9ed", backgroundColor: "#ffffffed" }, pressed && { opacity: 0.8 }]}>
+                      <Pressable ref={barangaysAnchorRef} accessibilityRole="button" accessibilityLabel="Choose your barangay" accessibilityHint="Updates the barangay on your profile" accessibilityState={{ expanded: barangaysOpen }} onPress={() => { setBarangayMessage(""); setBarangaysOpen((open) => !open); }} style={({ pressed }) => [{ minHeight: desktopWeb ? 42 : 48, alignSelf: desktopWeb ? "center" : "flex-start", flexDirection: "row", alignItems: "center", gap: 9, marginTop: desktopWeb ? 0 : 12, paddingHorizontal: desktopWeb ? 12 : 14, paddingVertical: 8, borderRadius: desktopWeb ? 9 : 24, borderWidth: 1, borderColor: "#d9e9ed", backgroundColor: "white" }, pressed && { opacity: 0.8 }]}>
                         <Ionicons name="location" size={19} color={colors.brand} />
                         <Text numberOfLines={1} style={{ maxWidth: 215, color: "#526b82", fontSize: 14, fontWeight: "600" }}>{q.data.barangays.find((b) => b.id === q.data.profile.barangay_id)?.name || "Choose your barangay"} · Iligan City</Text>
                         <Ionicons name="chevron-down" size={16} color={colors.muted} />
                       </Pressable>
                     </View>
-                    <Pressable accessibilityRole="button" accessibilityLabel="Start a report" onPress={() => report()} style={({ pressed }) => [{ minHeight: 150, justifyContent: "center", padding: 20, borderRadius: 24, backgroundColor: colors.brandDark, overflow: "hidden", shadowColor: colors.brandDark, shadowOpacity: 0.16, shadowRadius: 16, shadowOffset: { width: 0, height: 48 }, elevation: 3 }, pressed && { opacity: 0.92, transform: [{ scale: 0.995 }] }]}>
+                    <Pressable accessibilityRole="button" accessibilityLabel="Start a report" onPress={() => report()} style={({ pressed }) => [{ minHeight: desktopWeb ? 184 : tabletWeb ? compactTablet ? 124 : 136 : 150, justifyContent: "center", padding: desktopWeb ? 26 : tabletWeb ? 16 : 20, borderRadius: tabletWeb ? 20 : 24, backgroundColor: colors.brandDark, overflow: "hidden", shadowColor: colors.brandDark, shadowOpacity: desktopWeb ? 0.12 : 0.16, shadowRadius: 16, shadowOffset: { width: 0, height: desktopWeb ? 5 : 48 }, elevation: 3 }, pressed && { opacity: 0.92, transform: [{ scale: 0.995 }] }]}>
                       <View pointerEvents="none" style={{ position: "absolute", right: -50, top: -54, width: 225, height: 225, borderRadius: 120, borderWidth: 1, borderColor: "#ffffff16" }} />
                       <View pointerEvents="none" style={{ position: "absolute", right: -15, bottom: -100, width: 235, height: 190, borderRadius: 120, borderWidth: 1, borderColor: "#41c5b123" }} />
-                      <View style={{ maxWidth: "60%", gap: 6 }}>
+                      <View style={{ maxWidth: desktopWeb ? "70%" : "60%", gap: 6 }}>
                         <Text style={{ color: "#b8efe8", fontSize: 11, fontWeight: "800", letterSpacing: 1.7 }}>REPORT & TRACK</Text>
-                        <Text style={{ color: "white", fontSize: 21, lineHeight: 25, fontWeight: "800", letterSpacing: -0.45 }}>Report a local issue.</Text>
-                        <Text style={{ color: "#d2e5e5", fontSize: 12, lineHeight: 18 }}>Help us build a cleaner, safer and stronger Iligan City. Share details and follow every update.</Text>
+                        <Text style={{ color: "white", fontSize: desktopWeb ? 25 : 21, lineHeight: desktopWeb ? 31 : 25, fontWeight: "800", letterSpacing: -0.45 }}>Report a local issue.</Text>
+                        <Text style={{ color: "#d2e5e5", fontSize: desktopWeb ? 14 : 12, lineHeight: desktopWeb ? 21 : 18 }}>Help us build a cleaner, safer and stronger Iligan City. Share details and follow every update.</Text>
                       </View>
                       <View pointerEvents="none" style={{ position: "absolute", right: 56, bottom: 16, width: 70, height: 74, borderRadius: 13, padding: 9, backgroundColor: "#f4fbfc", transform: [{ rotate: "-7deg" }] }}>
                         <Ionicons name="location" size={23} color={colors.brand} />
@@ -561,7 +738,7 @@ export default function Home() {
                       {(showAllCategories ? q.data.categories : q.data.categories.slice(0, 4)).map((item) => {
                         const tone = categoryToneFor(item.name);
                         const description = item.name.toLowerCase().includes("light") ? "Non-working or damaged lights" : item.name.toLowerCase().includes("road") ? "Potholes, cracks and road hazards" : item.name.toLowerCase().includes("drain") ? "Clogged, damaged or poor drainage" : item.name.toLowerCase().includes("waste") ? "Illegal dumping, overflowing bins" : item.name.toLowerCase().includes("wire") ? "Low-hanging or unsafe wires" : "Missing signs or faded road markings";
-                        return <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`Report ${categoryDisplayName(item.name)}. ${description}`} style={({ pressed }) => [{ width: "48.5%", minHeight: 80, padding: 7, borderRadius: 20, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white", flexDirection: "row", alignItems: "center", gap: 6, shadowColor: "#12343d", shadowOpacity: 0.035, shadowRadius: 10, shadowOffset: { width: 0, height: 48 }, elevation: 1 }, pressed && { backgroundColor: "#f6fbfa", opacity: 0.86 }]} onPress={() => report(item.id)}>
+                        return <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`Report ${categoryDisplayName(item.name)}. ${description}`} style={({ pressed }) => [{ width: "48.5%", minHeight: tabletWeb ? compactTablet ? 66 : 72 : 80, padding: tabletWeb ? 6 : 7, borderRadius: tabletWeb ? 16 : 20, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white", flexDirection: "row", alignItems: "center", gap: 6, shadowColor: "#12343d", shadowOpacity: 0.035, shadowRadius: 10, shadowOffset: { width: 0, height: 48 }, elevation: 1 }, pressed && { backgroundColor: "#f6fbfa", opacity: 0.86 }]} onPress={() => report(item.id)}>
                           <View style={{ width: compactPhone ? 32 : 38, height: 44, borderRadius: 17, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(item.name)} size={compactPhone ? 21 : 23} color={tone.foreground} /></View>
                           <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text numberOfLines={2} style={{ color: "#12343d", fontSize: 12, lineHeight: 16, fontWeight: "700" }}>{categoryDisplayName(item.name)}</Text><Text numberOfLines={2} style={{ color: "#5d7378", fontSize: 12, lineHeight: 16 }}>{description}</Text></View>
                           {!compactPhone && <Ionicons name="chevron-forward" size={14} color="#9aabba" />}
@@ -579,14 +756,31 @@ export default function Home() {
                     )) : <View style={{ minHeight: 58, flexDirection: "row", alignItems: "center", gap: 9, borderRadius: 15, paddingHorizontal: 11, backgroundColor: "white", borderWidth: 1, borderColor: "#e4eff0" }}><View style={{ width: 36, height: 36, borderRadius: 13, backgroundColor: "#e5f7f4", alignItems: "center", justifyContent: "center" }}><Ionicons name="megaphone-outline" size={18} color={colors.brand} /></View><View style={{ flex: 1, gap: 2 }}><Text style={{ color: "#12343d", fontSize: 12, lineHeight: 15, fontWeight: "700" }}>No new community announcements.</Text><Text style={{ color: "#5d7378", fontSize: 11, lineHeight: 14 }}>Check back for city and barangay updates.</Text></View></View>}
                     </View>
                     </>}
+                    </View>
+                    <View style={wideDashboard && !showAllReports ? { flex: desktopWeb ? 0.85 : 1, minWidth: 0, gap: desktopWeb ? 22 : 18 } : { gap: 12 }}>
                     <View style={{ gap: 8 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 44, gap: 8 }}>
                       <Text style={{ flex: 1, minWidth: 0, color: "#10263f", fontSize: 16, fontWeight: "800", letterSpacing: -0.2 }}>Your reports</Text>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                        <Text accessibilityLiveRegion="polite" style={{ color: "#5d7378", fontSize: 11, fontWeight: "600" }}>{reportsQuery.data ? `${reportsQuery.data.count} total` : ""}</Text>
+                        <Text accessibilityLiveRegion="polite" style={{ color: "#5d7378", fontSize: 11, fontWeight: "600" }}>{reportsQuery.data ? `${reportsQuery.data.count} ${showAllReports && reportStatusFilter !== "all" ? label(reportStatusFilter).toLowerCase() : "total"}` : ""}</Text>
                         {!showAllReports && <Pressable accessibilityRole="button" accessibilityLabel="View all your reports" onPress={() => { setPage(0); setReportsReturnTab("Home"); setShowAllReports(true); scrollToPageTop(); }} style={({ pressed }) => [{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 3, paddingLeft: 4 }, pressed && { opacity: 0.75 }]}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "700" }}>View all</Text><Ionicons name="chevron-forward" size={14} color={colors.brand} /></Pressable>}
                       </View>
                     </View>
+                    {showAllReports && <View style={{ gap: 6 }}>
+                      <Text style={s.small}>Filter by status</Text>
+                      <Choices
+                        grow
+                        compact
+                        title="All statuses"
+                        sheetTitle="Filter your reports"
+                        subtitle="Choose a status to narrow your report list."
+                        leadingIcon="options-outline"
+                        searchable={false}
+                        items={[{ id: "all", name: "All statuses" }, ...statuses.map((status) => ({ id: status, name: label(status) }))]}
+                        value={reportStatusFilter}
+                        onChange={(value) => { setReportStatusFilter(value as Status | "all"); setPage(0); }}
+                      />
+                    </View>}
                     {reportsLoading ? <ListSkeleton variant="report" count={REPORT_PAGE_SIZE} label={`Loading report page ${page + 1}`} /> : reportsQuery.error ? (
                       <View style={s.card}><Text style={s.error}>Could not load your reports. {reportsQuery.error.message}</Text><Button secondary title="Retry reports" onPress={() => void reportsQuery.refetch()} /></View>
                     ) : homeReports.length ? (
@@ -619,8 +813,8 @@ export default function Home() {
                       <View style={{ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 9, padding: 11, borderRadius: 16, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }}>
                         <View style={{ width: 36, height: 36, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#f0f6f8" }}><Ionicons name="documents-outline" size={20} color="#3976a8" /></View>
                         <View style={{ flex: 1, gap: 2 }}>
-                          <Text style={{ color: "#12343d", fontSize: 12, lineHeight: 15, fontWeight: "700" }}>{page ? "No reports on this page." : "Your reports will appear here."}</Text>
-                          <Text style={{ color: "#5d7378", fontSize: 11, lineHeight: 14 }}>Once submitted, you can follow every recorded update.</Text>
+                          <Text style={{ color: "#12343d", fontSize: 12, lineHeight: 15, fontWeight: "700" }}>{showAllReports && reportStatusFilter !== "all" ? "No reports match this status." : page ? "No reports on this page." : "Your reports will appear here."}</Text>
+                          <Text style={{ color: "#5d7378", fontSize: 11, lineHeight: 14 }}>{showAllReports && reportStatusFilter !== "all" ? "Choose All statuses to see every report." : "Once submitted, you can follow every recorded update."}</Text>
                         </View>
                       </View>
                     )}
@@ -633,15 +827,48 @@ export default function Home() {
                     </View>}
                     </View>
                     <View style={{ minHeight: 40, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 13, backgroundColor: "#e7f3fd", borderWidth: 1, borderColor: "#d4e8fb" }}><Ionicons name="information-circle" size={17} color="#2875bd" /><Text style={{ flex: 1, color: "#526b82", fontSize: 10, lineHeight: 14 }}>Not an emergency service. Stay clear of dangerous infrastructure while documenting a report.</Text></View>
-                  </>
+                    </View>
+                  </View>
                 )}
               </>
             )
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+      </View>
+      {desktopWeb && q.data && <Modal visible={desktopNotificationsOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setDesktopNotificationsOpen(false)}>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: "#071b276b" }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close notifications" onPress={() => setDesktopNotificationsOpen(false)} style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }} />
+          <View accessibilityViewIsModal style={{ width: "100%", maxWidth: 760, maxHeight: "86%", minHeight: 280, overflow: "hidden", borderRadius: 20, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, shadowColor: colors.brandDark, shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 8 }}>
+            <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ gap: 10, padding: 22 }} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled">
+              <NotificationCenter
+                profileId={q.data.profile.id}
+                backLabel="Close notifications"
+                modal
+                onBack={() => setDesktopNotificationsOpen(false)}
+                onNavigate={(destination, reportId, communitySection, announcementId, consultationId, meetingRequestId) => navigateFromNotification(destination, reportId, communitySection, announcementId, consultationId, meetingRequestId, true)}
+              />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>}
+      {desktopWeb && <Modal visible={desktopSignOutConfirm} transparent animationType="fade" onRequestClose={() => !desktopSignOutBusy && setDesktopSignOutConfirm(false)}>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 22, backgroundColor: "#071b27aa" }}>
+          <View accessibilityRole="alert" style={[s.card, { width: "100%", maxWidth: 390, padding: 20, gap: 12, borderRadius: 18 }]}>
+            <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: "#fff0ee", alignItems: "center", justifyContent: "center" }}><Ionicons name="log-out-outline" size={22} color="#ad403d" /></View>
+            <Text style={[s.title, { fontSize: 19 }]}>Sign out of Iligan Connect?</Text>
+            <Text style={s.small}>You can sign in again anytime. Your reports, requests, and profile will remain saved.</Text>
+            {desktopSignOutError ? <Text accessibilityRole="alert" style={[s.small, { color: "#a43d35" }]}>{desktopSignOutError}</Text> : null}
+            <View style={{ flexDirection: "row", gap: 9, marginTop: 3 }}>
+              <Button grow secondary title="Cancel" disabled={desktopSignOutBusy} onPress={() => setDesktopSignOutConfirm(false)} />
+              <Pressable accessibilityRole="button" accessibilityState={{ disabled: desktopSignOutBusy, busy: desktopSignOutBusy }} disabled={desktopSignOutBusy} onPress={() => void confirmDesktopSignOut()} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 52, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "#ad403d", opacity: desktopSignOutBusy ? 0.6 : pressed ? 0.84 : 1 }]}><Text style={s.buttonText}>{desktopSignOutBusy ? "Signing out…" : "Sign out"}</Text></Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>}
       <SelectionSheet
         visible={barangaysOpen}
+        anchorRef={barangaysAnchorRef}
         onClose={() => {
           if (q.data?.profile.role === "resident" && !q.data.profile.barangay_id) {
             setBarangayMessage("Choose your registered barangay to finish setting up your resident profile.");
@@ -669,46 +896,15 @@ export default function Home() {
           } finally { setBarangayBusy(false); }
         }}
       />
-      <View style={s.nav}>
-        {tabs.map(([name, icon]) => (
-          <Pressable
-            key={name}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: navigationTab === name }}
-          style={[s.navItem, navigationTab === name && s.navItemActive]}
-            onPress={() => {
-              if (tab === name && !selected && !(name === "Home" && showAllReports)) return;
-              setSelected(null);
-              setShowAllReports(false);
-              if (name === "Report") report();
-              else {
-                if (name === "Community") { setCommunityInitialTab("consultations"); setCommunityTarget({}); }
-                setTab(name);
-              }
-            }}
-          >
-            {name === "Report" ? (
-              <View style={[s.navAction, navigationTab === name && s.navActionActive]}>
-                <Ionicons name={icon} size={22} color="white" />
-              </View>
-            ) : (
-              <Ionicons
-                name={icon}
-                size={22}
-                color={navigationTab === name ? colors.brand : colors.muted}
-              />
-            )}
-            <Text style={[s.navText, navigationTab === name && { color: colors.brand }]}>
-              {name}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {!tabletWeb && !desktopWeb && renderNavigation("mobile")}
     </SafeAreaView>
   );
 }
 function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRecoveryVerified: () => void }) {
   const insets = useSafeAreaInsets();
+  const { width: authWidth, height: authHeight } = useWindowDimensions();
+  const tabletAuthWeb = Platform.OS === "web" && authWidth >= 768 && authWidth < 1200;
+  const wideAuthWeb = Platform.OS === "web" && authWidth >= 1200;
   const [mode, setMode] = useState("login"),
     [firstName, setFirstName] = useState(""),
     [middleName, setMiddleName] = useState(""),
@@ -728,6 +924,9 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
     [message, setMessage] = useState(initialError),
     [busy, setBusy] = useState(false),
     [showPassword, setShowPassword] = useState(false);
+  const minimalDesktopLogin = wideAuthWeb && mode === "login";
+  const registeredBarangayAnchorRef = useRef<View>(null);
+  const minimalDesktopRegister = wideAuthWeb && mode === "register";
   const [messageIsError, setMessageIsError] = useState(!!initialError);
   const [termsOpen, setTermsOpen] = useState(false),
     [termsReachedEnd, setTermsReachedEnd] = useState(false),
@@ -845,41 +1044,52 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
   }
   return (
     <View style={{ flex: 1, backgroundColor: "white" }}>
-      <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, height: insets.top, backgroundColor: colors.brandDark }} />
+      <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, height: insets.top, backgroundColor: minimalDesktopLogin ? "white" : colors.brandDark }} />
       <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: "transparent" }}>
         <StatusBar style="light" />
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{ flex: 1, backgroundColor: colors.paper }}
+          style={{ flex: 1, backgroundColor: minimalDesktopLogin ? "white" : colors.paper }}
         >
         <ScrollView
-          style={{ flex: 1, backgroundColor: colors.paper }}
-          contentContainerStyle={s.authScroll}
+          style={{ flex: 1, backgroundColor: minimalDesktopLogin ? "white" : colors.paper }}
+          contentContainerStyle={[
+            s.authScroll,
+            tabletAuthWeb && { maxWidth: 760, paddingHorizontal: 24, paddingVertical: 24 },
+            wideAuthWeb && { maxWidth: minimalDesktopLogin ? 1520 : 1360, width: "100%", minHeight: Math.max(0, authHeight - 32), flexDirection: "row", alignItems: minimalDesktopLogin ? "stretch" : "flex-start", justifyContent: "center", gap: minimalDesktopLogin ? 0 : 24, paddingHorizontal: minimalDesktopLogin ? 32 : 24, paddingVertical: minimalDesktopLogin ? 0 : 36, paddingBottom: minimalDesktopLogin ? 0 : 36, backgroundColor: minimalDesktopLogin ? "white" : "transparent" },
+          ]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          <View style={s.authHero}>
+          <View style={[s.authHero, wideAuthWeb && { width: "48%", maxWidth: 600, minWidth: 420, height: 600, flexShrink: 0, alignSelf: "flex-start", justifyContent: "space-between", padding: 40, paddingTop: 40, gap: 20, borderRadius: 28, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }, minimalDesktopLogin && { width: "56%", maxWidth: 840, minWidth: 420, height: "auto", flexShrink: 1, alignSelf: "stretch", justifyContent: "center", padding: 56, gap: 44, borderRadius: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderRightWidth: 1, borderRightColor: "#e4ece9", backgroundColor: "white", overflow: "visible" }, minimalDesktopRegister && { display: "none" }]}>
             <View style={s.authBrand}>
-              <Image source={require("../assets/iligan-connect-logo.png")} accessibilityLabel="Iligan Connect logo" resizeMode="contain" style={{ width: 48, height: 48 }} />
+              <Image source={require("../assets/iligan-connect-logo.png")} accessibilityLabel="Iligan Connect logo" resizeMode="contain" style={{ width: minimalDesktopLogin ? 62 : wideAuthWeb ? 54 : 48, height: minimalDesktopLogin ? 62 : wideAuthWeb ? 54 : 48 }} />
               <View>
-                <Text style={s.authBrandName}>ILIGAN CONNECT</Text>
-                <Text style={s.authBrandPlace}>Community reporting · Iligan City</Text>
+                <Text style={[s.authBrandName, minimalDesktopLogin && { color: colors.brandDark }]}>ILIGAN CONNECT</Text>
+                <Text style={[s.authBrandPlace, minimalDesktopLogin && { color: colors.muted }]}>Community reporting · Iligan City</Text>
               </View>
             </View>
-            <View style={s.authCopy}>
-              <Text style={s.authKicker}>A CITY THAT LISTENS</Text>
-              <Text accessibilityRole="header" style={s.authTitle}>
+            <View style={[s.authCopy, wideAuthWeb && { maxWidth: 520, gap: 14 }, minimalDesktopLogin && { maxWidth: 560, gap: 13 }]}>
+              <Text accessibilityRole="header" style={[s.authTitle, wideAuthWeb && { fontSize: 42, lineHeight: 50, letterSpacing: -1.2 }, minimalDesktopLogin && { fontSize: 48, lineHeight: 56, letterSpacing: -1.5, color: colors.brandDark }]}>
                 Make your neighborhood count.
               </Text>
-              <Text style={s.authSubtitle}>
-                Share a local concern, follow what happens next, and join the conversation.
+              <Text style={[s.authSubtitle, wideAuthWeb && { maxWidth: 460, fontSize: 16, lineHeight: 25, color: colors.muted }, minimalDesktopLogin && { maxWidth: 480, fontSize: 17, lineHeight: 27 }]}>
+                Iligan City listens. Share a local concern, follow what happens next, and join the conversation.
               </Text>
             </View>
+            {wideAuthWeb && !minimalDesktopLogin && <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {["Report local concerns", "Track updates", "Connect with your barangay"].map((item) => <View key={item} style={{ paddingHorizontal: 11, paddingVertical: 8, borderWidth: 1, borderColor: "#ffffff30", borderRadius: 20, backgroundColor: "#ffffff12" }}>
+                <Text style={{ color: "#e1f1ed", fontSize: 11, fontWeight: "600" }}>{item}</Text>
+              </View>)}
+            </View>}
+            {wideAuthWeb && !minimalDesktopLogin && <View style={{ width: "100%", height: 210, overflow: "hidden", borderWidth: 1, borderColor: "#ffffff40", borderRadius: 18 }}>
+              <Image source={require("../assets/iligan-home-header.jpg")} accessibilityLabel="Iligan City Hall" resizeMode="cover" style={{ width: "100%", height: "100%" }} />
+            </View>}
           </View>
-          <View style={s.authPanel}>
-            <View style={[s.card, s.authCard]}>
+          <View style={[s.authPanel, wideAuthWeb && mode !== "register" && { flex: 1, minWidth: 420, maxWidth: 520, alignSelf: "flex-start", alignItems: "center", justifyContent: "center", backgroundColor: "transparent", paddingHorizontal: 0, paddingVertical: 0 }, minimalDesktopLogin && { minWidth: 420, maxWidth: 600, alignSelf: "stretch", justifyContent: "center", paddingHorizontal: 48 }, minimalDesktopRegister && { flexGrow: 0, flexShrink: 0, width: 640, minWidth: 0, maxWidth: 640, alignItems: "stretch", justifyContent: "flex-start" }]}>
+            <View style={[s.card, s.authCard, wideAuthWeb && { maxWidth: mode === "register" ? 640 : 520, padding: 32, gap: 18, borderRadius: 24 }, minimalDesktopLogin && { maxWidth: 500, padding: 0, gap: 20, borderWidth: 0, borderColor: "transparent", borderRadius: 0, backgroundColor: "transparent", shadowOpacity: 0, shadowRadius: 0, elevation: 0 }]}>
               <View style={s.authCardHeading}>
-                <Text accessibilityRole="header" style={s.authTitleText}>
+                <Text accessibilityRole="header" style={[s.authTitleText, wideAuthWeb && { fontSize: 26, letterSpacing: -0.45 }]}>
                   {mode === "register" || mode === "verify"
                     ? "Join your community"
                     : mode === "reset"
@@ -935,9 +1145,9 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
             ) : (
               <>
                 {mode === "register" && (
-                  <View style={{ gap: 11 }}>
-                    <Text style={s.eyebrow}>PERSONAL DETAILS</Text>
-                    <Field
+                  <View style={[{ gap: 11 }, wideAuthWeb && { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 14 }]}>
+                    <Text style={[s.eyebrow, wideAuthWeb && { width: "100%" }]}>PERSONAL DETAILS</Text>
+                    <View style={wideAuthWeb ? { width: "47%" } : undefined}><Field
                       label="First name" required minLength={1} validationKind="name" hint="Use your name as it appears on your records."
                       placeholder="First name"
                       value={firstName}
@@ -945,17 +1155,8 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                       maxLength={60}
                       autoCapitalize="words"
                       autoComplete="given-name"
-                    />
-                    <Field
-                      label="Middle name (optional)" validationKind="name" hint="Leave blank if you do not use a middle name."
-                      placeholder="Middle name"
-                      value={middleName}
-                      onChangeText={setMiddleName}
-                      maxLength={60}
-                      autoCapitalize="words"
-                      autoComplete="additional-name"
-                    />
-                    <Field
+                    /></View>
+                    <View style={wideAuthWeb ? { width: "47%" } : undefined}><Field
                       label="Last name" required minLength={1} validationKind="name"
                       error={fullName.length > 100 ? "Use no more than 100 characters across all name fields." : undefined}
                       placeholder="Last name"
@@ -964,8 +1165,17 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                       maxLength={60}
                       autoCapitalize="words"
                       autoComplete="family-name"
-                    />
-                    <Field
+                    /></View>
+                    <View style={wideAuthWeb ? { width: "47%" } : undefined}><Field
+                      label="Middle name (optional)" validationKind="name" hint="Leave blank if you do not use a middle name."
+                      placeholder="Middle name"
+                      value={middleName}
+                      onChangeText={setMiddleName}
+                      maxLength={60}
+                      autoCapitalize="words"
+                      autoComplete="additional-name"
+                    /></View>
+                    <View style={wideAuthWeb ? { width: "47%" } : undefined}><Field
                       label="Age" required hint="Enter a whole number from 1 to 120."
                       placeholder="Age"
                       value={age}
@@ -976,8 +1186,8 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                       maxLength={3}
                       keyboardType="number-pad"
                       autoComplete="off"
-                    />
-                    <Field
+                    /></View>
+                    <View style={wideAuthWeb ? { width: "47%" } : undefined}><Field
                       label="Mobile number (optional)"
                       hint="Philippine mobile number, for example 0917 123 4567. Authorized administrators can view it."
                       placeholder="0917 123 4567"
@@ -989,10 +1199,11 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                       maxLength={24}
                       keyboardType="phone-pad"
                       autoComplete="tel"
-                    />
-                    <View style={{ gap: 7 }}>
+                    /></View>
+                    <View style={[{ gap: 7 }, wideAuthWeb && { width: "47%" }]}>
                       <Text style={s.fieldLabel}>Registered barangay <Text style={{ color: "#a43d35" }}>*</Text></Text>
                       <Pressable
+                        ref={registeredBarangayAnchorRef}
                         accessibilityRole="button"
                         accessibilityLabel={registeredBarangayName ? `Registered barangay: ${registeredBarangayName}` : "Choose your registered barangay"}
                         accessibilityHint="This becomes the barangay saved to your resident profile and used to prefill new reports."
@@ -1013,10 +1224,11 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                         <Text style={s.small}>Saved to your profile and used as the default barangay for new reports.</Text>
                       )}
                     </View>
-                    <Text style={s.eyebrow}>ACCOUNT DETAILS</Text>
+                    <Text style={[s.eyebrow, wideAuthWeb && { width: "100%" }]}>ACCOUNT DETAILS</Text>
                   </View>
                 )}
-                <Field maxLength={254}
+                <View style={[{ gap: 18 }, wideAuthWeb && mode === "register" && { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }]}>
+                <View style={wideAuthWeb && mode === "register" ? { width: "100%" } : undefined}><Field maxLength={254}
                   label="Email address" required validationKind="email" hint="Enter the address you used to register."
                   value={email}
                   onChangeText={setEmail}
@@ -1024,9 +1236,9 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                   autoCapitalize="none"
                   autoComplete="email"
                   autoCorrect={false}
-                />
+                /></View>
                 {mode !== "reset" && (
-                  <Field maxLength={1024}
+                  <View style={wideAuthWeb && mode === "register" ? { width: "47%" } : undefined}><Field maxLength={1024}
                     label={
                       mode === "register"
                         ? `Password (at least ${MIN_PASSWORD_LENGTH} characters)`
@@ -1056,9 +1268,9 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                         </Text>
                       </Pressable>
                     }
-                  />
+                  /></View>
                 )}
-                {mode === "register" && <Field
+                {mode === "register" && <View style={wideAuthWeb ? { width: "47%" } : undefined}><Field
                   label="Confirm password"
                   required
                   hint="Enter the same password again."
@@ -1081,7 +1293,8 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                       style={s.inputAction}
                     ><Text style={s.inputActionText}>{showPassword ? "Hide" : "Show"}</Text></Pressable>
                   }
-                />}
+                /></View>}
+                </View>
                 {mode === "register" && <View style={[s.card, { gap: 10, padding: 13, backgroundColor: "#f8fbfa" }]}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
                     <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="document-text-outline" size={19} color={colors.brand} /></View>
@@ -1180,17 +1393,20 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                   </View>
                   <Text style={s.small}>New residents should create an account with email and accept the current terms first.</Text>
                 </>}
+                {minimalDesktopLogin && <Pressable accessibilityRole="button" style={s.textAction} onPress={() => changeMode("reset")}>
+                  <Text style={s.small}>Forgot password?</Text>
+                </Pressable>}
                 <Pressable
                   accessibilityRole="button"
                   disabled={busy}
-                  style={s.textAction}
+                  style={({ pressed }) => [minimalDesktopLogin ? { minHeight: 52, width: "100%", alignItems: "center", justifyContent: "center", paddingHorizontal: 16, borderRadius: 26, borderWidth: 1, borderColor: colors.brand, backgroundColor: "white", opacity: busy ? 0.55 : pressed ? 0.78 : 1 } : s.textAction]}
                   onPress={() => changeMode(mode === "login" ? "register" : "login")}
                 >
-                  <Text style={s.textActionLabel}>
+                  <Text style={[s.textActionLabel, minimalDesktopLogin && { color: colors.brand, fontSize: 15 }]}>
                     {mode === "login" ? "New here? Create an account" : mode === "register" ? "Already have an account? Sign in" : "Back to sign in"}
                   </Text>
                 </Pressable>
-                {mode === "login" && (
+                {mode === "login" && !minimalDesktopLogin && (
                   <Pressable accessibilityRole="button" style={s.textAction} onPress={() => changeMode("reset")}>
                     <Text style={s.small}>Forgot password?</Text>
                   </Pressable>
@@ -1210,6 +1426,7 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
           </View>
           <SelectionSheet
             visible={barangayPickerOpen}
+            anchorRef={registeredBarangayAnchorRef}
             onClose={() => setBarangayPickerOpen(false)}
             title="Choose your barangay"
             subtitle="This becomes the barangay saved to your resident profile and used for new reports."
@@ -1344,7 +1561,8 @@ function ProfileForm({
   const writeLock = useRef(false);
   const photoLock = useRef(false);
   const { width: screenWidth } = useWindowDimensions();
-  const contentWidth = Math.min(screenWidth, 620) - 36;
+  const desktopProfile = Platform.OS === "web" && screenWidth >= 1200;
+  const contentWidth = Math.min(screenWidth, desktopProfile ? 1360 : 620) - (desktopProfile ? 80 : 36);
   const compactProfile = contentWidth < 320;
   const wideProfile = contentWidth >= 500;
   const avatarSize = wideProfile ? 108 : compactProfile ? 82 : 96;
@@ -1399,7 +1617,6 @@ function ProfileForm({
   const namePartsProblem = hasNameParts ? residentNamePartsError(firstName, middleName, lastName) : "";
   const fullNameTooLong = residentDisplayName(firstName, middleName, lastName).length > 100;
   const ageProblem = age.trim() ? residentAgeError(age) : "";
-  const version = (require("../app.json") as { expo: { version: string } }).expo.version;
 
   async function changePhoto(source: "gallery" | "camera") {
     if (photoLock.current) return;
@@ -1713,9 +1930,7 @@ function ProfileForm({
     if (signOutBusy) return;
     setSignOutBusy(true);
     try {
-      await removeDevicePushTokens(p.id).catch(() => undefined);
-      const { error } = await db!.auth.signOut();
-      if (error) throw error;
+      await signOutResident(p.id);
       setSignOutConfirm(false);
     } catch (error) {
       setSignOutConfirm(false);
@@ -1771,6 +1986,19 @@ function ProfileForm({
   </View>;
   return (
     <>
+      {desktopProfile && <View style={{ flexDirection: "row", gap: 18, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: "#dfe9e7" }}>
+        {([
+          ["profile", "Profile details", "person-circle-outline"],
+          ["settings", "Settings", "settings-outline"],
+          ["help", "Help center", "help-circle-outline"],
+        ] as const).map(([page, title, icon]) => {
+          const active = profilePage === page;
+          return <Pressable key={page} accessibilityRole="tab" accessibilityLabel={title} accessibilityState={{ selected: active }} onPress={() => { if (active) return; onPageNavigate(); setMessage(""); setProfilePage(page); }} style={({ pressed }) => [{ minWidth: 145, minHeight: 45, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 10, borderBottomWidth: active ? 2 : 0, borderBottomColor: colors.brand, opacity: pressed ? 0.78 : 1 }]}>
+            <Ionicons name={icon} size={17} color={active ? colors.brand : colors.muted} />
+            <Text style={{ color: active ? colors.brand : colors.muted, fontSize: 12, lineHeight: 16, fontWeight: active ? "800" : "600" }}>{title}</Text>
+          </Pressable>;
+        })}
+      </View>}
       {profilePage === "profile" && <>
         <View style={{ overflow: "hidden", borderRadius: 22, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.paper, shadowColor: colors.brandDark, shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 }}>
           <View style={{ height: wideProfile ? 150 : compactProfile ? 112 : 130, overflow: "hidden", backgroundColor: colors.brandDark }}>
@@ -1799,7 +2027,7 @@ function ProfileForm({
       </>}
 
       {profilePage !== "profile" && <>
-        <AppBackNavigation label="Back to profile" onBack={() => { onPageNavigate(); setProfilePage("profile"); }} />
+        {!desktopProfile && <AppBackNavigation label="Back to profile" onBack={() => { onPageNavigate(); setProfilePage("profile"); }} />}
         <View style={{ gap: 4, paddingHorizontal: 2 }}>
           <Text accessibilityRole="header" style={s.heading}>{profilePage === "settings" ? "Settings" : "Help & support"}</Text>
           <Text style={s.subtitle}>{profilePage === "settings" ? "Choose how your account and updates work." : "Simple answers in English and Binisaya."}</Text>
@@ -1808,7 +2036,8 @@ function ProfileForm({
 
       {message && <View accessibilityRole="alert" style={{ flexDirection: "row", gap: 7, alignItems: "flex-start", padding: 10, borderRadius: 13, backgroundColor: /updated|removed|up to date|are on|are off|allowed|verified|code.*sent|codes sent|confirmed|editing canceled|still waiting/i.test(message) ? "#eff9f5" : "#fff2f0" }}><Ionicons name={/updated|removed|up to date|are on|are off|allowed|verified|code.*sent|codes sent|confirmed|editing canceled|still waiting/i.test(message) ? "checkmark-circle-outline" : "alert-circle-outline"} size={18} color={/updated|removed|up to date|are on|are off|allowed|verified|code.*sent|codes sent|confirmed|editing canceled|still waiting/i.test(message) ? colors.brand : "#a43d35"} /><Text style={{ flex: 1, color: /updated|removed|up to date|are on|are off|allowed|verified|code.*sent|codes sent|confirmed|editing canceled|still waiting/i.test(message) ? colors.brand : "#a43d35", fontSize: 12, lineHeight: 17 }}>{message}</Text></View>}
 
-      {profilePage === "profile" && <>
+      {profilePage === "profile" && <View style={desktopProfile ? { flexDirection: "row", alignItems: "flex-start", gap: 24 } : { gap: 18 }}>
+      <View style={desktopProfile ? { flex: 1.05, minWidth: 0, gap: 18 } : { gap: 18 }}>
       <View style={{ gap: 8 }}>
         <View style={{ minHeight: 38, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="person-circle-outline" size={21} color={colors.brand} /><Text style={[s.title, { flex: 1, marginBottom: 0 }]}>Personal details</Text></View>
         <View style={[s.card, { padding: 12, gap: 0, borderRadius: 18 }]}>
@@ -1831,7 +2060,36 @@ function ProfileForm({
         </View>
         {!editing && emailStage !== "idle" && <View style={[s.card, { padding: 12, gap: 0, borderRadius: 18 }]}>{emailChangeSection}</View>}
       </View>
-      </>}
+      </View>
+
+      <View style={desktopProfile ? { flex: 0.95, minWidth: 0, gap: 18 } : { gap: 18 }}>
+      <View style={{ gap: 8 }}>
+        <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="stats-chart-outline" size={20} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>My activity</Text></View>
+        <View style={{ flexDirection: "row", gap: 7 }}>
+          {activityCards.map((item) => <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${item.title}: ${item.count ?? (activity.isPending ? "loading" : "unavailable")}`} onPress={item.action} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 92, justifyContent: "space-between", gap: 5, padding: 8, borderRadius: 16, borderWidth: 1, borderColor: "#dfebee", backgroundColor: "white" }, pressed && { backgroundColor: "#f5fbf9", opacity: 0.84 }]}>
+            <View style={{ width: 32, height: 32, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: item.tone.background }}><Ionicons name={item.icon} size={17} color={item.tone.foreground} /></View>
+            <Text numberOfLines={2} style={{ color: colors.muted, fontSize: 12, lineHeight: 16, fontWeight: "600" }}>{item.title}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 17, fontWeight: "800" }}>{activity.isPending ? "…" : activity.error ? "—" : item.count ?? 0}</Text><Ionicons name="chevron-forward" size={15} color={colors.muted} /></View>
+          </Pressable>)}
+        </View>
+        {activity.error && <Pressable accessibilityRole="button" onPress={() => void activity.refetch()} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 2 }}><Ionicons name="refresh-outline" size={15} color={colors.brand} /><Text style={[s.small, { color: colors.brand }]}>Activity counts unavailable · Retry</Text></Pressable>}
+      </View>
+
+      {!desktopProfile && <View style={[s.card, { padding: 8, gap: 2, borderRadius: 18 }]}>
+        <ProfileMenuRow icon="settings-outline" title="Settings" detail="Notifications, privacy and account security" onPress={() => { onPageNavigate(); setMessage(""); setProfilePage("settings"); }} />
+        <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 49 }} />
+        <ProfileMenuRow icon="help-circle-outline" title="Help & support" detail="Step-by-step help in English and Bisaya" onPress={() => { onPageNavigate(); setMessage(""); setProfilePage("help"); }} />
+      </View>}
+      {!desktopProfile && <View style={{ gap: 8 }}>
+        <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="phone-portrait-outline" size={19} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>App version</Text></View>
+        <View style={[s.card, { minHeight: 68, flexDirection: "row", alignItems: "center", gap: 11, padding: 12, borderRadius: 18 }]}>
+          <View style={{ width: 42, height: 42, borderRadius: 15, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name="layers-outline" size={20} color={colors.brand} /></View>
+          <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={{ color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>Iligan Connect</Text><Text style={s.small}>Installed app version</Text></View>
+          <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: "#e5f6f2" }}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>v{RESIDENT_APP_VERSION}</Text></View>
+        </View>
+      </View>}
+      {!desktopProfile && <Pressable accessibilityRole="button" onPress={() => setSignOutConfirm(true)} style={({ pressed }) => [{ minHeight: 52, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, borderRadius: 15, borderWidth: 1, borderColor: "#f1d9d7", backgroundColor: "white" }, pressed && { opacity: 0.78 }]}><Ionicons name="log-out-outline" size={20} color="#ad403d" /><Text style={{ flex: 1, color: "#ad403d", fontSize: 14, fontWeight: "800" }}>Sign out</Text><Ionicons name="chevron-forward" size={17} color={colors.muted} /></Pressable>}
+      </View></View>}
 
       {profilePage === "settings" && <>
       <View style={{ gap: 8 }}>
@@ -1849,35 +2107,6 @@ function ProfileForm({
           </View>}
         </View>
       </View>
-      </>}
-
-      {profilePage === "profile" && <>
-      <View style={{ gap: 8 }}>
-        <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="stats-chart-outline" size={20} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>My activity</Text></View>
-        <View style={{ flexDirection: "row", gap: 7 }}>
-          {activityCards.map((item) => <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={`${item.title}: ${item.count ?? (activity.isPending ? "loading" : "unavailable")}`} onPress={item.action} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 92, justifyContent: "space-between", gap: 5, padding: 8, borderRadius: 16, borderWidth: 1, borderColor: "#dfebee", backgroundColor: "white" }, pressed && { backgroundColor: "#f5fbf9", opacity: 0.84 }]}>
-            <View style={{ width: 32, height: 32, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: item.tone.background }}><Ionicons name={item.icon} size={17} color={item.tone.foreground} /></View>
-            <Text numberOfLines={2} style={{ color: colors.muted, fontSize: 12, lineHeight: 16, fontWeight: "600" }}>{item.title}</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 17, fontWeight: "800" }}>{activity.isPending ? "…" : activity.error ? "—" : item.count ?? 0}</Text><Ionicons name="chevron-forward" size={15} color={colors.muted} /></View>
-          </Pressable>)}
-        </View>
-        {activity.error && <Pressable accessibilityRole="button" onPress={() => void activity.refetch()} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 2 }}><Ionicons name="refresh-outline" size={15} color={colors.brand} /><Text style={[s.small, { color: colors.brand }]}>Activity counts unavailable · Retry</Text></Pressable>}
-      </View>
-
-      <View style={[s.card, { padding: 8, gap: 2, borderRadius: 18 }]}>
-        <ProfileMenuRow icon="settings-outline" title="Settings" detail="Notifications, privacy and account security" onPress={() => { onPageNavigate(); setMessage(""); setProfilePage("settings"); }} />
-        <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 49 }} />
-        <ProfileMenuRow icon="help-circle-outline" title="Help & support" detail="Step-by-step help in English and Bisaya" onPress={() => { onPageNavigate(); setMessage(""); setProfilePage("help"); }} />
-      </View>
-      <View style={{ gap: 8 }}>
-        <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="phone-portrait-outline" size={19} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>App version</Text></View>
-        <View style={[s.card, { minHeight: 68, flexDirection: "row", alignItems: "center", gap: 11, padding: 12, borderRadius: 18 }]}>
-          <View style={{ width: 42, height: 42, borderRadius: 15, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name="layers-outline" size={20} color={colors.brand} /></View>
-          <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={{ color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>Iligan Connect</Text><Text style={s.small}>Installed app version</Text></View>
-          <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: "#e5f6f2" }}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>v{version}</Text></View>
-        </View>
-      </View>
-      <Pressable accessibilityRole="button" onPress={() => setSignOutConfirm(true)} style={({ pressed }) => [{ minHeight: 52, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, borderRadius: 15, borderWidth: 1, borderColor: "#f1d9d7", backgroundColor: "white" }, pressed && { opacity: 0.78 }]}><Ionicons name="log-out-outline" size={20} color="#ad403d" /><Text style={{ flex: 1, color: "#ad403d", fontSize: 14, fontWeight: "800" }}>Sign out</Text><Ionicons name="chevron-forward" size={17} color={colors.muted} /></Pressable>
       </>}
 
       {profilePage === "settings" && <>
@@ -1998,33 +2227,21 @@ function NotificationCenter({
   backLabel,
   onBack,
   onNavigate,
+  modal = false,
 }: {
   profileId: string;
   backLabel: string;
   onBack: () => void;
   onNavigate: (t: string, reportId?: string | null, communitySection?: "consultations" | "meetings", announcementId?: string | null, consultationId?: string | null, meetingRequestId?: string | null) => Promise<void>;
+  modal?: boolean;
 }) {
   const [message, setMessage] = useState("");
   const [opening, setOpening] = useState<string | null>(null);
+  const [markingAll, setMarkingAll] = useState(false);
   const [filter, setFilter] = useState<"all" | "unread" | "read">("all");
   const [page, setPage] = useState(0);
   const [filterOpen, setFilterOpen] = useState(false);
   const qc = useQueryClient();
-  useEffect(() => {
-    let active = true;
-    void result(
-      db!.from("notifications")
-        .update({ read_at: new Date().toISOString() })
-        .eq("user_id", profileId)
-        .is("read_at", null),
-    ).then(() => Promise.all([
-      qc.invalidateQueries({ queryKey: ["home"] }),
-      qc.invalidateQueries({ queryKey: ["notifications", profileId] }),
-    ])).catch((error) => {
-      if (active) setMessage((error as Error).message);
-    });
-    return () => { active = false; };
-  }, [profileId, qc]);
   const q = useQuery({
     queryKey: ["notifications", profileId, filter, page],
     refetchInterval: 30_000,
@@ -2057,23 +2274,49 @@ function NotificationCenter({
   const readCount = q.data ? q.data.total - q.data.unread : undefined;
   return (
     <>
-      <View style={{ minHeight: 142, justifyContent: "space-between", paddingVertical: 4, overflow: "hidden" }}>
-        <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={{ position: "absolute", right: -18, top: 0, width: 360, height: 120, opacity: 0.2 }}>
-          <Image source={require("../assets/iligan-notifications-header.jpg")} resizeMode="contain" style={{ width: "100%", height: "100%" }} />
-        </View>
-        <AppBackNavigation label={backLabel} onBack={onBack} />
-        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: 12 }}>
-          <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-            <Text accessibilityRole="header" style={[s.heading, { fontSize: 29, lineHeight: 36 }]}>Notifications</Text>
-            <Text style={s.subtitle}>Updates about your reports and community.</Text>
+      <View style={{ minHeight: modal ? 54 : 142, flexDirection: modal ? "row" : "column", alignItems: modal ? "center" : "stretch", justifyContent: "space-between", gap: modal ? 14 : 0, paddingVertical: modal ? 0 : 4, overflow: "hidden" }}>
+        {!modal && <>
+          <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={{ position: "absolute", right: -18, top: 0, width: 360, height: 120, opacity: 0.2 }}>
+            <Image source={require("../assets/iligan-notifications-header.jpg")} resizeMode="contain" style={{ width: "100%", height: "100%" }} />
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Filter notifications, currently ${filter}`} accessibilityHint="Choose all, unread, or read notifications" accessibilityState={{ expanded: filterOpen }} onPress={() => setFilterOpen(true)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, borderRadius: 22, borderWidth: 1, borderColor: "#dcebe7", backgroundColor: "#ffffffed" }, pressed && { opacity: 0.75 }]}>
-            <Ionicons name="options-outline" size={17} color={colors.brand} />
-            <Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "700" }}>{filter === "all" ? "All" : filter === "unread" ? "Unread" : "Read"}</Text>
-            <Ionicons name="chevron-down" size={15} color={colors.muted} />
-          </Pressable>
+          <AppBackNavigation label={backLabel} onBack={onBack} />
+        </>}
+        <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: modal ? "center" : "flex-start", gap: 10, marginTop: modal ? 0 : 12 }}>
+          <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+            <Text accessibilityRole="header" style={[s.heading, { fontSize: modal ? 23 : 29, lineHeight: modal ? 29 : 36, marginBottom: 0 }]}>Notifications</Text>
+            {!modal && <Text style={s.subtitle}>Updates about your reports and community.</Text>}
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Filter notifications, currently ${filter}`} accessibilityHint="Choose all, unread, or read notifications" accessibilityState={{ expanded: filterOpen }} onPress={() => setFilterOpen(true)} style={({ pressed }) => [{ minHeight: modal ? 44 : 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: modal ? 11 : 12, borderRadius: modal ? 12 : 22, borderWidth: 1, borderColor: "#dcebe7", backgroundColor: modal ? "white" : "#ffffffed" }, pressed && { opacity: 0.75 }]}>
+              <Ionicons name="options-outline" size={17} color={colors.brand} />
+              <Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "700" }}>{filter === "all" ? "All" : filter === "unread" ? "Unread" : "Read"}</Text>
+              <Ionicons name="chevron-down" size={15} color={colors.muted} />
+            </Pressable>
+            {modal && <Pressable accessibilityRole="button" accessibilityLabel="Close notifications" onPress={onBack} style={({ pressed }) => [{ width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "white", borderWidth: 1, borderColor: colors.line, opacity: pressed ? 0.75 : 1 }]}><Ionicons name="close" size={20} color={colors.muted} /></Pressable>}
+          </View>
         </View>
       </View>
+      {!!unreadCount && <View style={{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: 3 }}>
+        <Text accessibilityLiveRegion="polite" style={{ flex: 1, color: colors.muted, fontSize: 12 }}>{unreadCount} unread {unreadCount === 1 ? "update" : "updates"}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Mark all notifications as read" disabled={markingAll} onPress={async () => {
+          setMarkingAll(true);
+          setMessage("");
+          try {
+            await result(db!.from("notifications").update({ read_at: new Date().toISOString() }).eq("user_id", profileId).is("read_at", null));
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ["home"] }),
+              qc.invalidateQueries({ queryKey: ["notifications", profileId] }),
+            ]);
+          } catch (error) {
+            setMessage((error as Error).message);
+          } finally {
+            setMarkingAll(false);
+          }
+        }} style={({ pressed }) => [{ minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 11, borderRadius: 22, borderWidth: 1, borderColor: "#dcebe7", backgroundColor: "white", opacity: markingAll ? 0.55 : 1 }, pressed && !markingAll && { opacity: 0.75 }]}>
+          {markingAll ? <ActivityIndicator size="small" color={colors.brand} /> : <Ionicons name="checkmark-done-outline" size={17} color={colors.brand} />}
+          <Text style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>{markingAll ? "Marking…" : "Mark all as read"}</Text>
+        </Pressable>
+      </View>}
       {q.isPending ? (
         <ListSkeleton variant="notification" count={5} label="Loading notifications" />
       ) : q.error ? (
@@ -2149,11 +2392,11 @@ function NotificationCenter({
         </View>
       </View>}
       {message && <Text accessibilityRole="alert" style={s.error}>{message}</Text>}
-      <Modal visible={filterOpen} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setFilterOpen(false)}>
-        <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "#10263f77" }}>
+      <Modal visible={filterOpen} transparent animationType={modal ? "fade" : "slide"} statusBarTranslucent onRequestClose={() => setFilterOpen(false)}>
+        <View style={{ flex: 1, alignItems: modal ? "center" : "stretch", justifyContent: modal ? "center" : "flex-end", padding: modal ? 24 : 0, backgroundColor: "#10263f77" }}>
           <Pressable accessibilityRole="button" accessibilityLabel="Close notification filters" onPress={() => setFilterOpen(false)} style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }} />
-          <View style={{ paddingTop: 10, paddingHorizontal: 18, paddingBottom: 28, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: "white", gap: 8 }}>
-            <View style={{ alignSelf: "center", width: 46, height: 5, borderRadius: 3, backgroundColor: "#c8d2df", marginBottom: 5 }} />
+          <View style={modal ? { width: "100%", maxWidth: 420, padding: 18, borderRadius: 18, backgroundColor: "white", gap: 8 } : { paddingTop: 10, paddingHorizontal: 18, paddingBottom: 28, borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: "white", gap: 8 }}>
+            {!modal && <View style={{ alignSelf: "center", width: 46, height: 5, borderRadius: 3, backgroundColor: "#c8d2df", marginBottom: 5 }} />}
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
               <View style={{ gap: 2 }}><Text accessibilityRole="header" style={{ color: colors.brandDark, fontSize: 20, fontWeight: "800" }}>Filter notifications</Text><Text style={s.small}>Choose which updates to show.</Text></View>
               <Pressable accessibilityRole="button" accessibilityLabel="Close notification filters" onPress={() => setFilterOpen(false)} style={{ width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: "#eff3f8" }}><Ionicons name="close" size={20} color={colors.muted} /></Pressable>

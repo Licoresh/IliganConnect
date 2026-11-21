@@ -20,7 +20,8 @@
     "test:navigation": "node scripts/acceptance-navigation.mjs --reports",
     "build": "npm run build -w web",
     "export": "npm run export -w app",
-    "export:app": "npm run export -w app"
+    "export:app": "npm run export -w app",
+    "export:web:resident": "npm run export:web -w app"
   },
   "devDependencies": {
     "tsx": "4.23.15",

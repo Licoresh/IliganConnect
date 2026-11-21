@@ -148,6 +148,7 @@ function createDraggableMapPopup(map: maplibregl.Map, location: maplibregl.LngLa
 export default function IssueMap({
   refs,
   initialBarangay = "",
+  initialShowBoundary = false,
   compact = false,
   overview = false,
   initialMode = "heat",
@@ -155,6 +156,7 @@ export default function IssueMap({
 }: {
   refs: References;
   initialBarangay?: string;
+  initialShowBoundary?: boolean;
   compact?: boolean;
   overview?: boolean;
   initialMode?: string;
@@ -172,7 +174,7 @@ export default function IssueMap({
   const [ready, setReady] = useState(false),
     [retryKey, setRetryKey] = useState(0),
     [tileError, setTileError] = useState(false),
-    [showBoundary, setShowBoundary] = useState(false),
+    [showBoundary, setShowBoundary] = useState(initialShowBoundary),
     [overviewCategory, setOverviewCategory] = useState(""),
     [overviewState, setOverviewState] = useState(""),
     [overviewDateRange, setOverviewDateRange] = useState("all"),

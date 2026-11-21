@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">Barangay mobile workspace layout reference</title>
+  <desc id="desc">A 390 by 844 barangay dashboard with assigned barangay context, compact metrics, geographic work, and recent reports.</desc>
+  <rect width="390" height="844" fill="#f3f8f7"/>
+  <rect width="390" height="64" fill="#fff"/>
+  <path d="M20 24h18M20 31h18M20 38h18" stroke="#087f76" stroke-width="2.4" stroke-linecap="round"/>
+  <text x="52" y="29" fill="#153d47" font-family="Arial,sans-serif" font-size="13" font-weight="700">Barangay Tibanga</text>
+  <text x="52" y="46" fill="#687f88" font-family="Arial,sans-serif" font-size="10">Barangay staff · Iligan City</text>
+  <circle cx="352" cy="32" r="17" fill="#e4f4f0"/><text x="352" y="36" text-anchor="middle" fill="#087f76" font-family="Arial,sans-serif" font-size="10" font-weight="700">BT</text>
+  <path d="M0 63.5h390" stroke="#dce8e7"/>
+  <text x="20" y="102" fill="#15344c" font-family="Arial,sans-serif" font-size="25" font-weight="700">Tibanga dashboard</text>
+  <text x="20" y="123" fill="#687f88" font-family="Arial,sans-serif" font-size="12">Local concerns and community activity.</text>
+  <rect x="16" y="140" width="358" height="43" rx="12" fill="#e8f5f2" stroke="#d0e7e1"/>
+  <text x="30" y="167" fill="#087f76" font-family="Arial,sans-serif" font-size="11" font-weight="700">Assigned area · Tibanga</text>
+  <g font-family="Arial,sans-serif">
+    <rect x="16" y="197" width="173" height="81" rx="13" fill="#fff" stroke="#dce8e7"/><text x="30" y="222" fill="#637985" font-size="10">Received reports</text><text x="30" y="253" fill="#15344c" font-size="27" font-weight="700">18</text><text x="68" y="252" fill="#768992" font-size="9">local submissions</text>
+    <rect x="201" y="197" width="173" height="81" rx="13" fill="#fff" stroke="#dce8e7"/><text x="215" y="222" fill="#637985" font-size="10">Awaiting review</text><text x="215" y="253" fill="#15344c" font-size="27" font-weight="700">2</text><text x="247" y="252" fill="#768992" font-size="9">need review</text>
+    <rect x="16" y="291" width="173" height="81" rx="13" fill="#fff" stroke="#dce8e7"/><text x="30" y="316" fill="#637985" font-size="10">Verified issues</text><text x="30" y="347" fill="#15344c" font-size="27" font-weight="700">14</text><text x="68" y="346" fill="#768992" font-size="9">verified locally</text>
+    <rect x="201" y="291" width="173" height="81" rx="13" fill="#fff" stroke="#dce8e7"/><text x="215" y="316" fill="#637985" font-size="10">In progress</text><text x="215" y="347" fill="#15344c" font-size="27" font-weight="700">2</text><text x="247" y="346" fill="#768992" font-size="9">being handled</text>
+  </g>
+  <rect x="16" y="390" width="358" height="228" rx="16" fill="#fff" stroke="#dce8e7"/>
+  <text x="32" y="420" fill="#19384d" font-family="Arial,sans-serif" font-size="16" font-weight="700">Local report density</text>
+  <text x="32" y="442" fill="#6d838b" font-family="Arial,sans-serif" font-size="11">Mapped reports in the assigned area</text>
+  <rect x="30" y="459" width="330" height="143" rx="12" fill="#dcebe7"/>
+  <path d="M30 555c52-30 86-42 120-18 35 24 64 18 94-8s65-18 116-39v112H30z" fill="#b5d4cb"/>
+  <path d="M49 578c46-24 79-16 114-39 36-25 69-27 105-12s60 11 79-10" fill="none" stroke="#fff" stroke-width="3" opacity=".9"/>
+  <rect x="16" y="633" width="358" height="176" rx="16" fill="#fff" stroke="#dce8e7"/>
+  <text x="32" y="664" fill="#19384d" font-family="Arial,sans-serif" font-size="16" font-weight="700">Recent reports</text>
+  <text x="32" y="685" fill="#6d838b" font-family="Arial,sans-serif" font-size="11">Latest submissions in Tibanga</text>
+  <path d="M32 700h326M32 750h326" stroke="#e7eeee"/>
+  <text x="32" y="724" fill="#355665" font-family="Arial,sans-serif" font-size="12" font-weight="700">Drainage problem</text>
+  <text x="32" y="741" fill="#748992" font-family="Arial,sans-serif" font-size="10">Verified · Nov 21</text>
+  <text x="32" y="774" fill="#355665" font-family="Arial,sans-serif" font-size="12" font-weight="700">Waste bags remained after collection</text>
+  <text x="32" y="791" fill="#748992" font-family="Arial,sans-serif" font-size="10">Submitted · Nov 18</text>
+</svg>

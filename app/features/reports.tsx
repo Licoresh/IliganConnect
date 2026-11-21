@@ -191,7 +191,9 @@ export function ReportForm({
   initialCategory?: string;
   initialBarangay?: string;
 }) {
-  const { height: windowHeight } = useWindowDimensions();
+  const categorySheetAnchorRef = useRef<View>(null);
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const desktopReport = Platform.OS === "web" && windowWidth >= 1200;
   const insets = useSafeAreaInsets();
   const {
     control,
@@ -245,7 +247,6 @@ export function ReportForm({
     [manualPinResolution, setManualPinResolution] = useState<ManualPinResolution | null>(null),
     [checkingManualPin, setCheckingManualPin] = useState(false),
     [manualPinError, setManualPinError] = useState(""),
-    [uploaded, setUploaded] = useState(false),
     [draftKey, setDraftKey] = useState(""),
     [coordinates, setCoordinates] = useState({ latitude: "", longitude: "" });
   const titleInputRef = useRef<TextInput | null>(null);
@@ -420,6 +421,14 @@ export function ReportForm({
   const problemOptions = [...(selectedCategory?.problem_types ?? [])].sort((a, b) => a.sort_order - b.sort_order);
   const drainage = selectedCategory?.name.toLowerCase().startsWith("drainage");
   const problemLabel = problemOptions.find((item) => item.code === values.problem_type)?.label;
+  async function continueToLocation() {
+    clearMessage();
+    if (!(await trigger(["category_id", "problem_type", "problem_other", "title", "description"]))) {
+      showMessage(issueDetailsMessage(values), "warning");
+      return;
+    }
+    navigateToStep(1, "location");
+  }
   async function reviewReport() {
     if (!(await trigger(["category_id", "problem_type", "problem_other", "title", "description"]))) {
       navigateToStep(0, "details");
@@ -474,7 +483,7 @@ export function ReportForm({
     };
   }, []);
   async function upload(id: string) {
-    if (!photo || uploaded) return;
+    if (!photo) return;
     const uid = (await db!.auth.getUser()).data.user?.id;
     if (!uid) throw new Error("Sign in again to attach a photograph.");
     const image = await ImageManipulator.manipulateAsync(
@@ -494,7 +503,6 @@ export function ReportForm({
       await result(
         db!.from("report_attachments").insert({ report_id: id, path }),
       );
-      setUploaded(true);
     } catch (e) {
       await db!.storage.from("report-evidence").remove([path]);
       throw e;
@@ -529,8 +537,12 @@ export function ReportForm({
           p_problem_other: v.problem_type === "other" ? v.problem_other?.trim() : null,
         }),
       );
+      try {
+        await upload(id);
+      } catch {
+        // The report is saved; optional photo evidence must not make it look like submission failed.
+      }
       setSaved(id);
-      await upload(id);
       showMessage("Your report has been saved. Keep the tracking identifier below.", "success");
     } catch (e) {
       showMessage(
@@ -569,7 +581,7 @@ export function ReportForm({
   </View>;
   return (
     <>
-      <Text onLayout={(event) => { sectionPositions.current.header = event.nativeEvent.layout.y; }} style={[s.heading, { fontSize: 28, lineHeight: 34 }]}>Report a concern</Text>
+      {!desktopReport && <Text onLayout={(event) => { sectionPositions.current.header = event.nativeEvent.layout.y; }} style={s.heading}>Report a concern</Text>}
       {residentProfile && <Text style={s.small}>Reporting as {residentProfile.display_name} · Registered in {barangays.find(b => b.id === residentProfile.barangay_id)?.name || "your barangay"}</Text>}
       {!saved && <Text style={s.body}>Describe the concern, confirm its location, then check and send. Your name and registered barangay are taken from your signed-in account.</Text>}
       {!!message && <ReportNotice tone={messageTone} message={message} onDismiss={clearMessage} />}
@@ -583,23 +595,6 @@ export function ReportForm({
           <Text selectable style={s.small}>
             {saved}
           </Text>
-          {photo && !uploaded && (
-            <Button
-              disabled={busy}
-              title="Retry photograph upload"
-              onPress={async () => {
-                setBusy(true);
-                try {
-                  await upload(saved);
-                  showMessage("Photograph attached.", "success");
-                } catch (e) {
-                  showMessage((e as Error).message, "error");
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            />
-          )}
           <Button
             title="View your reports"
             onPress={() => void storage.removeItem(draftKey).then(onSaved)}
@@ -607,20 +602,23 @@ export function ReportForm({
         </View>
       ) : (
         <>
-          <View style={{ position: "relative", flexDirection: "row", paddingVertical: 2 }}>
-            <View pointerEvents="none" style={{ position: "absolute", top: 17, left: "16.67%", right: "16.67%", height: 4, borderRadius: 2, backgroundColor: "#e3ebf2" }}>
+          <View onLayout={(event) => { sectionPositions.current.header = event.nativeEvent.layout.y; }} style={desktopReport ? { flexDirection: "row", alignItems: "flex-start", gap: 30, padding: 24, borderWidth: 1, borderColor: "#dfe9e6", borderRadius: 14, backgroundColor: "white" } : { gap: 0 }}>
+          <View style={desktopReport ? { width: 205, flexShrink: 0, gap: 5, paddingTop: 2 } : { position: "relative", flexDirection: "row", paddingVertical: 2, marginBottom: 0 }}>
+            <View pointerEvents="none" style={{ position: "absolute", top: 17, left: "16.67%", right: "16.67%", height: 4, borderRadius: 2, backgroundColor: "#e3ebf2", display: desktopReport ? "none" : "flex" }}>
               <View style={{ width: `${step * 50}%`, height: "100%", borderRadius: 2, backgroundColor: colors.brand }} />
             </View>
             {["Details", "Location", "Review"].map((title, i) => <Pressable key={title} accessibilityRole="tab" accessibilityState={{ selected: step === i, disabled: busy }} disabled={busy} onPress={() => {
               if (i === 2) void reviewReport();
+              else if (i === 1 && step === 0) void continueToLocation();
               else navigateToStep(i as 0 | 1, i === 0 ? "details" : "location");
-            }} style={{ flex: 1, minHeight: 66, alignItems: "center", gap: 5 }}>
-              <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: i <= step ? colors.brand : colors.warmSurface, borderWidth: i === step ? 2 : 0, borderColor: colors.mint }}>
+            }} style={desktopReport ? { minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 12, paddingHorizontal: 8, borderRadius: 9, backgroundColor: step === i ? "#eaf7f4" : "transparent" } : { flex: 1, minHeight: 66, alignItems: "center", gap: 5 }}>
+              <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: i <= step ? colors.brand : colors.warmSurface, borderWidth: i === step ? 2 : 0, borderColor: colors.mint }}>
                 {i < step ? <Ionicons name="checkmark" size={19} color="white" /> : <Text style={{ color: i <= step ? "white" : colors.muted, fontSize: 14, fontWeight: "800" }}>{i + 1}</Text>}
               </View>
-              <Text style={{ color: i <= step ? colors.brand : colors.muted, fontSize: 12, fontWeight: i === step ? "800" : "600" }}>{title}</Text>
+              <View style={{ flex: 1, gap: 2 }}><Text style={{ textAlign: desktopReport ? "left" : "center", color: i <= step ? colors.brandDark : colors.muted, fontSize: 12, fontWeight: i === step ? "800" : "600" }}>{title}</Text>{desktopReport && <Text style={{ color: "#71858a", fontSize: 10 }}>{i === 0 ? "Issue details" : i === 1 ? "Pin the location" : "Check before sending"}</Text>}</View>
             </Pressable>)}
           </View>
+          <View style={desktopReport ? { flex: 1, minWidth: 0, maxWidth: 900, gap: 13 } : { gap: 0 }}>
           <Text style={s.eyebrow}>
             STEP {step + 1} OF 3 · {["DETAILS", "LOCATION", "REVIEW"][step]}
           </Text>
@@ -629,9 +627,11 @@ export function ReportForm({
               <Text style={s.subtitle}>
                 Tell us what needs attention. Keep a safe distance from hazards.
               </Text>
+              <View style={{ flexDirection: desktopReport && selectedCategory ? "row" : "column", alignItems: "stretch", gap: desktopReport ? 18 : 14 }}>
+              <View style={desktopReport && selectedCategory ? { flex: 1, minWidth: 0 } : undefined}>
               <View style={{ gap: 8 }}>
                 <Text style={[s.fieldLabel, { fontSize: 15 }]}>Issue category</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel={selectedCategory ? `Change issue category, currently ${categoryDisplayName(selectedCategory.name)}` : "Choose an issue category"} accessibilityHint="Opens the report type selector" onPress={() => setCategorySheetOpen(true)} style={({ pressed }) => [{ minHeight: 76, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 18, borderWidth: 1, borderColor: selectedCategory ? categoryToneFor(selectedCategory.name).foreground : "#e2eaf2", backgroundColor: selectedCategory ? "#fbfefd" : "white", flexDirection: "row", alignItems: "center", gap: 12 }, pressed && { opacity: 0.82 }]}>
+                <Pressable ref={categorySheetAnchorRef} accessibilityRole="button" accessibilityLabel={selectedCategory ? `Change issue category, currently ${categoryDisplayName(selectedCategory.name)}` : "Choose an issue category"} accessibilityHint="Opens the report type selector" accessibilityState={{ expanded: categorySheetOpen }} onPress={() => setCategorySheetOpen((open) => !open)} style={({ pressed }) => [{ minHeight: 76, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 18, borderWidth: 1, borderColor: selectedCategory ? categoryToneFor(selectedCategory.name).foreground : "#e2eaf2", backgroundColor: selectedCategory ? "#fbfefd" : "white", flexDirection: "row", alignItems: "center", gap: 12 }, pressed && { opacity: 0.82 }]}>
                   <View style={{ width: 52, height: 52, borderRadius: 19, backgroundColor: selectedCategory ? categoryToneFor(selectedCategory.name).background : colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name={selectedCategory ? categoryIconFor(selectedCategory.name) : "grid-outline"} size={25} color={selectedCategory ? categoryToneFor(selectedCategory.name).foreground : colors.brand} /></View>
                   <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
                     <Text style={{ color: colors.brandDark, fontSize: 16, lineHeight: 20, fontWeight: "800" }}>{selectedCategory ? categoryDisplayName(selectedCategory.name) : "Choose a report type"}</Text>
@@ -644,6 +644,7 @@ export function ReportForm({
               <SelectionSheet
                 visible={categorySheetOpen}
                 onClose={() => setCategorySheetOpen(false)}
+                anchorRef={categorySheetAnchorRef}
                 title="Choose a report type"
                 subtitle="Select the category that best matches the issue you want to report."
                 searchPlaceholder="Search report type"
@@ -658,7 +659,8 @@ export function ReportForm({
                   setValue("category_id", value, { shouldValidate: true });
                 }}
               />
-              {!!selectedCategory && <View style={{ gap: 8 }}>
+              </View>
+              {!!selectedCategory && <View style={[{ gap: 8 }, desktopReport && { flex: 1, minWidth: 0 }]}>
                 <Text style={s.fieldLabel}>{drainage ? "What is the drainage problem?" : "What is the specific problem?"} <Text style={{ color: colors.muted }}>(required)</Text></Text>
                 <Choices compact title={drainage ? "What is the drainage problem?" : `Problem type · ${categoryDisplayName(selectedCategory.name)}`} sheetTitle="Select a problem" subtitle={`Choose the specific ${categoryDisplayName(selectedCategory.name).toLowerCase()} issue to help route your report correctly.`} sheetKind="problem" categoryName={selectedCategory.name} placeholder="Select a problem" leadingIcon={categoryIconFor(selectedCategory.name)} items={problemOptions.map((item) => ({ id: item.code, name: item.label }))} value={values.problem_type || ""} onChange={(value) => {
                   if (value !== "other") setValue("problem_other", null);
@@ -668,6 +670,7 @@ export function ReportForm({
                 {!problemOptions.length && <Text style={s.error}>Problem options are unavailable. Return Home and refresh before submitting.</Text>}
                 {!!errors.problem_type && <Text accessibilityRole="alert" style={s.error}>{errors.problem_type.message}</Text>}
               </View>}
+              </View>
               {values.problem_type === "other" && <Controller control={control} name="problem_other" render={({ field }) => <View style={{ gap: 8 }}>
                 <Field label={drainage ? "Please describe the drainage problem" : "Please describe the problem"} placeholder={drainage ? "Enter the drainage problem..." : "Enter the specific problem..."} value={field.value || ""} onChangeText={field.onChange} multiline maxLength={240} />
                 <Text style={s.small}>Required for Others · {field.value?.length || 0}/240</Text>
@@ -826,11 +829,7 @@ export function ReportForm({
               title="Continue"
               icon="arrow-forward"
               disabled={busy}
-              onPress={async () => {
-                clearMessage();
-                if (await trigger(["category_id", "problem_type", "problem_other", "title", "description"])) { navigateToStep(1, "location"); }
-                    else showMessage(issueDetailsMessage(values), "warning");
-              }}
+              onPress={() => void continueToLocation()}
             />
           ) : step === 1 ? (
             <View style={s.actionRow}>
@@ -848,6 +847,8 @@ export function ReportForm({
               })()} />
             </View>
           )}
+          </View>
+          </View>
         </>
       )}
       {pinModalOpen && <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeManualPin}>
@@ -903,6 +904,7 @@ export function ReportTracking({
     [moreOpen, setMoreOpen] = useState(false),
     [mainTimelineOpen, setMainTimelineOpen] = useState(false);
   const { width: windowWidth } = useWindowDimensions();
+  const desktopTracking = Platform.OS === "web" && windowWidth >= 1200;
   const qc = useQueryClient();
   const currentReport = useQuery({
     queryKey: ["resident-report", initialReport.id],
@@ -1000,17 +1002,17 @@ export function ReportTracking({
       </View>
 
       <Text style={s.body}>{reportStatusDescription(r.status)}</Text>
-      {flowStep !== null && <View accessibilityRole="progressbar" accessibilityLabel={`Report progress: ${flowStep === 2 ? "Resolved" : flowStep === 1 ? "Schedule and work" : "Review"}`} accessibilityValue={{ min: 1, max: 3, now: flowStep + 1 }} style={{ flexDirection: "row", alignItems: "flex-start", gap: 5, paddingVertical: 5 }}>
+      {flowStep !== null && <View accessibilityRole="progressbar" accessibilityLabel={`Report progress: ${flowStep === 2 ? "Resolved" : flowStep === 1 ? "Schedule and work" : "Review"}`} accessibilityValue={{ min: 1, max: 3, now: flowStep + 1 }} style={{ position: "relative", flexDirection: "row", alignItems: "flex-start", paddingVertical: 5 }}>
+        <View pointerEvents="none" style={{ position: "absolute", top: desktopTracking ? 18 : 17, left: "16.67%", right: "16.67%", height: 2, backgroundColor: "#dce6e8" }}>
+          <View style={{ width: `${(r.status === "resolved" ? 100 : Math.max(0, Math.min(2, flowStep)) * 50)}%`, height: 2, backgroundColor: "#75c9b3" }} />
+        </View>
         {["Review", "Schedule & work", "Resolved"].map((stage, index) => {
           const complete = index < flowStep || r.status === "resolved";
           const active = index === flowStep && r.status !== "resolved";
-          return <View key={stage} style={{ flex: 1, minWidth: 0, alignItems: "center", gap: 5 }}>
-            <View style={{ width: "100%", flexDirection: "row", alignItems: "center" }}>
-              {index > 0 && <View style={{ flex: 1, height: 2, backgroundColor: complete || active ? "#75c9b3" : "#dce6e8" }} />}
-              <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: complete ? colors.brand : active ? "#e2f5ef" : "#edf2f4", borderWidth: active ? 1 : 0, borderColor: colors.brand }}><Text style={{ color: complete ? "white" : active ? colors.brand : colors.muted, fontSize: 11, fontWeight: "800" }}>{complete ? "✓" : index + 1}</Text></View>
-              {index < 2 && <View style={{ flex: 1, height: 2, backgroundColor: index < flowStep ? "#75c9b3" : "#dce6e8" }} />}
-            </View>
-            <Text numberOfLines={2} style={{ color: active || complete ? colors.brandDark : colors.muted, fontSize: 10, lineHeight: 13, fontWeight: active ? "800" : "600", textAlign: "center" }}>{stage}</Text>
+          const dotSize = desktopTracking ? 28 : 26;
+          return <View key={stage} style={{ flex: 1, minWidth: 0, alignItems: "center", gap: desktopTracking ? 8 : 5 }}>
+            <View style={{ width: dotSize, height: dotSize, borderRadius: dotSize / 2, alignItems: "center", justifyContent: "center", backgroundColor: complete ? colors.brand : active ? "#e2f5ef" : "#edf2f4", borderWidth: active ? 1 : 0, borderColor: colors.brand }}><Text style={{ color: complete ? "white" : active ? colors.brand : colors.muted, fontSize: 11, fontWeight: "800" }}>{complete ? "✓" : index + 1}</Text></View>
+            <Text numberOfLines={2} style={{ color: active || complete ? colors.brandDark : colors.muted, fontSize: desktopTracking ? 12 : 10, lineHeight: desktopTracking ? 16 : 13, fontWeight: active ? "800" : "600", textAlign: "center" }}>{stage}</Text>
           </View>;
         })}
       </View>}
@@ -1193,9 +1195,17 @@ export function Explore({
 }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const safeArea = useSafeAreaInsets();
+  const desktopExplore = Platform.OS === "web" && windowWidth >= 1200;
+  const tabletExplore = Platform.OS === "web" && windowWidth >= 768 && windowWidth < 1200;
+  const compactFilterLayout = windowWidth < 480;
+  const compactTabletExplore = tabletExplore && windowHeight < 760;
   const thumbnailWidth = windowWidth < 390 ? 76 : 88;
   const mapHeight = windowWidth < 600
     ? Math.max(260, Math.min(300, Math.round(windowHeight * 0.3)))
+    : tabletExplore
+      ? Math.max(compactTabletExplore ? 270 : 290, Math.min(390, Math.round(Math.min(windowHeight * 0.46, windowWidth * 0.42))))
+    : desktopExplore
+      ? Math.max(560, Math.min(780, Math.round(windowHeight * 0.72)))
     : Math.max(330, Math.min(400, Math.round(windowHeight * 0.43)));
   const [category, setCategory] = useState(""),
     [barangay, setBarangay] = useState(""),
@@ -1404,44 +1414,47 @@ export function Explore({
   };
   return (
     <>
-      <View style={{ minHeight: 140, justifyContent: "center", overflow: "hidden", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24, borderWidth: 1, borderColor: "#dcece8", backgroundColor: "#edf8f5" }}>
-        <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={{ position: "absolute", right: -8, top: -8, width: "70%", height: "116%", opacity: 0.72 }}>
+      {!desktopExplore && <View style={{ minHeight: tabletExplore ? compactTabletExplore ? 112 : 124 : 140, justifyContent: "center", overflow: "hidden", paddingHorizontal: tabletExplore ? 15 : 18, paddingVertical: tabletExplore ? 8 : 10, borderRadius: tabletExplore ? 20 : 24, borderWidth: 1, borderColor: "#dcece8", backgroundColor: "#edf8f5" }}>
+        <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={{ position: "absolute", right: desktopExplore ? 14 : -8, top: desktopExplore ? -18 : -8, width: desktopExplore ? "55%" : "70%", height: desktopExplore ? "130%" : "116%", opacity: 0.72 }}>
           <Image source={require("../assets/iligan-explore-aerial.png")} accessible={false} resizeMode="contain" style={{ width: "100%", height: "100%" }} />
         </View>
-        <View pointerEvents="none" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "64%", backgroundColor: "#ffffff35" }} />
+        <View pointerEvents="none" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: desktopExplore ? "60%" : "64%", backgroundColor: "#ffffff35" }} />
         <View style={{ width: windowWidth < 390 ? "64%" : "58%", gap: 4, zIndex: 1 }}>
           <Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 21, lineHeight: 24, fontWeight: "800", letterSpacing: -0.35 }}>Around your community</Text>
           <Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 12, lineHeight: 16 }}>See what neighbors have reported nearby.</Text>
           <View style={{ alignSelf: "flex-start", minHeight: 30, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, borderRadius: 18, backgroundColor: "#d9f3f0" }}><Ionicons name="location" size={14} color={colors.brand} /><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 10, fontWeight: "600" }}>Locations are approximate.</Text></View>
         </View>
-      </View>
-      <View style={{ minHeight: 52, flexDirection: "row", gap: 5, padding: 4, borderRadius: 28, backgroundColor: "white", borderWidth: 1, borderColor: "#deebed" }}>
+      </View>}
+      <View style={desktopExplore ? { width: "100%", minHeight: 46, flexDirection: "row", gap: 18, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: "#dfe9e7" } : { minHeight: 52, flexDirection: "row", gap: 5, padding: 4, borderRadius: 28, backgroundColor: "white", borderWidth: 1, borderColor: "#deebed" }}>
         {([
           ["map", "Map", "map-outline"],
           ["barangays", "Barangays", "map"],
           ["list", "List", "list-outline"],
-        ] as const).map(([mode, title, icon]) => (
-          <Pressable
+        ] as const).map(([mode, title, icon]) => {
+          const active = mode === "list" ? !showMap : showMap && showBarangayMap === (mode === "barangays");
+          return <Pressable
             key={mode}
             accessibilityRole="tab"
             accessibilityLabel={`${title} view`}
-            accessibilityState={{ selected: mode === "list" ? !showMap : showMap && showBarangayMap === (mode === "barangays") }}
+            accessibilityState={{ selected: active }}
             onPress={() => { setShowMap(mode !== "list"); setShowBarangayMap(mode === "barangays"); setSelectedReportId(null); setDensityCellCount(null); }}
-            style={({ pressed }) => [{ flex: 1, minHeight: 44, paddingHorizontal: 4, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: (mode === "list" ? !showMap : showMap && showBarangayMap === (mode === "barangays")) ? colors.brand : "transparent", opacity: pressed ? 0.82 : 1 }]}
+            style={({ pressed }) => [desktopExplore ? { minWidth: 130, minHeight: 45, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 10, borderBottomWidth: active ? 2 : 0, borderBottomColor: colors.brand, opacity: pressed ? 0.78 : 1 } : { flex: 1, minHeight: 44, paddingHorizontal: 4, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: active ? colors.brand : "transparent", opacity: pressed ? 0.82 : 1 }]}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-              <Ionicons name={icon} size={19} color={(mode === "list" ? !showMap : showMap && showBarangayMap === (mode === "barangays")) ? "white" : colors.brand} />
-              <Text numberOfLines={1} style={{ color: (mode === "list" ? !showMap : showMap && showBarangayMap === (mode === "barangays")) ? "white" : colors.brandDark, fontSize: 12, fontWeight: "700" }}>{title}</Text>
+              <Ionicons name={icon} size={desktopExplore ? 17 : 19} color={active ? desktopExplore ? colors.brand : "white" : desktopExplore ? colors.muted : colors.brand} />
+              <Text numberOfLines={1} style={{ color: active ? colors.brand : desktopExplore ? colors.muted : colors.brandDark, fontSize: 12, fontWeight: active ? "800" : "600" }}>{title}</Text>
             </View>
-          </Pressable>
-        ))}
+          </Pressable>;
+        })}
       </View>
-      <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44, paddingHorizontal: 12, paddingVertical: 0, borderRadius: 24, borderColor: "#dce9ed", shadowOpacity: 0.05 }]}>
+      <View style={desktopExplore && showMap ? { flexDirection: "row", alignItems: "stretch", gap: 20 } : { gap: 12 }}>
+      <View style={desktopExplore && showMap ? { width: 350, flexShrink: 0, gap: 12 } : { gap: 12 }}>
+      <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44, paddingHorizontal: 12, paddingVertical: 0, borderRadius: desktopExplore ? 10 : 24, borderColor: "#dce9ed", shadowOpacity: 0.05 }]}>
           <Ionicons name="search" size={20} color={colors.muted} />
           <TextInput maxLength={200} accessibilityLabel="Search public reports" placeholder="Search public reports…" placeholderTextColor={colors.muted} value={search} onChangeText={(v) => { setSearch(v); setDensityCellCount(null); setPage(0); }} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 40, color: colors.brandDark, fontSize: 14 }} />
           {!!search && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => { setSearch(""); setAppliedSearch(""); setDensityCellCount(null); setPage(0); }} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center" }}><Ionicons name="close-circle" size={19} color={colors.muted} /></Pressable>}
       </View>
-      <View style={[s.card, { gap: filtersOpen ? 10 : 0, paddingHorizontal: 11, paddingVertical: filtersOpen ? 11 : 4, borderRadius: 17, borderColor: "#d8e8e7" }]}>
+      <View style={[s.card, { gap: filtersOpen ? 10 : 0, paddingHorizontal: 11, paddingVertical: filtersOpen ? 11 : 4, borderRadius: desktopExplore ? 10 : 17, borderColor: "#d8e8e7" }]}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <Pressable accessibilityRole="button" accessibilityLabel="Filter reports" accessibilityHint="Shows or hides category, barangay, and status filters" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((value) => !value)} style={({ pressed }) => [{ minHeight: 44, flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 7 }, pressed && { opacity: 0.75 }]}>
             <Ionicons name="options-outline" size={18} color={colors.brand} /><Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "800" }}>Filter reports</Text><Ionicons name={filtersOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.muted} />
@@ -1449,10 +1462,16 @@ export function Explore({
           <Pressable accessibilityRole="button" accessibilityLabel="Clear all report filters" disabled={!hasActiveFilters} onPress={() => { setCategory(""); setBarangay(""); setSearch(""); setAppliedSearch(""); setMapStatus("active"); setRecentOnly(false); setNearbyRadius("0"); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} style={({ pressed }) => [{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 4, opacity: hasActiveFilters ? 1 : 0.48 }, pressed && hasActiveFilters && { opacity: 0.72 }]}><Ionicons name="refresh" size={17} color={colors.muted} /><Text style={[s.small, { fontSize: 12, fontWeight: "600" }]}>Clear all</Text></Pressable>
         </View>
         {filtersOpen && <>
-          <View style={{ flexDirection: "row", alignItems: "stretch", gap: 7 }}>
-            <Choices grow compact items={[{ id: "", name: "All categories" }, ...categories]} value={category} title="Choose a report type" leadingIcon="grid-outline" shortCategoryNames onChange={(v) => { setCategory(v); setDensityCellCount(null); setPage(0); }} />
-            <Choices grow compact items={[{ id: "", name: "All barangays" }, ...barangays]} value={barangay} title="Choose a barangay" leadingIcon="location-outline" myBarangayId={myBarangayId || undefined} onChange={(v) => { setBarangay(v); setDensityCellCount(null); setPage(0); }} />
-            <Choices grow compact items={[{ id: "all", name: `All statuses (${counts.all_count})` }, { id: "active", name: `Unresolved (${counts.active_count})` }, { id: "resolved", name: `Resolved (${counts.resolved_count})` }]} value={mapStatus} title="Choose a report status" sheetTitle="Filter by status" leadingIcon="options-outline" searchable={false} onChange={(v) => { setMapStatus(v); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} />
+          <View style={{ flexDirection: desktopExplore ? "column" : "row", flexWrap: compactFilterLayout ? "wrap" : "nowrap", alignItems: "stretch", gap: 7 }}>
+            <View style={compactFilterLayout ? { width: "48%" } : desktopExplore ? undefined : { flex: 1, minWidth: 0 }}>
+              <Choices grow compact items={[{ id: "", name: "All categories" }, ...categories]} value={category} title="Choose a report type" leadingIcon="grid-outline" shortCategoryNames onChange={(v) => { setCategory(v); setDensityCellCount(null); setPage(0); }} />
+            </View>
+            <View style={compactFilterLayout ? { width: "48%" } : desktopExplore ? undefined : { flex: 1, minWidth: 0 }}>
+              <Choices grow compact items={[{ id: "", name: "All barangays" }, ...barangays]} value={barangay} title="Choose a barangay" leadingIcon="location-outline" myBarangayId={myBarangayId || undefined} onChange={(v) => { setBarangay(v); setDensityCellCount(null); setPage(0); }} />
+            </View>
+            <View style={compactFilterLayout ? { width: "100%" } : desktopExplore ? undefined : { flex: 1, minWidth: 0 }}>
+              <Choices grow compact items={[{ id: "all", name: `All statuses (${counts.all_count})` }, { id: "active", name: `Unresolved (${counts.active_count})` }, { id: "resolved", name: `Resolved (${counts.resolved_count})` }]} value={mapStatus} title="Choose a report status" sheetTitle="Filter by status" leadingIcon="options-outline" searchable={false} onChange={(v) => { setMapStatus(v); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} />
+            </View>
           </View>
         <Pressable accessibilityRole="switch" accessibilityLabel="Reported in last 30 days" accessibilityState={{ checked: recentOnly }} onPress={() => { setRecentOnly(!recentOnly); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 9, borderRadius: 15, borderWidth: 1, borderColor: recentOnly ? "#b8e9df" : "#d8e9e7", backgroundColor: recentOnly ? "#f2fbf8" : "white", paddingHorizontal: 10 }, pressed && { opacity: 0.82 }]}>
           <Ionicons name="calendar-outline" size={18} color={colors.brand} />
@@ -1461,10 +1480,39 @@ export function Explore({
         </Pressable>
         </>}
       </View>
+      {desktopExplore && showMap && <>
+        <View style={{ flexDirection: "row", gap: 7 }}>
+          {([[showPins, setShowPins, "Pins", "location"], [density, setDensity, "Heatmap", "layers"]] as const).map(([enabled, setEnabled, title, icon]) => <Pressable key={title} accessibilityRole="checkbox" accessibilityLabel={`${title === "Pins" ? "Report pins" : title} layer`} accessibilityState={{ checked: enabled }} onPress={() => { setEnabled(!enabled); if (title === "Heatmap") setDensityCellCount(null); }} style={({ pressed }) => [{ flex: 1, minHeight: 39, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 8, borderWidth: 1, borderColor: enabled ? "#c8e9e5" : colors.line, paddingHorizontal: 7, backgroundColor: enabled ? "#e7f7f3" : "white", opacity: pressed ? 0.78 : 1 }]}><Ionicons name={icon} size={16} color={enabled ? colors.brand : colors.muted} /><Text style={{ color: enabled ? colors.brandDark : colors.muted, fontSize: 11, fontWeight: "700" }}>{title}</Text></Pressable>)}
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}><Text style={{ color: "#173b45", fontSize: 13, fontWeight: "700" }}>{showBarangayMap ? selectedChoroplethName || "Top barangays" : "Mapped reports"}</Text><Text style={{ color: "#71858a", fontSize: 11 }}>{showBarangayMap ? `${barangayHeatStats.top.length} shown` : `${mapReports.length.toLocaleString()} results`}</Text></View>
+        <Text style={{ color: "#71858a", fontSize: 11, lineHeight: 16 }}>{showBarangayMap ? "Select a boundary to explore reports by barangay." : "Select a report to locate it on the map."}</Text>
+        <ScrollView style={{ maxHeight: 410, minHeight: 170, borderTopWidth: 1, borderTopColor: "#e0e9e7" }} contentContainerStyle={{ gap: 0 }} showsVerticalScrollIndicator>
+          {showBarangayMap ? barangayHeatStats.top.map((area, index) => {
+            const active = area.name === selectedChoroplethName;
+            return <Pressable key={area.name} accessibilityRole="button" accessibilityLabel={`${area.name}, ${area.count} reports, ${area.density.toFixed(1)} per square kilometer`} accessibilityState={{ selected: active }} onPress={() => setSelectedChoroplethName(active ? "" : area.name)} style={({ pressed }) => [{ minHeight: 62, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: "#e7eeec", backgroundColor: active ? "#e8f7f3" : pressed ? "#f1f7f5" : "transparent" }]}>
+              <Text style={{ width: 20, color: "#829598", fontSize: 11, fontWeight: "700" }}>{index + 1}</Text><View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: barangayDensityColor(area.density, barangayHeatStats.maxDensity) }} /><View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text numberOfLines={1} style={{ color: "#173b45", fontSize: 12, fontWeight: "700" }}>{area.name}</Text><Text style={{ color: "#71858a", fontSize: 10 }}>{area.count} reports · {area.density.toFixed(1)}/km²</Text></View><Ionicons name="locate-outline" size={16} color={active ? colors.brand : "#829598"} />
+            </Pressable>;
+          }) : mapReports.slice(0, 50).map((item) => {
+            const name = categoryNames.get(item.category_id) || "Community report";
+            const tone = categoryToneFor(name);
+            const active = item.id === selectedReportId;
+            return <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`Locate report: ${item.title}`} accessibilityState={{ selected: active }} onPress={() => setSelectedReportId(item.id)} style={({ pressed }) => [{ minHeight: 66, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: "#e7eeec", backgroundColor: active ? "#e8f7f3" : pressed ? "#f1f7f5" : "transparent" }]}>
+              <View style={{ width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 9, backgroundColor: tone.background }}><Ionicons name={categoryIconFor(name)} size={17} color={tone.foreground} /></View>
+              <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text numberOfLines={1} style={{ color: "#173b45", fontSize: 12, fontWeight: "700" }}>{item.title}</Text><Text numberOfLines={1} style={{ color: "#71858a", fontSize: 10 }}>{categoryDisplayName(name)} · {barangays.find((b) => b.id === item.barangay_id)?.name ?? "Iligan City"}</Text></View>
+              <Ionicons name="locate-outline" size={16} color={active ? colors.brand : "#829598"} />
+            </Pressable>;
+          })}
+          {showBarangayMap ? !barangayHeatStats.top.length && <Text style={{ padding: 16, color: "#71858a", fontSize: 12 }}>No barangay reports match these filters.</Text> : !mapReports.length && <Text style={{ padding: 16, color: "#71858a", fontSize: 12 }}>No reports match these filters.</Text>}
+        </ScrollView>
+      </>}
+      </View>
+      <View style={desktopExplore ? { flex: 1, minWidth: 0, gap: 12, marginTop: 0, padding: 14, borderRadius: 13, borderWidth: 1, borderColor: "#dfe9e6", backgroundColor: "white", display: showMap ? "flex" : "none" } : { gap: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}><Text style={{ color: "#173b45", fontSize: 14, fontWeight: "700" }}>{showBarangayMap ? "Barangay map" : "Report map"}</Text><Text style={{ color: "#71858a", fontSize: 11 }}>{showBarangayMap ? "Boundaries · Iligan City" : "Live public locations"}</Text></View>
+
       {showMap && (
         <>
           {mapQuery.error && <View style={s.card}><Text style={s.error}>Could not refresh map reports.</Text><Button secondary title="Retry map" loading={mapQuery.isFetching} onPress={() => void mapQuery.refetch()} /></View>}
-          {!showBarangayMap && <>
+          {!showBarangayMap && !desktopExplore && <>
             <View style={{ gap: 10, marginTop: 8, marginBottom: 10 }}>
               {mapReports.length > mapPoints.length && <Text style={s.small}>{mapReports.length - mapPoints.length} reports use manual addresses. Open List to view them.</Text>}
               <View style={{ flexDirection: "row", gap: 8 }}>
@@ -1592,6 +1640,8 @@ export function Explore({
           </View>
         </>
       )}
+      </View>
+      </View>
       {!!message && <Text accessibilityRole="alert" style={s.body}>{message}</Text>}
       {follows.error && <View style={s.card}><Text style={s.error}>Could not load your followed reports.</Text><Button secondary title="Retry followed reports" onPress={() => void follows.refetch()} /></View>}
       {!showMap && <>

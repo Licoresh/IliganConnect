@@ -360,7 +360,6 @@ export default function Workspace() {
           <div className="brand">
             <Image src="/iligan-connect-logo.png" alt="" aria-hidden="true" width={48} height={48} /> ILIGAN CONNECT
           </div>
-          <p className="eyebrow">COMMUNITY OPERATIONS</p>
           <h1>
             Local concerns.
             <br />
@@ -386,7 +385,6 @@ export default function Workspace() {
             />
             ILIGAN CONNECT
           </div>
-          <span className="eyebrow">WELCOME BACK</span>
           <h2>Sign in to your workspace</h2>
           <p>For authorized barangay personnel and participating offices.</p>
           {!configured ? (
@@ -700,6 +698,7 @@ export default function Workspace() {
               <IssueMap
                 key={scope}
                 refs={refs.data!}
+                initialShowBoundary
                 initialBarangay={
                   scope ||
                   (profile.data.role === "barangay"
@@ -885,7 +884,7 @@ function Overview({
             <div><p className="eyebrow">YOUR GEOGRAPHIC WORKSPACE</p><h2>Issue mapping &amp; heatmap</h2><p className="overview-panel-subtitle">Explore reported concerns and identify patterns in your authorized area.</p></div>
             <button className="secondary" onClick={() => onNavigate("Issue Mapping & Heatmap")}>Open full workspace <ArrowUpRight size={16} /></button>
           </div>
-          <IssueMap refs={refs} compact overview initialMode="heat" initialBarangay={access.profile.role === "barangay" ? access.profile.barangay_id || "" : ""} />
+          <IssueMap refs={refs} compact overview initialMode="heat" initialShowBoundary initialBarangay={access.profile.role === "barangay" ? access.profile.barangay_id || "" : ""} />
         </section>
 
         <aside className="panel attention-panel overview-steps">

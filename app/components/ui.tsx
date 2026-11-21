@@ -1,5 +1,6 @@
 import type { ReactNode, Ref } from "react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ActivityIndicator,
   Image,
@@ -10,6 +11,8 @@ import {
   Text,
   TextInput,
   View,
+  Platform,
+  useWindowDimensions,
   type ImageProps,
   type ImageSourcePropType,
   type TextInputProps,
@@ -321,7 +324,6 @@ export const styles = StyleSheet.create({
   authBrandName: { color: "white", fontSize: 13, fontWeight: "800", letterSpacing: 1.7 },
   authBrandPlace: { color: "#b8d3cd", fontSize: 12, marginTop: 3 },
   authCopy: { gap: 9, maxWidth: 420 },
-  authKicker: { color: colors.mint, fontSize: 10, fontWeight: "700", letterSpacing: 1.4 },
   authTitle: { color: "white", fontSize: 30, lineHeight: 36, fontWeight: "800", letterSpacing: -0.7 },
   authSubtitle: { color: "#d0e0dc", fontSize: 14, lineHeight: 21 },
   authPanel: { flexGrow: 1, backgroundColor: colors.paper, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20, gap: 13 },
@@ -462,14 +464,17 @@ export function Choices({
   searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false), selectedName = items.find((i) => i.id === value)?.name;
+  const anchorRef = useRef<View>(null);
+  const { width } = useWindowDimensions();
+  const desktopWeb = Platform.OS === "web" && width >= 1200;
   const kind = sheetKind || (shortCategoryNames ? "category" : title.toLowerCase().includes("problem") ? "problem" : items.length > 10 ? "barangay" : "generic");
   const selectionItems = kind === "barangay" && myBarangayId
     ? [...items.filter((item) => item.id === myBarangayId), ...items.filter((item) => item.id !== myBarangayId)]
     : items;
   if (compact || items.length > 10)
     return (
-      <>
-        <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityHint={searchable ? "Opens a searchable selection" : "Opens a selection"} onPress={() => setOpen(true)} style={({ pressed }) => [{ flex: grow ? 1 : undefined, minWidth: 0, minHeight: grow ? 48 : 58, borderRadius: 16, borderWidth: 1, borderColor: "#e3edf0", backgroundColor: "white", paddingHorizontal: grow ? 9 : 13, flexDirection: "row", alignItems: "center", gap: grow ? 6 : 9, shadowColor: colors.brandDark, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 }, pressed && { opacity: 0.78 }]}>
+      <View style={desktopWeb ? { position: "relative", zIndex: open ? 3001 : 0 } : undefined}>
+        <Pressable ref={anchorRef} accessibilityRole="button" accessibilityLabel={title} accessibilityHint={searchable ? "Opens a searchable selection" : "Opens a selection"} accessibilityState={{ expanded: open }} onPress={() => setOpen((current) => !current)} style={({ pressed }) => [{ flex: grow ? 1 : undefined, minWidth: 0, minHeight: desktopWeb ? 46 : grow ? 48 : 58, borderRadius: desktopWeb ? 12 : 16, borderWidth: 1, borderColor: open && desktopWeb ? colors.brand : "#e3edf0", backgroundColor: "white", paddingHorizontal: grow ? 9 : 13, flexDirection: "row", alignItems: "center", gap: grow ? 6 : 9 }, pressed && { opacity: 0.78 }]}>
           {leadingIcon && <Ionicons name={leadingIcon} size={grow ? 16 : 19} color={colors.brand} />}
           <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: colors.brandDark, fontSize: grow ? 12 : 14, fontWeight: "700" }}>{selectedName ? (shortCategoryNames ? categoryDisplayName(selectedName) : selectedName) : placeholder || title}</Text>
           <Ionicons name="chevron-down" size={16} color={colors.muted} />
@@ -481,6 +486,7 @@ export function Choices({
           subtitle={subtitle || (shortCategoryNames ? "Select the category that best matches the issue." : "Choose an option to continue.")}
           searchPlaceholder={shortCategoryNames ? "Search report type" : title.toLowerCase().includes("problem") ? "Search problems" : "Search barangay"}
           searchable={searchable}
+          anchorRef={anchorRef}
           items={selectionItems.map((item) => {
             const tone = kind === "problem" ? categoryToneFor(categoryName) : kind === "category" ? (item.id ? categoryToneFor(item.name) : { background: "#e5f6f2", foreground: colors.brand }) : { background: "#e5f6f2", foreground: colors.brand };
             const icon = kind === "problem" ? problemIconFor(categoryName, item.name) : kind === "category" ? (item.id ? categoryIconFor(item.name) : "grid-outline") : kind === "barangay" ? "location-outline" : leadingIcon || "chevron-forward";
@@ -495,7 +501,7 @@ export function Choices({
           value={value}
           onConfirm={onChange}
         />
-      </>
+      </View>
     );
   return columns === 3 ? (
     <View style={styles.segmented}>
@@ -540,6 +546,7 @@ export function SelectionSheet({
   confirmLabel = "Confirm selection",
   loading = false,
   error,
+  anchorRef,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -553,11 +560,63 @@ export function SelectionSheet({
   confirmLabel?: string;
   loading?: boolean;
   error?: string;
+  anchorRef?: React.RefObject<View | null>;
 }) {
   const [draft, setDraft] = useState(value), [search, setSearch] = useState("");
+  const [dropdownPosition, setDropdownPosition] = useState<{ left: number; top: number; width: number; maxHeight: number; above: boolean; anchorTop: number } | null>(null);
+  const popupRef = useRef<View>(null);
+  const { width } = useWindowDimensions();
+  const desktopWeb = Platform.OS === "web" && width >= 1200 && !!anchorRef;
   useEffect(() => {
     if (visible) { setDraft(value); setSearch(""); }
   }, [visible, value]);
+  useEffect(() => {
+    const anchor = anchorRef?.current as unknown as HTMLElement | null;
+    if (!visible || !desktopWeb || !anchor || typeof window === "undefined" || typeof document === "undefined") {
+      setDropdownPosition(null);
+      return;
+    }
+    const updatePosition = () => {
+      const rect = anchor.getBoundingClientRect();
+      const gutter = 12;
+      const popupWidth = Math.min(Math.max(rect.width, 260), Math.min(460, window.innerWidth - gutter * 2));
+      const left = Math.max(gutter, Math.min(rect.left, window.innerWidth - popupWidth - gutter));
+      const below = Math.max(0, window.innerHeight - rect.bottom - gutter);
+      const above = Math.max(0, rect.top - gutter);
+      const openAbove = below < 230 && above > below;
+      const room = openAbove ? above : below;
+      const maxHeight = Math.max(96, Math.min(340, room - (searchable ? 54 : 10)));
+      const popup = popupRef.current as unknown as HTMLElement | null;
+      const popupHeight = popup?.getBoundingClientRect().height ?? Math.min(maxHeight + (searchable ? 54 : 10), 240);
+      setDropdownPosition({
+        left: left + window.scrollX,
+        top: openAbove ? rect.top + window.scrollY - popupHeight - 6 : rect.bottom + window.scrollY + 6,
+        width: popupWidth,
+        maxHeight,
+        above: openAbove,
+        anchorTop: rect.top + window.scrollY,
+      });
+    };
+    const dismissOutside = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      const popup = popupRef.current as unknown as HTMLElement | null;
+      if (target && !anchor.contains(target) && !popup?.contains(target)) onClose();
+    };
+    const dismissEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onClose(); }
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    document.addEventListener("pointerdown", dismissOutside);
+    document.addEventListener("keydown", dismissEscape);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+      document.removeEventListener("pointerdown", dismissOutside);
+      document.removeEventListener("keydown", dismissEscape);
+    };
+  }, [anchorRef, desktopWeb, onClose, searchable, visible]);
   if (!visible) return null;
   const filteredItems = items.filter((item) => `${item.name} ${item.description || ""}`.toLowerCase().includes(search.trim().toLowerCase()));
   const hasSelection = items.some((item) => item.id === draft);
@@ -566,33 +625,77 @@ export function SelectionSheet({
     const result = await onConfirm(draft);
     if (result !== false) onClose();
   }
+  if (desktopWeb) {
+    if (!dropdownPosition || typeof document === "undefined") return null;
+    const popup = (
+      <View
+        ref={popupRef}
+        onLayout={(event) => {
+          if (!dropdownPosition.above) return;
+          const top = dropdownPosition.anchorTop - event.nativeEvent.layout.height - 6;
+          setDropdownPosition((current) => current?.above && Math.abs(current.top - top) > 1 ? { ...current, top } : current);
+        }}
+        style={{ position: "absolute", left: dropdownPosition.left, top: dropdownPosition.top, width: dropdownPosition.width, zIndex: 5000 }}
+      >
+        <View style={{ maxHeight: dropdownPosition.maxHeight + (searchable ? 54 : 10), overflow: "hidden", borderWidth: 1, borderColor: "#d8e4e0", borderRadius: 12, backgroundColor: "white", shadowColor: "#12343d", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.14, shadowRadius: 18, elevation: 10 }}>
+          {searchable && <View style={{ height: 46, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: "#edf2f0", backgroundColor: "white" }}>
+            <Ionicons name="search-outline" size={17} color={colors.muted} />
+            <TextInput accessibilityLabel={searchPlaceholder} placeholder={searchPlaceholder} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} maxLength={160} returnKeyType="search" style={{ flex: 1, minWidth: 0, height: 42, color: colors.brandDark, fontSize: 13, outlineStyle: "none" } as any} />
+          </View>}
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: dropdownPosition.maxHeight }} contentContainerStyle={{ padding: 4 }}>
+            {filteredItems.map((item) => {
+              const selected = draft === item.id, tone = item.tone || { background: colors.brandSoft, foreground: colors.brand };
+              return <Pressable key={item.id} accessibilityRole="radio" accessibilityLabel={`${item.name}${item.description ? `. ${item.description}` : ""}`} accessibilityState={{ selected, disabled: loading }} disabled={loading} onPress={() => {
+                setDraft(item.id);
+                void (async () => {
+                  const result = await onConfirm(item.id);
+                  if (result !== false) onClose();
+                })();
+              }} style={({ pressed }) => [{ minHeight: item.description ? 48 : 38, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8, backgroundColor: selected ? colors.brandSoft : "white" }, pressed && { backgroundColor: colors.paper }]}>
+                {item.icon && <View style={{ width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: tone.background }}><Ionicons name={item.icon} size={15} color={tone.foreground} /></View>}
+                <View style={{ flex: 1, minWidth: 0, gap: item.description ? 1 : 0 }}>
+                  <Text numberOfLines={1} style={{ color: selected ? colors.brand : colors.brandDark, fontSize: 13, lineHeight: 17, fontWeight: selected ? "700" : "600" }}>{item.name}</Text>
+                  {!!item.description && <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 11, lineHeight: 14 }}>{item.description}</Text>}
+                </View>
+                {selected && <Ionicons name="checkmark" size={17} color={colors.brand} />}
+              </Pressable>;
+            })}
+            {!filteredItems.length && <Text style={{ padding: 12, color: colors.muted, fontSize: 13 }}>No matches found.</Text>}
+          </ScrollView>
+          {loading && <View style={{ minHeight: 38, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderTopWidth: 1, borderTopColor: "#edf2f0" }}><ActivityIndicator size="small" color={colors.brand} /><Text style={{ color: colors.muted, fontSize: 12 }}>Saving selection…</Text></View>}
+          {!!error && <Text accessibilityRole="alert" style={{ paddingHorizontal: 12, paddingVertical: 8, color: "#a43d35", fontSize: 12 }}>{error}</Text>}
+        </View>
+      </View>
+    );
+    return createPortal(popup, document.body);
+  }
   return (
-    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "#10263f77" }}>
+    <Modal visible={visible} transparent animationType={desktopWeb ? "fade" : "slide"} statusBarTranslucent onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: desktopWeb ? "center" : "flex-end", alignItems: desktopWeb ? "center" : undefined, padding: desktopWeb ? 24 : 0, backgroundColor: "#10263f77" }}>
         <Pressable accessibilityRole="button" accessibilityLabel="Close selection" onPress={onClose} style={{ ...StyleSheet.absoluteFillObject }} />
-        <View style={{ maxHeight: "90%", paddingTop: 10, paddingHorizontal: 18, paddingBottom: 26, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: "#fff", gap: 14 }}>
-          <View style={{ alignSelf: "center", width: 48, height: 5, borderRadius: 3, backgroundColor: "#c8d2df" }} />
+        <View style={{ width: desktopWeb ? "100%" : undefined, maxWidth: desktopWeb ? 620 : undefined, maxHeight: desktopWeb ? "82%" : "90%", paddingTop: desktopWeb ? 22 : 10, paddingHorizontal: desktopWeb ? 24 : 18, paddingBottom: desktopWeb ? 22 : 26, borderRadius: desktopWeb ? 22 : undefined, borderTopLeftRadius: desktopWeb ? undefined : 28, borderTopRightRadius: desktopWeb ? undefined : 28, backgroundColor: "#fff", gap: desktopWeb ? 12 : 14, shadowColor: "#10263f", shadowOffset: { width: 0, height: 12 }, shadowOpacity: desktopWeb ? 0.2 : 0, shadowRadius: 28, elevation: desktopWeb ? 16 : 0 }}>
+          {!desktopWeb && <View style={{ alignSelf: "center", width: 48, height: 5, borderRadius: 3, backgroundColor: "#c8d2df" }} />}
           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
             <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
               <Text accessibilityRole="header" style={{ color: "#10263f", fontSize: 22, lineHeight: 28, fontWeight: "800", letterSpacing: -0.3 }}>{title}</Text>
               {!!subtitle && <Text style={{ color: "#5d7378", fontSize: 14, lineHeight: 20 }}>{subtitle}</Text>}
             </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Close selection" onPress={onClose} style={({ pressed }) => [{ width: 48, height: 48, borderRadius: 24, backgroundColor: "#eff3f8", alignItems: "center", justifyContent: "center" }, pressed && { opacity: 0.7 }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close selection" onPress={onClose} style={({ pressed }) => [{ width: desktopWeb ? 42 : 48, height: desktopWeb ? 42 : 48, borderRadius: desktopWeb ? 12 : 24, backgroundColor: "#eff3f8", alignItems: "center", justifyContent: "center" }, pressed && { opacity: 0.7 }]}>
               <Ionicons name="close" size={21} color="#5d7378" />
             </Pressable>
           </View>
-          {searchable && <View style={{ minHeight: 52, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 10 }}>
+          {searchable && <View style={{ minHeight: desktopWeb ? 46 : 52, borderRadius: desktopWeb ? 12 : 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Ionicons name="search-outline" size={20} color={colors.muted} />
-            <TextInput accessibilityLabel={searchPlaceholder} placeholder={searchPlaceholder} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} maxLength={160} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 48, color: colors.brandDark, fontSize: 16 }} />
+            <TextInput accessibilityLabel={searchPlaceholder} placeholder={searchPlaceholder} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} maxLength={160} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: desktopWeb ? 44 : 48, color: colors.brandDark, fontSize: desktopWeb ? 14 : 16 }} />
           </View>}
-          <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 8, paddingBottom: 2 }}>
+          <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: desktopWeb ? 6 : 8, paddingBottom: 2 }}>
             {filteredItems.map((item) => {
               const selected = draft === item.id, tone = item.tone || { background: "#e5f6f2", foreground: colors.brand };
-              return <Pressable key={item.id} accessibilityRole="radio" accessibilityLabel={`${item.name}${item.description ? `. ${item.description}` : ""}`} accessibilityState={{ selected, disabled: loading }} disabled={loading} onPress={() => setDraft(item.id)} style={({ pressed }) => [{ minHeight: item.featured ? 76 : 72, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 18, borderWidth: 1, borderColor: selected ? colors.brand : colors.line, backgroundColor: selected ? colors.brandSoft : colors.surface, flexDirection: "row", alignItems: "center", gap: 12 }, pressed && { opacity: 0.8 }]}>
-                <View style={{ width: 50, height: 50, borderRadius: 18, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={item.icon || "location-outline"} size={24} color={tone.foreground} /></View>
+              return <Pressable key={item.id} accessibilityRole="radio" accessibilityLabel={`${item.name}${item.description ? `. ${item.description}` : ""}`} accessibilityState={{ selected, disabled: loading }} disabled={loading} onPress={() => setDraft(item.id)} style={({ pressed }) => [{ minHeight: desktopWeb ? item.featured ? 62 : 56 : item.featured ? 76 : 72, paddingHorizontal: desktopWeb ? 11 : 13, paddingVertical: desktopWeb ? 7 : 10, borderRadius: desktopWeb ? 12 : 18, borderWidth: 1, borderColor: selected ? colors.brand : colors.line, backgroundColor: selected ? colors.brandSoft : colors.surface, flexDirection: "row", alignItems: "center", gap: desktopWeb ? 10 : 12 }, pressed && { opacity: 0.8 }]}>
+                <View style={{ width: desktopWeb ? 38 : 50, height: desktopWeb ? 38 : 50, borderRadius: desktopWeb ? 12 : 18, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={item.icon || "location-outline"} size={desktopWeb ? 19 : 24} color={tone.foreground} /></View>
                 <View style={{ flex: 1, minWidth: 0, gap: item.description ? 3 : 0 }}>
-                  <Text numberOfLines={2} style={{ color: selected ? tone.foreground : "#10263f", fontSize: 15, lineHeight: 19, fontWeight: "700" }}>{item.name}</Text>
-                  {!!item.description && <Text numberOfLines={2} style={{ color: "#5d7378", fontSize: 12, lineHeight: 17 }}>{item.description}</Text>}
+                  <Text numberOfLines={2} style={{ color: selected ? tone.foreground : "#10263f", fontSize: desktopWeb ? 14 : 15, lineHeight: desktopWeb ? 18 : 19, fontWeight: "700" }}>{item.name}</Text>
+                  {!!item.description && <Text numberOfLines={2} style={{ color: "#5d7378", fontSize: desktopWeb ? 11 : 12, lineHeight: desktopWeb ? 15 : 17 }}>{item.description}</Text>}
                 </View>
                 {selected ? <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: tone.foreground, alignItems: "center", justifyContent: "center" }}><Ionicons name="checkmark" size={17} color="white" /></View> : <Ionicons name="chevron-forward" size={19} color="#5d7378" />}
               </Pressable>;
@@ -600,9 +703,9 @@ export function SelectionSheet({
             {!filteredItems.length && <View style={{ paddingVertical: 18, alignItems: "center" }}><Text style={{ color: "#5d7378", fontSize: 14 }}>No matches found. Try another search.</Text></View>}
           </ScrollView>
           {error ? <Text accessibilityRole="alert" style={{ color: "#a43d35", fontSize: 13 }}>{error}</Text> : null}
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: !hasSelection || loading, busy: loading }} disabled={!hasSelection || loading} onPress={() => void confirm()} style={({ pressed }) => [{ minHeight: 54, borderRadius: 16, backgroundColor: "#008d86", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 9, opacity: !hasSelection || loading ? 0.5 : 1 }, pressed && !loading && { opacity: 0.84 }]}>
+          <Pressable accessibilityRole="button" accessibilityState={{ disabled: !hasSelection || loading, busy: loading }} disabled={!hasSelection || loading} onPress={() => void confirm()} style={({ pressed }) => [{ minHeight: desktopWeb ? 48 : 54, borderRadius: desktopWeb ? 12 : 16, backgroundColor: "#008d86", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 9, opacity: !hasSelection || loading ? 0.5 : 1 }, pressed && !loading && { opacity: 0.84 }]}>
             {loading ? <ActivityIndicator size="small" color="white" /> : <Ionicons name="checkmark-circle-outline" size={20} color="white" />}
-            <Text style={{ color: "white", fontSize: 15, fontWeight: "800" }}>{loading ? "Saving…" : confirmLabel}</Text>
+            <Text style={{ color: "white", fontSize: desktopWeb ? 14 : 15, fontWeight: "800" }}>{loading ? "Saving…" : confirmLabel}</Text>
           </Pressable>
         </View>
       </View>

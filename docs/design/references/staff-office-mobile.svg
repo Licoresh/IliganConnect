@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">Office mobile workspace layout reference</title>
+  <desc id="desc">A 390 by 844 office dashboard with assigned scope, compact metrics, a map workspace, and next steps.</desc>
+  <rect width="390" height="844" fill="#f3f8f7"/>
+  <rect width="390" height="64" fill="#fff"/>
+  <path d="M20 24h18M20 31h18M20 38h18" stroke="#087f76" stroke-width="2.4" stroke-linecap="round"/>
+  <text x="52" y="29" fill="#153d47" font-family="Arial,sans-serif" font-size="13" font-weight="700">City Engineer</text>
+  <text x="52" y="46" fill="#687f88" font-family="Arial,sans-serif" font-size="10">Office staff · Iligan City</text>
+  <circle cx="352" cy="32" r="17" fill="#e4f4f0"/><text x="352" y="36" text-anchor="middle" fill="#087f76" font-family="Arial,sans-serif" font-size="10" font-weight="700">CE</text>
+  <path d="M0 63.5h390" stroke="#dce8e7"/>
+  <text x="20" y="102" fill="#15344c" font-family="Arial,sans-serif" font-size="24" font-weight="700">City Engineer dashboard</text>
+  <text x="20" y="123" fill="#687f88" font-family="Arial,sans-serif" font-size="12">Local work and priorities at a glance.</text>
+  <rect x="16" y="140" width="358" height="42" rx="12" fill="#fff" stroke="#dce8e7"/>
+  <text x="30" y="166" fill="#087f76" font-family="Arial,sans-serif" font-size="11" font-weight="700">Authorized records · 3 ready for action</text>
+  <g font-family="Arial,sans-serif">
+    <rect x="16" y="196" width="173" height="83" rx="13" fill="#fff" stroke="#dce8e7"/><text x="30" y="222" fill="#637985" font-size="10">Received reports</text><text x="30" y="254" fill="#15344c" font-size="27" font-weight="700">8</text><text x="62" y="253" fill="#768992" font-size="9">in your scope</text>
+    <rect x="201" y="196" width="173" height="83" rx="13" fill="#fff" stroke="#dce8e7"/><text x="215" y="222" fill="#637985" font-size="10">Awaiting review</text><text x="215" y="254" fill="#15344c" font-size="27" font-weight="700">2</text><text x="247" y="253" fill="#768992" font-size="9">need assessment</text>
+    <rect x="16" y="291" width="173" height="83" rx="13" fill="#fff" stroke="#dce8e7"/><text x="30" y="317" fill="#637985" font-size="10">Verified issues</text><text x="30" y="349" fill="#15344c" font-size="27" font-weight="700">5</text><text x="62" y="348" fill="#768992" font-size="9">in coverage</text>
+    <rect x="201" y="291" width="173" height="83" rx="13" fill="#fff" stroke="#dce8e7"/><text x="215" y="317" fill="#637985" font-size="10">In progress</text><text x="215" y="349" fill="#15344c" font-size="27" font-weight="700">1</text><text x="247" y="348" fill="#768992" font-size="9">being handled</text>
+  </g>
+  <rect x="16" y="392" width="358" height="244" rx="16" fill="#fff" stroke="#dce8e7"/>
+  <text x="32" y="423" fill="#19384d" font-family="Arial,sans-serif" font-size="16" font-weight="700">Issue mapping &amp; heatmap</text>
+  <text x="32" y="444" fill="#6d838b" font-family="Arial,sans-serif" font-size="11">Your authorized geographic coverage</text>
+  <rect x="30" y="461" width="330" height="156" rx="12" fill="#dcebe7"/>
+  <path d="M30 561c48-35 72-48 112-28s65 18 98-13 77-18 120-45v142H30z" fill="#b5d4cb"/>
+  <path d="M45 592c51-30 86-18 123-48 35-28 63-29 107-10s54 18 80-8" fill="none" stroke="#fff" stroke-width="3" opacity=".9"/>
+  <rect x="16" y="651" width="358" height="151" rx="16" fill="#fff" stroke="#dce8e7"/>
+  <text x="32" y="681" fill="#19384d" font-family="Arial,sans-serif" font-size="16" font-weight="700">Where to focus</text>
+  <text x="32" y="703" fill="#6d838b" font-family="Arial,sans-serif" font-size="11">A practical starting point for your team.</text>
+  <rect x="32" y="720" width="326" height="36" rx="9" fill="#f7faf9"/>
+  <text x="46" y="743" fill="#355665" font-family="Arial,sans-serif" font-size="11" font-weight="600">Review incoming reports</text>
+  <rect x="32" y="763" width="326" height="29" rx="9" fill="#f7faf9"/>
+  <text x="46" y="782" fill="#355665" font-family="Arial,sans-serif" font-size="11" font-weight="600">Follow up assigned work</text>
+</svg>

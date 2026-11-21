@@ -661,7 +661,7 @@ export function ReportForm({
               />
               </View>
               {!!selectedCategory && <View style={[{ gap: 8 }, desktopReport && { flex: 1, minWidth: 0 }]}>
-                <Text style={s.fieldLabel}>{drainage ? "What is the drainage problem?" : "What is the specific problem?"} <Text style={{ color: colors.muted }}>(required)</Text></Text>
+                <Text style={s.fieldLabel}>{drainage ? "What is the drainage problem?" : "What is the specific problem?"}<Text style={{ color: "#b42318" }}> *</Text></Text>
                 <Choices compact title={drainage ? "What is the drainage problem?" : `Problem type · ${categoryDisplayName(selectedCategory.name)}`} sheetTitle="Select a problem" subtitle={`Choose the specific ${categoryDisplayName(selectedCategory.name).toLowerCase()} issue to help route your report correctly.`} sheetKind="problem" categoryName={selectedCategory.name} placeholder="Select a problem" leadingIcon={categoryIconFor(selectedCategory.name)} items={problemOptions.map((item) => ({ id: item.code, name: item.label }))} value={values.problem_type || ""} onChange={(value) => {
                   if (value !== "other") setValue("problem_other", null);
                   clearErrors("problem_other");
@@ -1210,6 +1210,7 @@ export function Explore({
   const [category, setCategory] = useState(""),
     [barangay, setBarangay] = useState(""),
     [search, setSearch] = useState(""),
+    [searchFocused, setSearchFocused] = useState(false),
     [appliedSearch, setAppliedSearch] = useState(""),
     [filtersOpen, setFiltersOpen] = useState(false),
     [showMap, setShowMap] = useState(true),
@@ -1449,9 +1450,9 @@ export function Explore({
       </View>
       <View style={desktopExplore && showMap ? { flexDirection: "row", alignItems: "stretch", gap: 20 } : { gap: 12 }}>
       <View style={desktopExplore && showMap ? { width: 350, flexShrink: 0, gap: 12 } : { gap: 12 }}>
-      <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44, paddingHorizontal: 12, paddingVertical: 0, borderRadius: desktopExplore ? 10 : 24, borderColor: "#dce9ed", shadowOpacity: 0.05 }]}>
+      <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44, paddingHorizontal: 12, paddingVertical: 0, borderRadius: desktopExplore ? 10 : 24, borderColor: searchFocused ? colors.brand : "#dce9ed", shadowOpacity: 0.05 }]}>
           <Ionicons name="search" size={20} color={colors.muted} />
-          <TextInput maxLength={200} accessibilityLabel="Search public reports" placeholder="Search public reports…" placeholderTextColor={colors.muted} value={search} onChangeText={(v) => { setSearch(v); setDensityCellCount(null); setPage(0); }} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 40, color: colors.brandDark, fontSize: 14 }} />
+          <TextInput maxLength={200} accessibilityLabel="Search public reports" placeholder="Search public reports…" placeholderTextColor={colors.muted} value={search} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onChangeText={(v) => { setSearch(v); setDensityCellCount(null); setPage(0); }} returnKeyType="search" style={[{ flex: 1, minWidth: 0, minHeight: 40, color: colors.brandDark, fontSize: 14 }, { outlineStyle: "none" } as any]} />
           {!!search && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => { setSearch(""); setAppliedSearch(""); setDensityCellCount(null); setPage(0); }} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center" }}><Ionicons name="close-circle" size={19} color={colors.muted} /></Pressable>}
       </View>
       <View style={[s.card, { gap: filtersOpen ? 10 : 0, paddingHorizontal: 11, paddingVertical: filtersOpen ? 11 : 4, borderRadius: desktopExplore ? 10 : 17, borderColor: "#d8e8e7" }]}>

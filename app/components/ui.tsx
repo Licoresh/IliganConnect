@@ -387,10 +387,11 @@ export function Field({
   inputRef,
   error: externalError,
   validationKind = "text",
+  onFocus,
   onBlur,
   ...props
 }: TextInputProps & { label: string; leading?: ReactNode; trailing?: ReactNode; hint?: string; minLength?: number; required?: boolean; inputRef?: Ref<TextInput>; error?: string; validationKind?: "text" | "name" | "email" | "phone" | "age" | "address" }) {
-  const [touched, setTouched] = useState(false);
+  const [touched, setTouched] = useState(false), [focused, setFocused] = useState(false);
   const cleanLabel = label.replace(/\s*\*$/, "");
   const value = String(props.value ?? "");
   const fieldError = validationKind === "name" ? personNameInputError(value, required, props.maxLength ?? 60)
@@ -403,7 +404,7 @@ export function Field({
   return (
     <View style={{ gap: 7 }}>
       <Text style={styles.fieldLabel}>{cleanLabel}{required && <Text style={{ color: "#b42318" }}> *</Text>}</Text>
-      <View style={leading || trailing ? [styles.inputFrame, props.multiline && { alignItems: "flex-start" }, !!error && { borderColor: "#a93030" }] : undefined}>
+      <View style={leading || trailing ? [styles.inputFrame, props.multiline && { alignItems: "flex-start" }, { borderColor: error ? "#a93030" : focused ? colors.brand : colors.line }] : undefined}>
         {leading && <View style={{ paddingLeft: 14, paddingTop: props.multiline ? 15 : 0, alignItems: "center", justifyContent: props.multiline ? "flex-start" : "center" }}>{leading}</View>}
         <TextInput
           ref={inputRef}
@@ -415,10 +416,13 @@ export function Field({
             props.multiline && { minHeight: 110, textAlignVertical: "top" },
             style,
             !!error && !leading && !trailing && { borderColor: "#a93030" },
+            focused && !error && !leading && !trailing && { borderColor: colors.brand },
+            { outlineStyle: "none" } as any,
           ]}
           {...props}
           accessibilityHint={error || hint || props.accessibilityHint}
-          onBlur={(event) => { setTouched(true); onBlur?.(event); }}
+          onFocus={(event) => { setFocused(true); onFocus?.(event); }}
+          onBlur={(event) => { setFocused(false); setTouched(true); onBlur?.(event); }}
         />
         {trailing}
       </View>
@@ -562,7 +566,7 @@ export function SelectionSheet({
   error?: string;
   anchorRef?: React.RefObject<View | null>;
 }) {
-  const [draft, setDraft] = useState(value), [search, setSearch] = useState("");
+  const [draft, setDraft] = useState(value), [search, setSearch] = useState(""), [searchFocused, setSearchFocused] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<{ left: number; top: number; width: number; maxHeight: number; above: boolean; anchorTop: number } | null>(null);
   const popupRef = useRef<View>(null);
   const { width } = useWindowDimensions();
@@ -638,9 +642,9 @@ export function SelectionSheet({
         style={{ position: "absolute", left: dropdownPosition.left, top: dropdownPosition.top, width: dropdownPosition.width, zIndex: 5000 }}
       >
         <View style={{ maxHeight: dropdownPosition.maxHeight + (searchable ? 54 : 10), overflow: "hidden", borderWidth: 1, borderColor: "#d8e4e0", borderRadius: 12, backgroundColor: "white", shadowColor: "#12343d", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.14, shadowRadius: 18, elevation: 10 }}>
-          {searchable && <View style={{ height: 46, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: "#edf2f0", backgroundColor: "white" }}>
+          {searchable && <View style={{ height: 46, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: searchFocused ? colors.brand : "#edf2f0", backgroundColor: "white" }}>
             <Ionicons name="search-outline" size={17} color={colors.muted} />
-            <TextInput accessibilityLabel={searchPlaceholder} placeholder={searchPlaceholder} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} maxLength={160} returnKeyType="search" style={{ flex: 1, minWidth: 0, height: 42, color: colors.brandDark, fontSize: 13, outlineStyle: "none" } as any} />
+            <TextInput accessibilityLabel={searchPlaceholder} placeholder={searchPlaceholder} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} maxLength={160} returnKeyType="search" style={{ flex: 1, minWidth: 0, height: 42, color: colors.brandDark, fontSize: 13, outlineStyle: "none" } as any} />
           </View>}
           <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: dropdownPosition.maxHeight }} contentContainerStyle={{ padding: 4 }}>
             {filteredItems.map((item) => {
@@ -684,9 +688,9 @@ export function SelectionSheet({
               <Ionicons name="close" size={21} color="#5d7378" />
             </Pressable>
           </View>
-          {searchable && <View style={{ minHeight: desktopWeb ? 46 : 52, borderRadius: desktopWeb ? 12 : 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 10 }}>
+          {searchable && <View style={{ minHeight: desktopWeb ? 46 : 52, borderRadius: desktopWeb ? 12 : 16, borderWidth: 1, borderColor: searchFocused ? colors.brand : colors.line, backgroundColor: colors.surface, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Ionicons name="search-outline" size={20} color={colors.muted} />
-            <TextInput accessibilityLabel={searchPlaceholder} placeholder={searchPlaceholder} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} maxLength={160} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: desktopWeb ? 44 : 48, color: colors.brandDark, fontSize: desktopWeb ? 14 : 16 }} />
+            <TextInput accessibilityLabel={searchPlaceholder} placeholder={searchPlaceholder} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} maxLength={160} returnKeyType="search" style={[{ flex: 1, minWidth: 0, minHeight: desktopWeb ? 44 : 48, color: colors.brandDark, fontSize: desktopWeb ? 14 : 16 }, { outlineStyle: "none" } as any]} />
           </View>}
           <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: desktopWeb ? 6 : 8, paddingBottom: 2 }}>
             {filteredItems.map((item) => {

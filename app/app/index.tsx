@@ -421,6 +421,16 @@ export default function Home() {
     setTab(destination);
     if (fromDesktopModal) setDesktopNotificationsOpen(false);
   };
+  const openConsultationReport = async (reportId: string, consultationId: string) => {
+    let report = await result<Report | null>(db!.from("reports").select("*").eq("id", reportId).maybeSingle());
+    if (!report) report = (await result<Report[]>(db!.rpc("public_report_by_id", { p_id: reportId })))[0] ?? null;
+    if (!report) throw new Error("This linked report is no longer available to your account.");
+    setReportReturnTab("Community");
+    setCommunityInitialTab("consultations");
+    setCommunityTarget({ consultationId });
+    setSelected(report);
+    setTab("Community");
+  };
   const renderNavigation = (variant: "mobile" | "tablet" | "desktop") => (
     <View style={[
       s.nav,
@@ -636,7 +646,7 @@ export default function Home() {
                     categoryName={q.data.categories.find((item) => item.id === selected.category_id)?.name ?? "Community report"}
                     barangayName={q.data.barangays.find((item) => item.id === selected.barangay_id)?.name ?? "Iligan City"}
                     onMapPageScroll={onMapPageScroll}
-                    backLabel={reportReturnTab === "Notifications" ? "Back to notifications" : reportReturnTab === "Explore" ? "Back to map" : "Back to reports"}
+                    backLabel={reportReturnTab === "Notifications" ? "Back to notifications" : reportReturnTab === "Explore" ? "Back to map" : reportReturnTab === "Community" ? "Back to conversation" : "Back to reports"}
                     close={() => { setSelected(null); setTab(reportReturnTab); }}
                   />
                 ) : tab === "Report" ? (
@@ -667,6 +677,7 @@ export default function Home() {
                     initialTab={communityInitialTab}
                     initialConsultationId={communityTarget.consultationId}
                     initialMeetingRequestId={communityTarget.meetingRequestId}
+                    onOpenReport={openConsultationReport}
                   />
                 ) : tab === "Announcements" ? (
                   <Announcements barangays={q.data.barangays} initialSelected={selectedAnnouncement} />

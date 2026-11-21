@@ -5026,3 +5026,24 @@ main#main .issue-map .overview-map-base button { min-width: 44px; min-height: 34
 :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea):focus {
   outline-offset: -1px !important;
 }
+
+/* Keep meeting section navigation attached to the dialog heading while its body scrolls. */
+.modal.meeting-details-dialog .community-dialog-body { padding: 0 20px 20px; }
+.meeting-details-dialog .meeting-section-tabs {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  align-self: stretch;
+  margin: 0 -20px;
+  padding: 10px 20px;
+  border: 0;
+  border-bottom: 1px solid #dfeae7;
+  border-radius: 0;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 7px 14px rgb(19 58 63 / 7%);
+  backdrop-filter: blur(12px);
+}
+@media (max-width: 760px) {
+  .modal.meeting-details-dialog .community-dialog-body { padding: 0 10px max(10px, env(safe-area-inset-bottom)); }
+  .meeting-details-dialog .meeting-section-tabs { margin-inline: -10px; padding: 8px 10px; }
+}

@@ -36,6 +36,7 @@ export function Community({
   initialConsultationId,
   initialMeetingRequestId,
   onPageNavigate,
+  onOpenReport,
   residentId,
 }: {
   barangays: Lookup[];
@@ -45,6 +46,7 @@ export function Community({
   initialConsultationId?: string | null;
   initialMeetingRequestId?: string | null;
   onPageNavigate?: () => void;
+  onOpenReport: (reportId: string, consultationId: string) => Promise<void>;
   residentId: string;
 }) {
   const [tab, setTab] = useState<string>(initialTab),
@@ -241,6 +243,9 @@ export function Community({
       supports: tab === "meetings" ? await result<{ request_id: string }[]>(
         db!.from("meeting_supporters").select("request_id"),
       ) : [],
+      meetingFollows: tab === "meetings" ? await result<{ request_id: string }[]>(
+        db!.from("meeting_followers").select("request_id"),
+      ) : [],
     }; },
   });
   const consultations = q.data?.consultations;
@@ -314,7 +319,7 @@ export function Community({
     }
   }
   if (selected)
-    return <Conversation id={selected} initial={q.data?.consultations.find((item) => item.id === selected)} close={() => { onPageNavigate?.(); setSelected(null); }} residentId={residentId} categories={categories} barangays={barangays} />;
+    return <Conversation id={selected} initial={q.data?.consultations.find((item) => item.id === selected)} close={() => { onPageNavigate?.(); setSelected(null); }} residentId={residentId} categories={categories} barangays={barangays} onOpenReport={onOpenReport} />;
   const communityTabs = [
     { id: "consultations", name: "Conversations", icon: "chatbubbles-outline" as const },
     { id: "meetings", name: "Meetings", icon: "calendar-outline" as const },
@@ -464,6 +469,7 @@ export function Community({
             const acceptedBarangayInvitations = r.barangayInvitations.filter((invitation) => invitation.status === "accepted").length;
             const waitingBarangayInvitations = r.barangayInvitations.filter((invitation) => invitation.status === "pending").length;
             const joined = r.participants.some((participant) => participant.resident_id === residentId);
+            const followingUpdates = q.data.meetingFollows.some((item) => item.request_id === r.id);
             const meetingDate = r.schedule ? meetingDateInput(r.schedule.starts_at) : "";
             const hasMeetingDate = !!meetingDate;
             const meetingDay = hasMeetingDate ? meetingDate.slice(-2) : "";
@@ -499,6 +505,18 @@ export function Community({
                 joined ? "You left this meeting." : "You joined this meeting.",
                 "We couldn’t update your participation. Please try again.",
               )} />}
+              <Button
+                secondary
+                disabled={busy}
+                title={followingUpdates ? "Following updates · Unfollow" : "Follow meeting updates"}
+                onPress={() => void save(
+                  followingUpdates
+                    ? db!.from("meeting_followers").delete().eq("request_id", r.id)
+                    : db!.from("meeting_followers").upsert({ request_id: r.id, user_id: residentId }, { onConflict: "request_id,user_id", ignoreDuplicates: true }),
+                  followingUpdates ? "You’ll no longer receive updates for this meeting." : "You’ll be notified when this meeting is updated.",
+                  "We couldn’t update your meeting follow setting. Please try again.",
+                )}
+              />
               {r.participation_mode === "open" && r.status !== "approved" && <Text style={s.small}>Residents can join after the meeting request is approved.</Text>}
               {r.decision_reason && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 10, borderRadius: 13, backgroundColor: "#f0f8f6" }}><Ionicons name="document-text-outline" size={17} color={colors.brand} style={{ marginTop: 2 }} /><Text style={[s.small, { flex: 1, color: colors.brandDark }]}><Text style={{ fontWeight: "800" }}>Decision: </Text>{r.decision_reason}</Text></View>}
               {r.status === "pending" && (
@@ -710,6 +728,7 @@ function Conversation({
   residentId,
   categories,
   barangays,
+  onOpenReport,
 }: {
   id: string;
   initial?: Consultation;
@@ -717,6 +736,7 @@ function Conversation({
   residentId: string;
   categories: Lookup[];
   barangays: Lookup[];
+  onOpenReport: (reportId: string, consultationId: string) => Promise<void>;
 }) {
   const [body, setBody] = useState(""),
     [commentTouched, setCommentTouched] = useState(false),
@@ -727,7 +747,7 @@ function Conversation({
     [reason, setReason] = useState(""),
     [message, setMessage] = useState(""),
     [errorMessage, setErrorMessage] = useState(""),
-    [busyAction, setBusyAction] = useState<"follow" | "comment" | "flag" | null>(null);
+    [busyAction, setBusyAction] = useState<"follow" | "comment" | "flag" | "report" | null>(null);
   const input = useRef<TextInput>(null);
   const { width } = useWindowDimensions();
   const qc = useQueryClient();
@@ -763,12 +783,18 @@ function Conversation({
     enabled: !!row?.organization_id,
     queryFn: () => result<{ name: string }>(db!.from("organizations").select("name").eq("id", row!.organization_id!).single()),
   });
-  const relatedCategory = useQuery({
-    queryKey: ["consultation-category", row?.report_id],
+  const linkedReport = useQuery({
+    queryKey: ["consultation-linked-report", row?.report_id],
     enabled: !!row?.report_id,
     queryFn: async () => {
-      const linkedReport = await result<{ category_id: string } | null>(db!.from("reports").select("category_id").eq("id", row!.report_id!).maybeSingle());
-      return categories.find((item) => item.id === linkedReport?.category_id)?.name ?? null;
+      const ownReport = await result<{ id: string; title: string; category_id: string; status: string } | null>(
+        db!.from("reports").select("id,title,category_id,status").eq("id", row!.report_id!).maybeSingle(),
+      );
+      if (ownReport) return ownReport;
+      const published = await result<{ id: string; title: string; category_id: string; status: string }[]>(
+        db!.rpc("public_report_by_id", { p_id: row!.report_id! }),
+      );
+      return published[0] ?? null;
     },
   });
   const phase = row ? consultationPhase(row) : "closed";
@@ -777,7 +803,7 @@ function Conversation({
   const commentItems = comments.data?.items ?? [];
   const commentCount = comments.data?.count ?? 0;
   const locationName = barangays.find((item) => item.id === row?.barangay_id)?.name ?? "Iligan City";
-  const topicName = relatedCategory.data ?? initial?.category_name;
+  const topicName = categories.find((item) => item.id === linkedReport.data?.category_id)?.name ?? initial?.category_name;
   async function toggleFollow() {
     setBusyAction("follow"); setMessage(""); setErrorMessage("");
     try {
@@ -837,6 +863,27 @@ function Conversation({
           {!!topicName && <ConversationInfo width={width} icon="pricetag-outline" label="Topic" value={topicName} />}
           {!!organization.data?.name && <ConversationInfo width={width} icon="business-outline" label="Issuing organization" value={organization.data.name} />}
         </View>
+        {!!row.report_id && <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Open linked report${linkedReport.data?.title ? `: ${linkedReport.data.title}` : ""}`}
+          accessibilityState={{ disabled: busyAction !== null, busy: busyAction === "report" }}
+          disabled={busyAction !== null}
+          onPress={async () => {
+            setBusyAction("report"); setErrorMessage(""); setMessage("");
+            try { await onOpenReport(row.report_id!, row.id); }
+            catch { setErrorMessage("This linked report is unavailable to your account right now. Please try again later."); }
+            finally { setBusyAction(null); }
+          }}
+          style={({ pressed }) => [s.card, { minHeight: 72, flexDirection: "row", alignItems: "center", gap: 11, padding: 12, borderColor: "#b9e4da", backgroundColor: "#f1faf7" }, pressed && { opacity: 0.8 }]}
+        >
+          <View style={{ width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#ddf3ed" }}><Ionicons name="document-text-outline" size={19} color={colors.brand} /></View>
+          <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+            <Text style={{ color: colors.brand, fontSize: 10, fontWeight: "800", letterSpacing: 0.5 }}>LINKED REPORT</Text>
+            <Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 13, lineHeight: 18, fontWeight: "800" }}>{linkedReport.data?.title || "View report details"}</Text>
+            {!!linkedReport.data?.status && <Text style={s.small}>{label(linkedReport.data.status)} · Tap to open report</Text>}
+          </View>
+          {busyAction === "report" ? <ActivityIndicator size="small" color={colors.brand} /> : <Ionicons name="chevron-forward" size={18} color={colors.brand} />}
+        </Pressable>}
         {following.error && <View style={{ gap: 7 }}><Text accessibilityRole="alert" style={s.error}>Could not check your follow status.</Text><Button secondary title="Retry follow status" loading={following.isFetching} onPress={() => void following.refetch()} /></View>}
         {organization.error && <Text style={s.small}>Organization details are currently unavailable.</Text>}
         <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 8, paddingHorizontal: 2 }}><Text style={s.title}>Discussion</Text><Text style={s.small}>{comments.isPending ? "Loading comments…" : `${commentCount} ${commentCount === 1 ? "comment" : "comments"}`}</Text></View>

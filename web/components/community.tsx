@@ -1317,11 +1317,6 @@ function Meeting({
   };
   return (
     <div id={meetingSectionId("workspace")} className={`meeting-detail-workspace${isOffice ? " is-office-view" : ""}`}>
-      {q.isPending ? <p className="meeting-feedback">Loading meeting details…</p> : null}
-      {q.error && <p role="alert" className="meeting-feedback error">{q.error.message}</p>}
-      {message && <p role={failed ? "alert" : "status"} className={`meeting-feedback ${failed ? "error" : "success"}`}>{message}</p>}
-      {(isOffice || manage && !manageSchedule) && <p className="meeting-office-view-note"><Eye size={15} aria-hidden="true" />{isOffice ? "Meeting details are managed by the barangay. You can respond to your invitation and update action items assigned to an office you have accepted for." : "The assigned barangay manages the venue and schedule. You can review the request, invitations, and agreed actions."}</p>}
-
       <nav className="meeting-section-tabs" role="tablist" aria-label="Meeting details sections" onKeyDown={(event) => {
         if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
@@ -1346,6 +1341,11 @@ function Meeting({
           </button>
         ))}
       </nav>
+
+      {q.isPending ? <p className="meeting-feedback">Loading meeting details…</p> : null}
+      {q.error && <p role="alert" className="meeting-feedback error">{q.error.message}</p>}
+      {message && <p role={failed ? "alert" : "status"} className={`meeting-feedback ${failed ? "error" : "success"}`}>{message}</p>}
+      {(isOffice || manage && !manageSchedule) && <p className="meeting-office-view-note"><Eye size={15} aria-hidden="true" />{isOffice ? "Meeting details are managed by the barangay. You can respond to your invitation and update action items assigned to an office you have accepted for." : "The assigned barangay manages the venue and schedule. You can review the request, invitations, and agreed actions."}</p>}
 
       <div id={meetingSectionId("panel-overview")} className="meeting-section-panel" role="tabpanel" aria-labelledby={meetingSectionId("tab-overview")} tabIndex={0} hidden={activeSection !== "overview"}>
       <section className="meeting-section meeting-overview">

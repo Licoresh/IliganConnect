@@ -6,6 +6,7 @@ import { AppState, Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import { db } from "../lib/client";
 import AppUpdateNotice from "../components/app-update";
+import SaveToast from "../components/save-toast";
 import "../lib/background-alerts";
 import { expoProjectId, getDevicePushPreference, pollResidentAlerts, registerDevicePushToken, removeDevicePushTokens } from "../lib/push-notifications";
 import { syncResidentBackgroundAlerts } from "../lib/background-alerts";
@@ -139,6 +140,7 @@ export default function Layout() {
         <ResidentPushRegistration />
         <ResidentForegroundAlerts />
         <AppUpdateNotice />
+        <SaveToast />
       </QueryClientProvider>
     </SafeAreaProvider>
   );

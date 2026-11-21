@@ -26,6 +26,8 @@ type MeetingParticipant = {
   joined_at: string;
   participant_count: number;
 };
+type MeetingSchedule = { request_id: string; starts_at: string; ends_at: string; completed: boolean };
+type MeetingFilter = "open" | "scheduled" | "pending" | "approved" | "declined" | "completed" | "all";
 export function Community({
   barangays,
   categories,
@@ -53,6 +55,7 @@ export function Community({
     [area, setArea] = useState(""),
     [participation, setParticipation] = useState("all"),
     [meetingScope, setMeetingScope] = useState("barangay"),
+    [meetingFilter, setMeetingFilter] = useState<MeetingFilter>("open"),
     [participationMode, setParticipationMode] = useState<"open" | "closed">("closed"),
     [expandedMeeting, setExpandedMeeting] = useState<string | null>(initialMeetingRequestId ?? null),
     [page, setPage] = useState(0),
@@ -93,7 +96,7 @@ export function Community({
     )).filter((office) => office.can_consult || office.can_coordinate),
   });
   const q = useQuery({
-    queryKey: ["community", residentId, tab, appliedSearch, area, participation, meetingScope, page, meetingTarget],
+    queryKey: ["community", residentId, tab, appliedSearch, area, participation, meetingScope, meetingFilter, page, meetingTarget],
     enabled: tab !== "request",
     refetchInterval: 30_000,
     queryFn: async () => {
@@ -139,9 +142,8 @@ export function Community({
         ])];
       }
       let requests = db!.from("meeting_requests")
-        .select("id,title,body,status,decision_reason,barangay_id,resident_id,category_id,report_id,created_at,coordination_status,participation_mode,is_sample")
-        .order("created_at", { ascending: false })
-        .range(page * 20, page * 20 + 19);
+        .select("id,title,body,status,decision_reason,barangay_id,resident_id,category_id,report_id,created_at,coordination_status,participation_mode")
+        .order("created_at", { ascending: false });
       if (meetingTarget) requests = requests.eq("id", meetingTarget);
       else if (tab === "meetings" && meetingScope === "yours") requests = requests.eq("resident_id", residentId);
       else if (tab === "meetings" && defaultBarangay) {
@@ -160,18 +162,59 @@ export function Community({
           requests = requests.or(parts.join(","));
         }
       }
+      if (!meetingTarget && tab === "meetings") {
+        if (meetingFilter === "open") requests = requests.eq("status", "approved").eq("participation_mode", "open");
+        else if (meetingFilter === "pending") requests = requests.eq("status", "pending");
+        else if (meetingFilter === "declined") requests = requests.eq("status", "declined");
+        else if (["scheduled", "approved", "completed"].includes(meetingFilter)) requests = requests.eq("status", "approved");
+      }
       const topicRows = tab === "consultations" ? await result<Omit<Consultation, "category_name">[]>(topics) : [];
       const reportIds = [...new Set(topicRows.flatMap((item) => item.report_id ? [item.report_id] : []))];
       const linkedReports = reportIds.length ? await result<{ id: string; category_id: string }[]>(db!.from("reports").select("id,category_id").in("id", reportIds)) : [];
       const categoriesByReport = new Map(linkedReports.map((item) => [item.id, categories.find((category) => category.id === item.category_id)?.name ?? null]));
-      const requestRows = tab === "meetings" ? await result<{
+      let requestRows: {
         id: string; title: string; body: string; status: string; decision_reason: string | null;
         barangay_id: string; resident_id: string; category_id: string | null; report_id: string | null;
-        created_at: string; coordination_status: string; participation_mode: "open" | "closed"; is_sample: boolean;
-      }[]>(requests) : [];
-      const schedules = requestRows.length ? await result<{
-        request_id: string; starts_at: string; ends_at: string; completed: boolean;
-      }[]>(db!.from("meetings").select("request_id,starts_at,ends_at,completed").in("request_id", requestRows.map((item) => item.id))) : [];
+        created_at: string; coordination_status: string; participation_mode: "open" | "closed";
+      }[] = [];
+      let schedules: MeetingSchedule[] = [];
+      if (tab === "meetings") {
+        if (!meetingTarget && ["open", "scheduled", "completed"].includes(meetingFilter)) {
+          const candidates = await result<{ id: string; created_at: string }[]>(requests);
+          schedules = candidates.length
+            ? await result<MeetingSchedule[]>(db!.from("meetings").select("request_id,starts_at,ends_at,completed").in("request_id", candidates.map((item) => item.id)))
+            : [];
+          const scheduleByRequest = new Map(schedules.map((item) => [item.request_id, item]));
+          const now = Date.now();
+          let visibleIds: string[];
+          if (meetingFilter === "open") {
+            visibleIds = candidates.filter((item) => {
+              const schedule = scheduleByRequest.get(item.id);
+              return !schedule || (!schedule.completed && Date.parse(schedule.ends_at) >= now);
+            }).map((item) => item.id);
+          } else if (meetingFilter === "scheduled") {
+            visibleIds = schedules.filter((item) => !item.completed && Date.parse(item.ends_at) >= now)
+              .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)).map((item) => item.request_id);
+          } else {
+            visibleIds = schedules.filter((item) => item.completed)
+              .sort((a, b) => Date.parse(b.ends_at) - Date.parse(a.ends_at)).map((item) => item.request_id);
+          }
+          const pageIds = visibleIds.slice(page * 20, page * 20 + 20);
+          if (pageIds.length) {
+            requestRows = await result<typeof requestRows>(db!.from("meeting_requests")
+              .select("id,title,body,status,decision_reason,barangay_id,resident_id,category_id,report_id,created_at,coordination_status,participation_mode")
+              .in("id", pageIds));
+            const order = new Map(pageIds.map((id, index) => [id, index]));
+            requestRows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+            schedules = schedules.filter((item) => order.has(item.request_id));
+          } else schedules = [];
+        } else {
+          requestRows = await result<typeof requestRows>(requests.range(page * 20, page * 20 + 19));
+          schedules = requestRows.length
+            ? await result<MeetingSchedule[]>(db!.from("meetings").select("request_id,starts_at,ends_at,completed").in("request_id", requestRows.map((item) => item.id)))
+            : [];
+        }
+      }
       const invitedOffices = requestRows.length ? await result<{
         request_id: string; status: "pending" | "accepted" | "declined"; organizations: { name: string }[] | null;
       }[]>(db!.from("meeting_request_offices").select("request_id,status,organizations(name)").in("request_id", requestRows.map((item) => item.id))) : [];
@@ -272,6 +315,23 @@ export function Community({
     { id: "meetings", name: "Meetings", icon: "calendar-outline" as const },
     { id: "request", name: "Request\na meeting", icon: "calendar-number-outline" as const },
   ];
+  const meetingFilterItems = meetingScope === "yours"
+    ? [
+        { id: "scheduled", name: "Upcoming & scheduled" },
+        { id: "pending", name: "Awaiting decision" },
+        { id: "approved", name: "Approved" },
+        { id: "completed", name: "Completed" },
+        { id: "declined", name: "Declined" },
+        { id: "all", name: "All statuses" },
+      ]
+    : [
+        { id: "open", name: "Open meetings" },
+        { id: "scheduled", name: "Scheduled" },
+        { id: "pending", name: "Awaiting decision" },
+        { id: "completed", name: "Completed" },
+        { id: "declined", name: "Declined" },
+        { id: "all", name: "All statuses" },
+      ];
   return (
     <>
       <View style={{ minHeight: 140, justifyContent: "center", overflow: "hidden", paddingHorizontal: 18, paddingVertical: 18, borderRadius: 24, borderWidth: 1, borderColor: "#dcece8", backgroundColor: "#edf8f5" }}>
@@ -320,14 +380,15 @@ export function Community({
               { id: "yours", name: "Your requests", detail: "Requests you sent to any barangay", icon: "person-outline" as const },
             ].map((option) => {
               const active = meetingScope === option.id;
-              return <Pressable key={option.id} accessibilityRole="radio" accessibilityState={{ checked: active }} onPress={() => { setMeetingScope(option.id); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 66, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 15, borderWidth: 1, borderColor: active ? colors.brand : colors.line, backgroundColor: active ? "#eff9f6" : "white" }, pressed && { opacity: 0.82 }]}>
+              return <Pressable key={option.id} accessibilityRole="radio" accessibilityState={{ checked: active }} onPress={() => { const next = option.id === "yours" ? "yours" : "barangay"; setMeetingScope(next); setMeetingFilter(next === "yours" ? "scheduled" : "open"); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 66, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 15, borderWidth: 1, borderColor: active ? colors.brand : colors.line, backgroundColor: active ? "#eff9f6" : "white" }, pressed && { opacity: 0.82 }]}>
                 <View style={{ width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: active ? colors.brandSoft : "#f1f5f7" }}><Ionicons name={option.icon} size={19} color={active ? colors.brand : colors.muted} /></View>
                 <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 17, fontWeight: "800" }}>{option.name}</Text><Text style={[s.small, { fontSize: 11, lineHeight: 15 }]}>{option.detail}</Text></View>
                 <Ionicons name={active ? "checkmark-circle" : "ellipse-outline"} size={19} color={active ? colors.brand : colors.line} />
               </Pressable>;
             })}
           </View>
-          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f5f8fa" }}><Ionicons name="information-circle-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>{meetingScope === "yours" ? "Your requests stay here while the barangay reviews them, including requests sent elsewhere." : "This list includes meetings in your barangay and open meetings shared with your barangay after an accepted invite."}</Text></View>
+          <Choices columns={2} title="Filter by status" sheetTitle="Filter meetings" subtitle={meetingScope === "yours" ? "Your requests start with upcoming approved meetings, sorted by date." : "Barangay meetings start with approved open meetings residents can join."} items={meetingFilterItems} value={meetingFilter} onChange={(value) => { setMeetingFilter(value as MeetingFilter); setPage(0); }} />
+          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f5f8fa" }}><Ionicons name="information-circle-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>{meetingScope === "yours" ? meetingFilter === "scheduled" ? "Upcoming approved meetings are ordered by their next scheduled date. Choose another status to review the rest of your requests." : "Your requests include meetings you sent to any barangay. Use the status filter to narrow this list." : meetingFilter === "open" ? "Open meetings are approved and available to join. Accepted invitations from other barangays are included." : "Meetings from your barangay and accepted cross-barangay invitations are included."}</Text></View>
         </View>
       </View>}
       {tab !== "request" && q.isPending && <ListSkeleton variant={tab === "consultations" ? "discussion" : "meeting"} count={3} label={`Loading ${tab === "consultations" ? "community discussions" : "meeting requests"}`} />}
@@ -412,7 +473,6 @@ export function Community({
               </View>
               <Text style={[s.title, { fontSize: 18, lineHeight: 24 }]}>{r.title}</Text>
               <View style={{ alignSelf: "flex-start", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: r.participation_mode === "open" ? "#e4f6ef" : "#f0f3f6" }}><Text style={{ color: r.participation_mode === "open" ? "#146f50" : colors.muted, fontSize: 11, fontWeight: "800" }}>{r.participation_mode === "open" ? "OPEN TO JOIN" : "CLOSED MEETING"}</Text></View>
-              {r.is_sample && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 11, borderRadius: 13, borderWidth: 1, borderColor: "#d6eee8", backgroundColor: "#f0faf7" }}><Ionicons name="information-circle-outline" size={18} color={colors.brand} style={{ marginTop: 1 }} /><View style={{ flex: 1, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 12, lineHeight: 16, fontWeight: "800" }}>Practice meeting</Text><Text style={[s.small, { lineHeight: 17 }]}>You can try joining and leaving here. This is not an official event.</Text></View></View>}
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}><Ionicons name="location-outline" size={15} color={colors.brand} /><Text style={s.small}>{barangays.find((item) => item.id === r.barangay_id)?.name ?? "Iligan City"}{categoryName ? ` · ${categoryName}` : ""}</Text></View>
               <Text style={[s.small, { color: colors.brandDark }]}>{state.detail}</Text>
               {!!r.schedule && <View style={{ flexDirection: "row", alignItems: "center", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f0f8f6" }}><Ionicons name="calendar-outline" size={16} color={colors.brand} /><Text style={[s.small, { flex: 1, color: colors.brandDark, fontWeight: "700" }]}>{formatMeetingTimeRange(r.schedule.starts_at, r.schedule.ends_at)}</Text></View>}
@@ -425,7 +485,7 @@ export function Community({
               </View>}
               {canJoin && <Button secondary disabled={busy} title={joined ? "Joined · Leave meeting" : "Join open meeting"} onPress={() => void save(
                 joined ? db!.rpc("leave_meeting_request", { p_request: r.id }) : db!.rpc("join_meeting_request", { p_request: r.id }),
-                joined ? (r.is_sample ? "You left this practice meeting." : "You left this meeting.") : (r.is_sample ? "You joined this practice meeting. Use the same button to leave when you’re done." : "You joined this meeting. Meeting updates will be sent to your notifications."),
+                joined ? "You left this meeting." : "You joined this meeting.",
                 "We couldn’t update your participation. Please try again.",
               )} />}
               {r.participation_mode === "open" && r.status !== "approved" && <Text style={s.small}>Residents can join after the meeting request is approved.</Text>}
@@ -453,8 +513,8 @@ export function Community({
                   }
                 />
               )}
-              <Pressable accessibilityRole="button" accessibilityLabel={expandedMeeting === r.id ? "Hide meeting details" : "View meeting details"} accessibilityState={{ expanded: expandedMeeting === r.id }} onPress={() => setExpandedMeeting(expandedMeeting === r.id ? null : r.id)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, borderRadius: 13, backgroundColor: "#eef9f6" }, pressed && { opacity: 0.8 }]}><Text style={{ flex: 1, color: colors.brand, fontSize: 13, fontWeight: "800" }}>{expandedMeeting === r.id ? "Hide meeting details" : "View location, online link & follow-up"}</Text><Ionicons name={expandedMeeting === r.id ? "chevron-up" : "chevron-forward"} size={18} color={colors.brand} /></Pressable>
-              {expandedMeeting === r.id && <MeetingDetails requestId={r.id} requestStatus={r.status} />}
+              <Pressable accessibilityRole="button" accessibilityLabel={expandedMeeting === r.id ? "Hide meeting details" : "View meeting details"} accessibilityState={{ expanded: expandedMeeting === r.id }} onPress={() => setExpandedMeeting(expandedMeeting === r.id ? null : r.id)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, borderRadius: 13, backgroundColor: "#eef9f6" }, pressed && { opacity: 0.8 }]}><Text style={{ flex: 1, color: colors.brand, fontSize: 13, fontWeight: "800" }}>{expandedMeeting === r.id ? "Hide meeting details" : "View meeting details"}</Text><Ionicons name={expandedMeeting === r.id ? "chevron-up" : "chevron-forward"} size={18} color={colors.brand} /></Pressable>
+              {expandedMeeting === r.id && <MeetingDetails requestId={r.id} requestStatus={r.status} schedule={r.schedule} />}
             </View>;
           })}
           {!q.data?.requests.length && !q.isPending && !q.error && <View style={[s.card, { alignItems: "center", paddingVertical: 22, gap: 7 }]}><View style={{ width: 44, height: 44, borderRadius: 15, backgroundColor: "#eaf7f3", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={21} color={colors.brand} /></View><Text style={s.title}>{meetingScope === "yours" ? "No requests yet" : "No barangay meetings found"}</Text><Text style={[s.small, { textAlign: "center" }]}>{search ? "Try a different meeting search." : meetingScope === "yours" ? "Meeting requests you send to any barangay will appear here." : "Open meetings and accepted cross-barangay invitations will appear here."}</Text>{search ? <Button secondary title="Clear search" onPress={() => { setSearch(""); setPage(0); }} /> : <Button title="Request a meeting" onPress={() => navigateTab("request")} />}</View>}
@@ -805,7 +865,7 @@ function Conversation({
 function ConversationInfo({ width, icon, label: title, value }: { width: number; icon: "location-outline" | "pricetag-outline" | "business-outline"; label: string; value: string }) {
   return <View style={[s.card, { width: width < 360 ? "100%" : "48%", minHeight: 66, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 9, paddingVertical: 8, borderRadius: 15 }]}><View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: "#e7f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name={icon} size={17} color={colors.brand} /></View><View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={{ color: colors.brandDark, fontSize: 11, fontWeight: "800" }}>{title}</Text><Text numberOfLines={2} style={{ color: colors.muted, fontSize: 11, lineHeight: 14 }}>{value}</Text></View></View>;
 }
-function meetingStatus(status: string, schedule: { starts_at: string; completed: boolean } | null, coordinationStatus: string) {
+function meetingStatus(status: string, schedule: MeetingSchedule | null, coordinationStatus: string) {
   if (schedule?.completed) return { label: "Completed", detail: "This meeting has taken place.", background: "#eaf2f1", foreground: "#536b70" };
   if (schedule) return { label: "Scheduled", detail: "Your meeting date and Philippine time are below.", background: "#e5f6f2", foreground: colors.brand };
   if (status === "declined") return { label: "Declined", detail: "The barangay declined this request. Read their note below.", background: "#fff0ef", foreground: "#b43d3b" };
@@ -815,7 +875,7 @@ function meetingStatus(status: string, schedule: { starts_at: string; completed:
   return { label: label(status), detail: "Check this request for updates.", background: "#eef3f8", foreground: colors.muted };
 }
 
-function MeetingDetails({ requestId, requestStatus }: { requestId: string; requestStatus: string }) {
+function MeetingDetails({ requestId, requestStatus, schedule }: { requestId: string; requestStatus: string; schedule: MeetingSchedule | null }) {
   const q = useQuery({
     queryKey: ["meeting-details", requestId],
     refetchInterval: 30_000,
@@ -874,30 +934,37 @@ function MeetingDetails({ requestId, requestStatus }: { requestId: string; reque
       };
     },
   });
-  if (q.isPending) return <ListSkeleton variant="meeting" count={1} label="Loading meeting schedule" />;
-  if (q.error) return <View style={{ gap: 8 }}><Text style={s.error}>Could not load meeting details.</Text><Button secondary title="Retry schedule" onPress={() => void q.refetch()} /></View>;
-  if (!q.data?.meeting) return <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 11, borderRadius: 14, backgroundColor: "#f4f8fa" }}><Ionicons name="time-outline" size={17} color={colors.muted} style={{ marginTop: 2 }} /><Text style={[s.small, { flex: 1 }]}>{requestStatus === "approved" ? "The barangay approved your request. The date and place will appear here when scheduled." : "There is no meeting schedule yet. The latest decision is shown above."}</Text></View>;
-  const participants = q.data.participants.map((item) => item.organizations?.name).filter(Boolean);
-  const completeCount = q.data.actions.filter((action) => action.completed).length;
-  const meetUrl = normalizeGoogleMeetUrl(q.data.meeting.meet_url || "");
+  const meeting = q.data?.meeting;
+  const visibleSchedule = meeting ?? schedule;
+  if (!meeting) {
+    if (!visibleSchedule && q.isPending) return <ListSkeleton variant="meeting" count={1} label="Loading meeting schedule" />;
+    return <View style={{ gap: 9, padding: 12, borderRadius: 16, backgroundColor: "#f0f8f6", borderWidth: 1, borderColor: "#e1efeb" }}>
+      {visibleSchedule && <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}><Ionicons name="calendar-outline" size={18} color={colors.brand} /><View style={{ flex: 1, gap: 3 }}><Text style={[s.eyebrow, { marginBottom: 0 }]}>MEETING DATE & TIME</Text><Text style={[s.body, { fontWeight: "700" }]}>{formatMeetingTimeRange(visibleSchedule.starts_at, visibleSchedule.ends_at)}</Text></View></View>}
+      {q.error ? <><Text style={s.error}>Could not load the venue and follow-up details.</Text><Button secondary title="Retry details" onPress={() => void q.refetch()} /></> : visibleSchedule ? <Text style={s.small}>Loading venue, online link and follow-up…</Text> : <Text style={s.small}>{requestStatus === "approved" ? "The barangay will add the date and place here when they are set." : "There is no meeting schedule yet. The latest decision is shown above."}</Text>}
+    </View>;
+  }
+  const data = q.data!;
+  const participants = data.participants.map((item) => item.organizations?.name).filter(Boolean);
+  const completeCount = data.actions.filter((action) => action.completed).length;
+  const meetUrl = normalizeGoogleMeetUrl(meeting.meet_url || "");
   return (
     <View style={{ gap: 10, padding: 12, borderRadius: 16, backgroundColor: "#f0f8f6", borderWidth: 1, borderColor: "#e1efeb" }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}><View style={{ width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#d9f3ed" }}><Ionicons name="calendar-outline" size={19} color={colors.brand} /></View><Text style={[s.eyebrow, { flex: 1, marginBottom: 0 }]}>{q.data.meeting.completed ? "MEETING COMPLETED" : "MEETING SCHEDULED"}</Text></View>
-      <Text style={[s.title, { marginLeft: 45 }]}>{q.data.meeting.venue}</Text>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 9, marginLeft: 45 }}><Ionicons name="calendar-outline" size={17} color="#42617f" /><Text style={[s.body, { flex: 1 }]}>{formatMeetingTimeRange(q.data.meeting.starts_at, q.data.meeting.ends_at)}</Text></View>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}><View style={{ width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#d9f3ed" }}><Ionicons name="calendar-outline" size={19} color={colors.brand} /></View><Text style={[s.eyebrow, { flex: 1, marginBottom: 0 }]}>{meeting.completed ? "MEETING COMPLETED" : "MEETING SCHEDULED"}</Text></View>
+      <Text style={[s.title, { marginLeft: 45 }]}>{meeting.venue}</Text>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, marginLeft: 45 }}><Ionicons name="calendar-outline" size={17} color="#42617f" style={{ marginTop: 2 }} /><View style={{ flex: 1, gap: 2 }}><Text style={[s.eyebrow, { marginBottom: 0 }]}>DATE & TIME</Text><Text style={s.body}>{formatMeetingTimeRange(meeting.starts_at, meeting.ends_at)}</Text></View></View>
       {!!meetUrl && <Pressable accessibilityRole="link" accessibilityLabel="Join the scheduled Google Meet" onPress={() => { void Linking.openURL(meetUrl).catch(() => Alert.alert("Could not open Google Meet", "Check your internet connection and try the link again.")); }} style={({ pressed }) => [{ minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.brand, marginLeft: 45 }, pressed && { opacity: 0.78 }]}><Ionicons name="videocam-outline" size={18} color="white" /><Text style={{ color: "white", fontSize: 13, fontWeight: "800" }}>Join Google Meet</Text></Pressable>}
       {!!participants.length && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, marginLeft: 45 }}><Ionicons name="people-outline" size={17} color="#42617f" style={{ marginTop: 2 }} /><Text style={[s.body, { flex: 1 }]}>{participants.join(" · ")}</Text></View>}
-      {!!q.data.meeting.outcome && <View style={{ borderTopWidth: 1, borderTopColor: "#d8e8e4", paddingTop: 10, gap: 4 }}><Text style={[s.eyebrow, { fontSize: 10, letterSpacing: 1 }]}>MEETING OUTCOME</Text><Text style={s.body}>{q.data.meeting.outcome}</Text></View>}
-      {!!q.data.actions.length && <View style={{ borderTopWidth: 1, borderTopColor: "#d8e8e4", paddingTop: 10, gap: 8 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Ionicons name="stats-chart-outline" size={17} color={colors.brand} /><Text style={[s.small, { color: colors.brandDark, fontWeight: "800" }]}>Follow-through · {completeCount} of {q.data.actions.length} actions completed</Text></View>
-      {q.data.actions.map((a) => (
+      {!!meeting.outcome && <View style={{ borderTopWidth: 1, borderTopColor: "#d8e8e4", paddingTop: 10, gap: 4 }}><Text style={[s.eyebrow, { fontSize: 10, letterSpacing: 1 }]}>MEETING OUTCOME</Text><Text style={s.body}>{meeting.outcome}</Text></View>}
+      {!!data.actions.length && <View style={{ borderTopWidth: 1, borderTopColor: "#d8e8e4", paddingTop: 10, gap: 8 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Ionicons name="stats-chart-outline" size={17} color={colors.brand} /><Text style={[s.small, { color: colors.brandDark, fontWeight: "800" }]}>Follow-through · {completeCount} of {data.actions.length} actions completed</Text></View>
+      {data.actions.map((a) => (
         <View key={a.id} style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 10, borderRadius: 13, backgroundColor: a.completed ? "#e4f6ef" : "white", borderWidth: 1, borderColor: a.completed ? "#d0eee1" : "#e3ecef" }}>
           <Ionicons name={a.completed ? "checkmark-circle" : "ellipse-outline"} size={19} color={a.completed ? "#07845a" : colors.muted} style={{ marginTop: 1 }} />
           <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 18, fontWeight: "700" }}>{a.description}</Text><Text style={s.small}>{a.organizations?.name || "Unassigned"} · {a.due_at ? `${!a.completed && Date.parse(a.due_at) < Date.now() ? "Past target · " : "Due "}${new Date(a.due_at).toLocaleDateString()}` : "No target date"}</Text></View>
         </View>
       ))}
       </View>}
-      {!q.data.actions.length && <Text style={[s.small, { borderTopWidth: 1, borderTopColor: "#d8e8e4", paddingTop: 9 }]}>No follow-up actions have been recorded.</Text>}
+      {!data.actions.length && <Text style={[s.small, { borderTopWidth: 1, borderTopColor: "#d8e8e4", paddingTop: 9 }]}>No follow-up actions have been recorded.</Text>}
     </View>
   );
 }

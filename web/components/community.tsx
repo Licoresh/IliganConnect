@@ -1370,9 +1370,10 @@ function Meeting({
             }
           });
         }}>
+          <section className="meeting-form-section">
           <div className="meeting-section-heading">
-            <span className="meeting-section-icon"><FileText size={20} /></span>
-            <div><h3>Meeting information</h3><p>Choose how residents will attend, then set the time and details.</p></div>
+            <span className="meeting-section-icon"><CalendarDays size={20} /></span>
+            <div><h3>Schedule & attendance</h3><p>Set where residents will meet and the Philippine date and time.</p></div>
           </div>
           <fieldset className="meeting-mode-fieldset">
             <legend>Meeting format <b>*</b></legend>
@@ -1397,8 +1398,18 @@ function Meeting({
           <div className="meeting-calendar-help"><CalendarPlus size={16} aria-hidden="true" /><span>{venueType === "online" ? "Open a Calendar draft, turn on Google Meet, save the event, then paste its link above. A Meet link cannot be generated from a Calendar draft alone." : "Open a Calendar draft with this exact date and time range."}</span></div>
           {meetingInputError && <p className="meeting-feedback error" role="alert">{meetingInputError}</p>}
           {meetingFormError && <p className="meeting-feedback error" role="alert">{meetingFormError}</p>}
+          </section>
+          <section className="meeting-form-section">
+            <div className="meeting-section-heading">
+              <span className="meeting-section-icon"><FileText size={20} /></span>
+              <div><h3>Public update</h3><p>Share the meeting summary, decisions, and key discussion points with residents.</p></div>
+            </div>
           <label className="meeting-field"><span>Public summary and minutes</span><textarea name="outcome" maxLength={2000} defaultValue={meeting?.outcome || ""} placeholder="Write a summary, decisions, and key discussion points…" /></label>
-          <label className="meeting-completed"><input name="completed" type="checkbox" defaultChecked={meeting?.completed} /><span><strong>Meeting completed</strong><small>Mark complete after the planned activities and follow-up are finished.</small></span></label>
+          </section>
+          <section className="meeting-form-section meeting-form-completion">
+            <div><h3>Meeting status</h3><p>Mark this after the planned activities and follow-up are finished.</p></div>
+            <label className="meeting-completed"><input name="completed" type="checkbox" defaultChecked={meeting?.completed} /><span><strong>Meeting completed</strong><small>Completed meetings are shown separately from upcoming schedules.</small></span></label>
+          </section>
           <div className="meeting-form-actions"><button type="button" className="secondary" disabled={busy} onClick={(event) => {
             const form = event.currentTarget.form;
             if (!form) return;

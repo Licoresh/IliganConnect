@@ -3685,6 +3685,12 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-field textarea { min-height: 82px; resize: vertical; line-height: 1.5; }
 .meeting-field :is(input, select, textarea):focus { border-color: var(--brand-hover); outline: 3px solid #7a2a481a; }
 .meeting-completed { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border: 1px solid #dfe9ed; border-radius: 10px; background: var(--warm-surface); cursor: pointer; }
+.meeting-details-form > .meeting-form-section { display: grid; gap: 13px; padding: 15px; border: 1px solid #e1eaee; border-radius: 14px; background: #fff; }
+.meeting-details-form > .meeting-form-section .meeting-section-heading { margin: 0; }
+.meeting-form-completion { background: #f8fbfa !important; }
+.meeting-form-completion > div { display: grid; gap: 4px; }
+.meeting-form-completion > div h3 { margin: 0; color: var(--ink); font-size: 14px; }
+.meeting-form-completion > div p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .meeting-completed input { width: 18px; height: 18px; margin: 0; accent-color: var(--brand-hover); }
 .meeting-completed span { display: grid; gap: 3px; }
 .meeting-completed strong { color: var(--ink); font-size: 13px; }
@@ -4982,3 +4988,10 @@ main#main .issue-map .overview-map-base button { min-width: 44px; min-height: 34
   .modal.announcement-edit-dialog .community-dialog-title p { font-size: 11px; }
   .modal.announcement-edit-dialog .community-dialog-close { grid-column: 3; grid-row: 1; width: 38px; height: 38px; }
 }
+.save-toast-region { position: fixed; z-index: 10020; right: 20px; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); width: min(420px, calc(100vw - 32px)); pointer-events: none; }
+.save-toast { display: grid; grid-template-columns: 21px minmax(0, 1fr) 30px; align-items: center; gap: 11px; min-height: 58px; padding: 10px 12px 10px 15px; border: 1px solid #cde8dc; border-radius: 15px; background: #fff; color: #135b47; box-shadow: 0 12px 35px #123a3526; font-size: 13px; font-weight: 700; pointer-events: auto; animation: save-toast-in 180ms ease-out; }
+.save-toast.error { border-color: #f0c7c5; color: #a53b38; }
+.save-toast > button { display: grid; width: 30px; height: 30px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.save-toast > button:hover { background: #eef5f3; }
+@keyframes save-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 640px) { .save-toast-region { right: 12px; bottom: calc(88px + env(safe-area-inset-bottom, 0px)); left: 12px; width: auto; } }

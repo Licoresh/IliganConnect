@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { trackedSaveFetch } from "./save-feedback";
 export const configured = !!(
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -14,6 +15,7 @@ export const db = configured
           persistSession: true,
           detectSessionInUrl: true,
         },
+        global: { fetch: trackedSaveFetch },
       },
     )
   : null;

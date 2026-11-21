@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import Workspace from "../components/workspace";
 import { FormValidation } from "../components/form-validation";
+import { SaveToast } from "../components/save-toast";
 export default function Page() {
   const [client] = useState(
     () =>
@@ -12,6 +13,7 @@ export default function Page() {
   );
   return (
     <QueryClientProvider client={client}>
+      <SaveToast />
       <FormValidation />
       <Workspace />
     </QueryClientProvider>

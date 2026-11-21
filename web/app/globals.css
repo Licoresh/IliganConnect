@@ -4283,8 +4283,10 @@ main#main, main#main.overview-main, main#main.reports-main { width: 100%; max-wi
 .map-list-pagination > div { display: flex; align-items: center; gap: 10px; }
 .map-list-pagination button { min-height: 44px; padding: 8px 12px; font-size: 13px; }
 .map-report-list h2 { scroll-margin-top: 96px; }
-.modal.consultation-edit-dialog .consultation-edit-form { overflow: hidden; padding: 0; }
-.modal.consultation-edit-dialog .consultation-edit-content { min-height: 0; flex: 1 1 auto; align-content: start; overflow-y: auto; overscroll-behavior: contain; padding: 16px 24px; scroll-padding-block: 12px; }
+.modal.consultation-edit-dialog { height: min(90dvh, 860px); }
+.modal.consultation-edit-dialog .community-dialog-body { display: flex; min-height: 0; flex: 1 1 auto; overflow: hidden; }
+.modal.consultation-edit-dialog .consultation-edit-form { height: auto; min-height: 0; flex: 1 1 auto; overflow: hidden; padding: 0; }
+.modal.consultation-edit-dialog .consultation-edit-content { min-height: 0; flex: 1 1 auto; align-content: start; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 16px 24px; scroll-padding-block: 12px; }
 .consultation-edit-content :is(input, select, textarea) { scroll-margin-block: 12px; }
 .modal.consultation-edit-dialog .consultation-edit-footer { position: static; margin: 0; padding-inline: 24px; }
 .consultation-edit-footer .consultation-edit-actions { padding-top: 0; border-top: 0; }

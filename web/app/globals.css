@@ -3619,6 +3619,11 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-details-dialog .community-dialog-close { width: 42px; height: 42px; min-height: 42px; }
 .meeting-details-dialog .community-dialog-body { display: block; min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 14px 20px 20px; }
 .meeting-detail-workspace { display: grid; min-width: 0; gap: 12px; color: var(--ink); }
+.meeting-section-nav { position: sticky; top: 0; z-index: 3; display: flex; min-width: 0; overflow-x: auto; padding: 5px; border: 1px solid #dfeae7; border-radius: 11px; background: #f7faf9; scrollbar-width: thin; }
+.meeting-section-nav button { position: relative; display: inline-flex; min-height: 36px; flex: 0 0 auto; align-items: center; justify-content: center; padding: 7px 13px; border: 0; border-radius: 7px; background: transparent; color: #516b7d; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.meeting-section-nav button + button { margin-left: 4px; }
+.meeting-section-nav button + button::before { position: absolute; top: 8px; left: -3px; width: 1px; height: 20px; background: #d9e5e3; content: ""; }
+.meeting-section-nav button:hover, .meeting-section-nav button:focus-visible { background: #e3f4f0; color: var(--brand-hover); }
 .meeting-office-view-note { display: flex; align-items: flex-start; gap: 9px; margin: 0; padding: 11px 13px; border: 1px solid #cce7e2; border-radius: 10px; background: #f0f9f7; color: #315c5b; font-size: 12px; line-height: 1.5; }
 .meeting-office-view-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--brand); }
 .meeting-section { display: grid; min-width: 0; gap: 12px; padding: 15px 16px; border: 1px solid #e1ebe8; border-radius: 13px; background: #fff; }
@@ -3684,10 +3689,6 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-details-heading { padding-bottom: 14px; }
 .meeting-details-form > .meeting-form-section { display: grid; gap: 13px; padding: 15px 0; border: 0; border-top: 1px solid #e1eaee; border-radius: 0; background: transparent; }
 .meeting-details-form > .meeting-form-section .meeting-section-heading { margin: 0; }
-.meeting-form-completion { background: transparent !important; }
-.meeting-form-completion > div { display: grid; gap: 4px; }
-.meeting-form-completion > div h3 { margin: 0; color: var(--ink); font-size: 14px; }
-.meeting-form-completion > div p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .meeting-completed input { width: 18px; height: 18px; margin: 0; accent-color: var(--brand-hover); }
 .meeting-completed span { display: grid; gap: 3px; }
 .meeting-completed strong { color: var(--ink); font-size: 13px; }
@@ -3726,6 +3727,9 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-action-edit summary { width: fit-content; color: var(--brand); cursor: pointer; font-size: 11px; font-weight: 700; }
 .meeting-action-edit .meeting-form { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5eeec; }
 .meeting-action-form { padding-top: 12px; border-top: 1px solid #f0e7e8; }
+.meeting-section[id], .meeting-invitations-group[id] { scroll-margin-top: 56px; }
+.meeting-decision-section { border-color: #bfded8; background: linear-gradient(110deg, #f3faf8, #fff 64%); }
+.meeting-completion-form { padding-top: 2px; }
 .meeting-details-dialog :is(button, input, select, textarea):focus-visible { outline: 3px solid #7a2a4830; outline-offset: 2px; }
 @media (max-width: 760px) {
   .modal.meeting-details-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: 16px; }
@@ -3737,6 +3741,8 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
   .meeting-details-dialog .community-dialog-close { width: 36px; height: 36px; min-height: 36px; }
   .meeting-details-dialog .community-dialog-body { padding: 10px; }
   .meeting-detail-workspace { gap: 9px; }
+  .meeting-section-nav { top: 0; margin: -2px 0 0; padding: 4px; border-radius: 10px; }
+  .meeting-section-nav button { min-height: 38px; padding: 7px 11px; font-size: 11px; }
   .meeting-section { gap: 10px; padding: 12px; border-radius: 11px; }
   .meeting-overview { grid-template-columns: 1fr; gap: 9px; }
   .meeting-overview-main p { margin-top: 7px; font-size: 12px; }

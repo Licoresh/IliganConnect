@@ -1210,9 +1210,11 @@ function Meeting({
 }) {
   const { run, message, failed, busy } = useSave();
   const [meetingFormError, setMeetingFormError] = useState("");
+  const [meetingDecisionError, setMeetingDecisionError] = useState("");
   const [meetingInputError, setMeetingInputError] = useState("");
   const [meetingInputErrorMode, setMeetingInputErrorMode] = useState<MeetingInputErrorMode>("save");
   const [venueType, setVenueType] = useState<"venue" | "online">("venue");
+  const [meetingCompleted, setMeetingCompleted] = useState(false);
   const [barangayInvite, setBarangayInvite] = useState("");
   const [barangayInviteOpen, setBarangayInviteOpen] = useState(false);
   const q = useQuery({
@@ -1261,6 +1263,7 @@ function Meeting({
   useEffect(() => {
     setVenueType(meeting?.venue_type || (meeting?.meet_url ? "online" : "venue"));
   }, [meeting?.id, meeting?.venue_type, meeting?.meet_url]);
+  useEffect(() => setMeetingCompleted(!!meeting?.completed), [meeting?.id, meeting?.completed]);
   const meetingLink = normalizeGoogleMeetUrl(meeting?.meet_url || "");
   const invitations = q.data?.invitations || [];
   const barangayInvitations = q.data?.barangayInvitations || [];
@@ -1274,6 +1277,7 @@ function Meeting({
   const canEditActionItem = (item: { organization_id: string | null }) => manage || (canEditOfficeActions && !!item.organization_id && acceptedOfficeIds.includes(item.organization_id));
   const requestOpen = row.status === "pending" || row.status === "approved";
   const hasInvitationSections = canInvite || officeIds.length > 0 || invitations.length > 0 || barangayInvitations.length > 0;
+  const hasFinalDecision = canInvite || (manageSchedule && row.status === "approved" && !!meeting) || !!row.decision_reason;
   const availableOrganizations = refs.organizations.filter(
     (organization) => {
       const office = organization as typeof organization & { active?: boolean; can_consult?: boolean; can_coordinate?: boolean };
@@ -1281,6 +1285,17 @@ function Meeting({
         !invitations.some((invitation) => invitation.organization_id === office.id && invitation.status !== "declined");
     },
   );
+  const meetingSectionId = (section: string) => `meeting-${row.id}-${section}`;
+  const sectionNavigation = [
+    { label: "Overview", id: meetingSectionId("overview") },
+    { label: "Participation", id: meetingSectionId("participation") },
+    ...(manageSchedule && row.status === "approved" ? [{ label: "Schedule", id: meetingSectionId("schedule") }] : []),
+    ...(q.data && hasInvitationSections ? [{ label: "Invitations", id: meetingSectionId("invitations") }] : []),
+    ...(meeting ? [{ label: "Follow-up", id: meetingSectionId("follow-up") }] : []),
+    ...(hasFinalDecision
+      ? [{ label: "Decision", id: meetingSectionId("decision") }]
+      : []),
+  ];
   return (
     <div className={`meeting-detail-workspace${isOffice ? " is-office-view" : ""}`}>
       {q.isPending ? <p className="meeting-feedback">Loading meeting details…</p> : null}
@@ -1288,7 +1303,18 @@ function Meeting({
       {message && <p role={failed ? "alert" : "status"} className={`meeting-feedback ${failed ? "error" : "success"}`}>{message}</p>}
       {(isOffice || manage && !manageSchedule) && <p className="meeting-office-view-note"><Eye size={15} aria-hidden="true" />{isOffice ? "Meeting details are managed by the barangay. You can respond to your invitation and update action items assigned to an office you have accepted for." : "The assigned barangay manages the venue and schedule. You can review the request, invitations, and agreed actions."}</p>}
 
-      <section className="meeting-section meeting-overview">
+      <nav className="meeting-section-nav" aria-label="Meeting details sections">
+        {sectionNavigation.map((section) => (
+          <button key={section.id} type="button" onClick={() => {
+            const target = document.getElementById(section.id);
+            target?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+          }}>
+            {section.label}
+          </button>
+        ))}
+      </nav>
+
+      <section id={meetingSectionId("overview")} className="meeting-section meeting-overview">
         <div className="meeting-section-heading meeting-overview-heading">
           <span className="meeting-section-icon"><FileText size={20} /></span>
           <div><h3>Request overview</h3><p>Review the request, its current status, and scheduled time.</p></div>
@@ -1307,46 +1333,25 @@ function Meeting({
         </div>
       </section>
 
-      <section className="meeting-section">
+      <section id={meetingSectionId("participation")} className="meeting-section">
         <div className="meeting-section-heading">
           <span className="meeting-section-icon"><Users size={20} /></span>
           <div><h3>Who can participate</h3><p>{row.participation_mode === "open" ? "Open meeting. Residents can join after approval; residents from another barangay need an accepted invitation." : "Closed meeting. Participation is limited to the organizer and barangay staff."}</p></div>
         </div>
       </section>
 
-      {(row.report_id || row.decision_reason) && (
+      {row.report_id && (
         <section className="meeting-section">
           <div className="meeting-section-heading">
             <span className="meeting-section-icon"><FileText size={20} /></span>
-            <div><h3>Related report and decision</h3><p>Report linked to this request and the barangay’s decision.</p></div>
+            <div><h3>Related report</h3><p>Report linked to this request for context.</p></div>
           </div>
-          {row.decision_reason && <p className="meeting-context-note">{row.decision_reason}</p>}
           {row.report_id && <div className="meeting-report-id"><span>Report ID</span><code>{row.report_id}</code></div>}
         </section>
       )}
 
-      {canInvite && row.status === "pending" && (
-        <section className="meeting-section">
-          <div className="meeting-section-heading">
-            <span className="meeting-section-icon is-blue"><CheckCircle2 size={20} /></span>
-            <div><h3>Review meeting request</h3><p>Record a decision the requester can see.</p></div>
-          </div>
-          <form className="meeting-form" onSubmit={async (e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            const status = String(f.get("status"));
-            const reason = String(f.get("reason") || "").trim();
-            await run(db!.from("meeting_requests").update({ status, decision_reason: reason || null }).eq("id", row.id));
-          }}>
-            <label className="meeting-field"><span>Decision</span><select name="status"><option value="approved">Approve</option><option value="declined">Decline</option></select></label>
-            <label className="meeting-field"><span>Reason (optional)</span><textarea maxLength={SHORT_REASON_LIMIT} name="reason" placeholder="Explain the decision or share next steps…" /></label>
-            <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Record decision"}</button></div>
-          </form>
-        </section>
-      )}
-
       {manageSchedule && row.status === "approved" && (
-        <form className="meeting-section meeting-details-form" key={meeting?.id || "new"} onChange={(e) => {
+        <form id={meetingSectionId("schedule")} className="meeting-section meeting-details-form" key={meeting?.id || "new"} onChange={(e) => {
           if (!meetingInputError) return;
           setMeetingInputError(getMeetingInputError(e.currentTarget, meetingInputErrorMode));
         }} onSubmit={(e) => {
@@ -1375,6 +1380,7 @@ function Meeting({
             }
           });
         }}>
+          <input type="hidden" name="completed" value={meetingCompleted ? "on" : "off"} />
           <div className="meeting-section-heading meeting-details-heading">
             <span className="meeting-section-icon"><CalendarDays size={20} /></span>
             <div><h3>Plan the meeting</h3><p>Set the format and timing, then share an update with residents.</p></div>
@@ -1415,13 +1421,6 @@ function Meeting({
             </div>
           <label className="meeting-field"><span>Public summary and minutes</span><textarea name="outcome" maxLength={2000} defaultValue={meeting?.outcome || ""} placeholder="Write a summary, decisions, and key discussion points…" /></label>
           </section>
-          <section className="meeting-form-section meeting-form-completion">
-            <div className="meeting-section-heading">
-              <span className="meeting-section-icon"><CheckCircle2 size={20} /></span>
-              <div><h3>Completion</h3><p>Mark the meeting complete after activities and follow-up are finished.</p></div>
-            </div>
-            <label className="meeting-completed"><input name="completed" type="checkbox" defaultChecked={meeting?.completed} /><span><strong>Meeting completed</strong><small>Completed meetings are shown separately from upcoming schedules.</small></span></label>
-          </section>
           <div className="meeting-form-actions"><button type="button" className="secondary" disabled={busy} onClick={(event) => {
             const form = event.currentTarget.form;
             if (!form) return;
@@ -1449,7 +1448,7 @@ function Meeting({
         </form>
       )}
 
-      {q.data && hasInvitationSections && <div className="meeting-invitations-group">
+      {q.data && hasInvitationSections && <div id={meetingSectionId("invitations")} className="meeting-invitations-group">
           <div className="meeting-workflow-heading"><h3>Participants and invitations</h3><p>Office invitations and cross-barangay participation are managed separately.</p></div>
           {(canInvite || officeIds.length > 0 || invitations.length > 0) && (
           <section className="meeting-section">
@@ -1547,7 +1546,7 @@ function Meeting({
       </div>}
 
       {meeting && (
-          <section className="meeting-section">
+          <section id={meetingSectionId("follow-up")} className="meeting-section">
             <div className="meeting-section-heading">
               <span className="meeting-section-icon"><CheckCircle2 size={20} /></span>
               <div><h3>Agreed actions and follow-up</h3><p>{isOffice ? canEditOfficeActions ? "View all agreed actions and update items assigned to your accepted office." : "View the recorded actions. Editing is available after your office accepts an invitation and receives an assigned action." : "Track decisions, owners, and follow-up dates."}</p></div>
@@ -1586,6 +1585,42 @@ function Meeting({
               <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Record follow-up action"}</button></div>
             </form>}
           </section>
+      )}
+
+      {hasFinalDecision && (
+        <section id={meetingSectionId("decision")} className="meeting-section meeting-decision-section">
+          <div className="meeting-section-heading">
+            <span className="meeting-section-icon"><CheckCircle2 size={20} /></span>
+            <div><h3>{meeting ? "Meeting decision" : "Request decision"}</h3><p>{row.status === "pending" ? "Review the request and record your decision." : manageSchedule && meeting ? "Mark the meeting complete after the scheduled activities and follow-up are finished." : "Review the recorded request decision and any explanation."}</p></div>
+          </div>
+          {row.status !== "pending" && <span className={`meeting-detail-status ${meeting?.completed ? "is-complete" : meeting ? "is-scheduled" : ""}`}>{meeting?.completed ? "Completed" : label(row.status)}</span>}
+          {row.decision_reason && <p className="meeting-context-note">{row.decision_reason}</p>}
+          {canInvite && row.status === "pending" && <form className="meeting-form" onSubmit={async (e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            const status = String(f.get("status"));
+            const reason = String(f.get("reason") || "").trim();
+            await run(db!.from("meeting_requests").update({ status, decision_reason: reason || null }).eq("id", row.id));
+          }}>
+            <label className="meeting-field"><span>Decision</span><select name="status"><option value="approved">Approve</option><option value="declined">Decline</option></select></label>
+            <label className="meeting-field"><span>Reason (optional)</span><textarea maxLength={SHORT_REASON_LIMIT} name="reason" placeholder="Explain the decision or share next steps…" /></label>
+            <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Record decision"}</button></div>
+          </form>}
+          {manageSchedule && row.status === "approved" && meeting && <form className="meeting-form meeting-completion-form" onChange={() => setMeetingDecisionError("")} onSubmit={async (event) => {
+            event.preventDefault();
+            const completed = new FormData(event.currentTarget).get("completed") === "on";
+            const startsAt = new Date(meeting.starts_at).getTime();
+            const endsAt = new Date(meeting.ends_at).getTime();
+            if (completed && endsAt > Date.now()) { setMeetingDecisionError("A meeting cannot be marked completed before its scheduled end time."); return; }
+            if (!completed && startsAt < Date.now() - 60_000) { setMeetingDecisionError("Choose a future time, or mark the meeting completed if it has already taken place."); return; }
+            setMeetingDecisionError("");
+            await run(db!.from("meetings").update({ completed }).eq("id", meeting.id));
+          }}>
+            <label className="meeting-completed"><input name="completed" type="checkbox" checked={meetingCompleted} disabled={busy} onChange={(event) => setMeetingCompleted(event.target.checked)} /><span><strong>Meeting completed</strong><small>Completed meetings are shown separately from upcoming schedules.</small></span></label>
+            {meetingDecisionError && <p className="meeting-feedback error" role="alert">{meetingDecisionError}</p>}
+            <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Save meeting decision"}</button></div>
+          </form>}
+        </section>
       )}
     </div>
   );

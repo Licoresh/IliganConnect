@@ -4,7 +4,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { textInputError, SHORT_REASON_LIMIT, characterLimitHint, Lookup, label, consultationPhase, formatMeetingTimeRange, normalizeGoogleMeetUrl } from "@community/shared";
 import { db, result } from "../lib/client";
-import { styles as s, Button, Field, Choices, PhotoViewer, AppBackNavigation, colors, categoryIconFor, categoryToneFor } from "../components/ui";
+import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryDescriptionFor, categoryDisplayName, categoryIconFor, categoryToneFor } from "../components/ui";
 import { ListSkeleton } from "../components/loading";
 type Consultation = {
   id: string;
@@ -19,6 +19,13 @@ type Consultation = {
   report_id: string | null;
   category_name: string | null;
 };
+type MeetingParticipant = {
+  request_id: string;
+  resident_id: string;
+  resident_name: string;
+  joined_at: string;
+  participant_count: number;
+};
 export function Community({
   barangays,
   categories,
@@ -26,6 +33,7 @@ export function Community({
   initialTab = "consultations",
   initialConsultationId,
   initialMeetingRequestId,
+  onPageNavigate,
   residentId,
 }: {
   barangays: Lookup[];
@@ -34,6 +42,7 @@ export function Community({
   initialTab?: "consultations" | "meetings" | "request";
   initialConsultationId?: string | null;
   initialMeetingRequestId?: string | null;
+  onPageNavigate?: () => void;
   residentId: string;
 }) {
   const [tab, setTab] = useState<string>(initialTab),
@@ -43,19 +52,28 @@ export function Community({
     [appliedSearch, setAppliedSearch] = useState(""),
     [area, setArea] = useState(""),
     [participation, setParticipation] = useState("all"),
+    [meetingScope, setMeetingScope] = useState("barangay"),
+    [participationMode, setParticipationMode] = useState<"open" | "closed">("closed"),
     [expandedMeeting, setExpandedMeeting] = useState<string | null>(initialMeetingRequestId ?? null),
     [page, setPage] = useState(0),
     [title, setTitle] = useState(""),
     [body, setBody] = useState(""),
     [barangay, setBarangay] = useState(defaultBarangay),
     [category, setCategory] = useState(""),
+    [categoryPickerOpen, setCategoryPickerOpen] = useState(false),
     [report, setReport] = useState(""),
     [offices, setOffices] = useState<string[]>([]),
     [officePickerOpen, setOfficePickerOpen] = useState(false),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   const qc = useQueryClient();
+  const { width: screenWidth } = useWindowDimensions();
   const requestSubmission = useRef(false);
+  function navigateTab(next: string) {
+    if (next !== tab) onPageNavigate?.();
+    setTab(next);
+    setPage(0);
+  }
   useEffect(() => {
     const timer = setTimeout(() => { setAppliedSearch(search.trim()); setPage(0); }, 280);
     return () => clearTimeout(timer);
@@ -65,6 +83,8 @@ export function Community({
     enabled: tab === "request",
     queryFn: () => result<{ id: string; title: string; category_id: string; barangay_id: string }[]>(db!.from("reports").select("id,title,category_id,barangay_id").eq("resident_id", residentId).order("created_at", { ascending: false }).limit(50)),
   });
+  const linkedMeetingReport = ownReports.data?.find((item) => item.id === report);
+  const meetingBarangay = linkedMeetingReport?.barangay_id ?? barangay;
   const meetingOffices = useQuery({
     queryKey: ["meeting-request-offices", residentId],
     enabled: tab === "request",
@@ -73,7 +93,7 @@ export function Community({
     )).filter((office) => office.can_consult || office.can_coordinate),
   });
   const q = useQuery({
-    queryKey: ["community", residentId, tab, appliedSearch, area, participation, page, meetingTarget],
+    queryKey: ["community", residentId, tab, appliedSearch, area, participation, meetingScope, page, meetingTarget],
     enabled: tab !== "request",
     refetchInterval: 30_000,
     queryFn: async () => {
@@ -105,12 +125,30 @@ export function Community({
         const statusFilter = `or(status.eq.closed,status.eq.archived,and(status.eq.open,closes_at.lt.${now}))`;
         topics = topics.or(searchFilter ? `and(${searchFilter},${statusFilter})` : statusFilter);
       } else if (searchFilter) topics = topics.or(searchFilter);
+      let acceptedBarangayRequests: string[] = [];
+      if (tab === "meetings" && !meetingTarget && meetingScope === "barangay" && defaultBarangay) {
+        const [invitations, joinedMeetings] = await Promise.all([
+          result<{ request_id: string }[]>(db!.from("meeting_request_barangays")
+            .select("request_id").eq("barangay_id", defaultBarangay).eq("status", "accepted")),
+          result<{ request_id: string }[]>(db!.from("meeting_resident_participants")
+            .select("request_id").eq("resident_id", residentId)),
+        ]);
+        acceptedBarangayRequests = [...new Set([
+          ...invitations.map((invitation) => invitation.request_id),
+          ...joinedMeetings.map((meeting) => meeting.request_id),
+        ])];
+      }
       let requests = db!.from("meeting_requests")
-        .select("id,title,body,status,decision_reason,barangay_id,category_id,report_id,created_at,coordination_status")
+        .select("id,title,body,status,decision_reason,barangay_id,resident_id,category_id,report_id,created_at,coordination_status,participation_mode,is_sample")
         .order("created_at", { ascending: false })
         .range(page * 20, page * 20 + 19);
-      if (area) requests = requests.eq("barangay_id", area);
       if (meetingTarget) requests = requests.eq("id", meetingTarget);
+      else if (tab === "meetings" && meetingScope === "yours") requests = requests.eq("resident_id", residentId);
+      else if (tab === "meetings" && defaultBarangay) {
+        requests = acceptedBarangayRequests.length
+          ? requests.or(`barangay_id.eq.${defaultBarangay},id.in.(${acceptedBarangayRequests.join(",")})`)
+          : requests.eq("barangay_id", defaultBarangay);
+      }
       if (tab === "meetings" && appliedSearch) {
         const term = appliedSearch.replace(/[,%_()."\\]/g, " ").trim();
         if (term) {
@@ -128,7 +166,8 @@ export function Community({
       const categoriesByReport = new Map(linkedReports.map((item) => [item.id, categories.find((category) => category.id === item.category_id)?.name ?? null]));
       const requestRows = tab === "meetings" ? await result<{
         id: string; title: string; body: string; status: string; decision_reason: string | null;
-        barangay_id: string; category_id: string | null; report_id: string | null; created_at: string; coordination_status: string;
+        barangay_id: string; resident_id: string; category_id: string | null; report_id: string | null;
+        created_at: string; coordination_status: string; participation_mode: "open" | "closed"; is_sample: boolean;
       }[]>(requests) : [];
       const schedules = requestRows.length ? await result<{
         request_id: string; starts_at: string; ends_at: string; completed: boolean;
@@ -136,12 +175,20 @@ export function Community({
       const invitedOffices = requestRows.length ? await result<{
         request_id: string; status: "pending" | "accepted" | "declined"; organizations: { name: string }[] | null;
       }[]>(db!.from("meeting_request_offices").select("request_id,status,organizations(name)").in("request_id", requestRows.map((item) => item.id))) : [];
+      const invitedBarangays = requestRows.length ? await result<{
+        request_id: string; barangay_id: string; status: "pending" | "accepted" | "declined";
+      }[]>(db!.from("meeting_request_barangays").select("request_id,barangay_id,status").in("request_id", requestRows.map((item) => item.id))) : [];
+      const participants = requestRows.length ? await result<MeetingParticipant[]>(db!.rpc("meeting_request_participants", {
+        p_requests: requestRows.map((item) => item.id),
+      })) : [];
       return {
       consultations: topicRows.map((item) => ({ ...item, category_name: item.report_id ? categoriesByReport.get(item.report_id) ?? null : null })),
       requests: requestRows.map((item) => ({
         ...item,
         schedule: schedules.find((meeting) => meeting.request_id === item.id) ?? null,
         invitations: invitedOffices.filter((invitation) => invitation.request_id === item.id),
+        barangayInvitations: invitedBarangays.filter((invitation) => invitation.request_id === item.id),
+        participants: participants.filter((participant) => participant.request_id === item.id),
       })),
       supports: tab === "meetings" ? await result<{ request_id: string }[]>(
         db!.from("meeting_supporters").select("request_id"),
@@ -157,6 +204,8 @@ export function Community({
     const listener = BackHandler.addEventListener("hardwareBackPress", () => { setSelected(null); return true; });
     return () => listener.remove();
   }, [!!selected]);
+  const selectedMeetingCategory = categories.find((item) => item.id === category);
+  const selectedMeetingCategoryTone = selectedMeetingCategory ? categoryToneFor(selectedMeetingCategory.name) : { background: colors.brandSoft, foreground: colors.brand };
   async function save(
     p: PromiseLike<{ data: unknown; error: { message: string } | null }>,
     successMessage = "Saved.",
@@ -182,18 +231,16 @@ export function Community({
     if (requestSubmission.current) return;
     requestSubmission.current = true;
     try {
-      const linkedReport = ownReports.data?.find((item) => item.id === report);
-      const destination = linkedReport
-        ? barangays.find((item) => item.id === linkedReport.barangay_id)?.name ?? "the report’s barangay"
-        : barangays.find((item) => item.id === barangay)?.name ?? "the selected barangay";
+      const destination = barangays.find((item) => item.id === meetingBarangay)?.name ?? "the selected barangay";
       const saved = await save(
         db!.rpc("submit_meeting_request", {
           p_title: title.trim(),
           p_body: body.trim(),
-          p_barangay: barangay,
+          p_barangay: meetingBarangay,
           p_category: category || null,
           p_report: report || null,
           p_organizations: offices,
+          p_participation_mode: participationMode,
         }),
         `Your request was sent to ${destination}. Track the review under Meetings.`,
         "We couldn’t send your request. Check your connection and try again; your details are still here.",
@@ -203,6 +250,7 @@ export function Community({
         setBody("");
         setReport("");
         setCategory("");
+        setParticipationMode("closed");
         setOffices([]);
         setOfficePickerOpen(false);
         setBarangay(defaultBarangay);
@@ -210,14 +258,15 @@ export function Community({
         setSearch("");
         setArea("");
         setMeetingTarget("");
-        setTab("meetings");
+        setMeetingScope("yours");
+        navigateTab("meetings");
       }
     } finally {
       requestSubmission.current = false;
     }
   }
   if (selected)
-    return <Conversation id={selected} initial={q.data?.consultations.find((item) => item.id === selected)} close={() => setSelected(null)} residentId={residentId} categories={categories} barangays={barangays} />;
+    return <Conversation id={selected} initial={q.data?.consultations.find((item) => item.id === selected)} close={() => { onPageNavigate?.(); setSelected(null); }} residentId={residentId} categories={categories} barangays={barangays} />;
   const communityTabs = [
     { id: "consultations", name: "Conversations", icon: "chatbubbles-outline" as const },
     { id: "meetings", name: "Meetings", icon: "calendar-outline" as const },
@@ -240,7 +289,7 @@ export function Community({
       <View style={{ flexDirection: "row", gap: 5, padding: 5, borderRadius: 20, borderWidth: 1, borderColor: "#e2ebf1", backgroundColor: "white" }}>
         {communityTabs.map((item) => {
           const active = tab === item.id;
-          return <Pressable key={item.id} accessibilityRole="tab" accessibilityLabel={item.id === "request" ? "Request a meeting" : item.name} accessibilityState={{ selected: active }} onPress={() => { setTab(item.id); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 72, paddingHorizontal: 7, paddingVertical: 7, borderRadius: 15, flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, backgroundColor: active ? "#e8f7f3" : "transparent" }, pressed && { opacity: 0.78 }]}>
+          return <Pressable key={item.id} accessibilityRole="tab" accessibilityLabel={item.id === "request" ? "Request a meeting" : item.name} accessibilityState={{ selected: active }} onPress={() => navigateTab(item.id)} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 72, paddingHorizontal: 7, paddingVertical: 7, borderRadius: 15, flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, backgroundColor: active ? "#e8f7f3" : "transparent" }, pressed && { opacity: 0.78 }]}>
             <Ionicons name={item.icon} size={20} color={active ? colors.brand : colors.muted} />
             <Text style={{ flexShrink: 1, textAlign: "center", color: active ? colors.brand : colors.muted, fontSize: 12, lineHeight: 16, fontWeight: active ? "800" : "600" }}>{item.name}</Text>
           </Pressable>;
@@ -255,12 +304,7 @@ export function Community({
         <>
         <View style={[s.card, { gap: 16, padding: 17 }]}>
           <View style={{ gap: 10 }}><Text style={[s.fieldLabel, { fontSize: 16 }]}>Find a community update</Text><Field maxLength={200} label="Search topics" placeholder="Search conversations" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
-          <Choices compact title="Filter by barangay" sheetTitle="Choose a barangay" subtitle="See conversations from a specific barangay." items={[{ id: "", name: "All barangays" }, ...barangays]} value={area} onChange={(value) => { setArea(value); setPage(0); }} leadingIcon="location-outline" />
-          <View style={{ minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 17, backgroundColor: "#f2faf8" }}>
-            <View style={{ width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandSoft }}><Ionicons name="location-outline" size={21} color={colors.brand} /></View>
-            <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.8 }}>MY BARANGAY</Text><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 15, fontWeight: "800" }}>{barangays.find((item) => item.id === defaultBarangay)?.name ?? "Not set in your profile"}</Text></View>
-            {!!defaultBarangay && <Pressable accessibilityRole="button" accessibilityLabel="Filter by my barangay" accessibilityState={{ selected: area === defaultBarangay }} onPress={() => { setArea(area === defaultBarangay ? "" : defaultBarangay); setPage(0); }} style={({ pressed }) => [{ minHeight: 48, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: area === defaultBarangay ? colors.brand : "white", borderWidth: 1, borderColor: area === defaultBarangay ? colors.brand : colors.line }, pressed && { opacity: 0.75 }]}><Text style={{ color: area === defaultBarangay ? "white" : colors.brand, fontSize: 12, fontWeight: "800" }}>{area === defaultBarangay ? "Selected" : "Use mine"}</Text></Pressable>}
-          </View>
+          <Choices compact title="Filter by barangay" sheetTitle="Choose a barangay" subtitle="See conversations from a specific barangay." items={[{ id: "", name: "All barangays" }, ...barangays]} value={area} onChange={(value) => { setArea(value); setPage(0); }} leadingIcon="location-outline" myBarangayId={defaultBarangay || undefined} />
           <Choices columns={3} items={[{ id: "all", name: "All topics" }, { id: "open", name: "Open to join" }, { id: "closed", name: "Closed" }]} value={participation} onChange={(value) => { setParticipation(value); setPage(0); }} />
         </View>
         {(search || area || participation !== "all") && <Button secondary title="Clear community filters" onPress={() => { setSearch(""); setArea(""); setParticipation("all"); setPage(0); }} />}
@@ -268,11 +312,22 @@ export function Community({
       )}
       {tab === "meetings" && <View style={[s.card, { gap: 16, padding: 17 }]}>
         <View style={{ gap: 10 }}><Text style={[s.fieldLabel, { fontSize: 16 }]}>Find a meeting update</Text><Field maxLength={200} label="Search meetings" placeholder="Search meeting requests" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
-        <Choices compact title="Filter meetings by barangay" sheetTitle="Choose a barangay" subtitle="See meeting requests from a specific barangay." items={[{ id: "", name: "All barangays" }, ...barangays]} value={area} onChange={(value) => { setArea(value); setPage(0); }} leadingIcon="location-outline" />
-        <View style={{ minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 17, backgroundColor: "#f2faf8" }}>
-          <View style={{ width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandSoft }}><Ionicons name="location-outline" size={21} color={colors.brand} /></View>
-          <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.8 }}>MY BARANGAY</Text><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 15, fontWeight: "800" }}>{barangays.find((item) => item.id === defaultBarangay)?.name ?? "Not set in your profile"}</Text></View>
-          {!!defaultBarangay && <Pressable accessibilityRole="button" accessibilityLabel="Filter meetings by my barangay" accessibilityState={{ selected: area === defaultBarangay }} onPress={() => { setArea(area === defaultBarangay ? "" : defaultBarangay); setPage(0); }} style={({ pressed }) => [{ minHeight: 48, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: area === defaultBarangay ? colors.brand : "white", borderWidth: 1, borderColor: area === defaultBarangay ? colors.brand : colors.line }, pressed && { opacity: 0.75 }]}><Text style={{ color: area === defaultBarangay ? "white" : colors.brand, fontSize: 12, fontWeight: "800" }}>{area === defaultBarangay ? "Selected" : "Use mine"}</Text></Pressable>}
+        <View style={{ gap: 10 }}>
+          <View style={{ gap: 3 }}><Text style={s.fieldLabel}>Browse meetings</Text><Text style={s.small}>Choose the list you want to see.</Text></View>
+          <View accessibilityRole="radiogroup" accessibilityLabel="Meeting list" style={{ flexDirection: screenWidth < 460 ? "column" : "row", gap: 9 }}>
+            {[
+              { id: "barangay", name: "Barangay meetings", detail: "Local meetings and accepted invites", icon: "business-outline" as const },
+              { id: "yours", name: "Your requests", detail: "Requests you sent to any barangay", icon: "person-outline" as const },
+            ].map((option) => {
+              const active = meetingScope === option.id;
+              return <Pressable key={option.id} accessibilityRole="radio" accessibilityState={{ checked: active }} onPress={() => { setMeetingScope(option.id); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 66, flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 15, borderWidth: 1, borderColor: active ? colors.brand : colors.line, backgroundColor: active ? "#eff9f6" : "white" }, pressed && { opacity: 0.82 }]}>
+                <View style={{ width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: active ? colors.brandSoft : "#f1f5f7" }}><Ionicons name={option.icon} size={19} color={active ? colors.brand : colors.muted} /></View>
+                <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 17, fontWeight: "800" }}>{option.name}</Text><Text style={[s.small, { fontSize: 11, lineHeight: 15 }]}>{option.detail}</Text></View>
+                <Ionicons name={active ? "checkmark-circle" : "ellipse-outline"} size={19} color={active ? colors.brand : colors.line} />
+              </Pressable>;
+            })}
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f5f8fa" }}><Ionicons name="information-circle-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>{meetingScope === "yours" ? "Your requests stay here while the barangay reviews them, including requests sent elsewhere." : "This list includes meetings in your barangay and open meetings shared with your barangay after an accepted invite."}</Text></View>
         </View>
       </View>}
       {tab !== "request" && q.isPending && <ListSkeleton variant={tab === "consultations" ? "discussion" : "meeting"} count={3} label={`Loading ${tab === "consultations" ? "community discussions" : "meeting requests"}`} />}
@@ -289,7 +344,7 @@ export function Community({
               accessibilityHint={`${barangays.find((b) => b.id === c.barangay_id)?.name ?? "Iligan City"} community conversation`}
               style={({ pressed }) => [s.card, { gap: 14, borderColor: "#e3ecef", padding: 18, shadowOpacity: 0.035 }, pressed && { backgroundColor: "#f6fbf9" }]}
               key={c.id}
-              onPress={() => setSelected(c.id)}
+              onPress={() => { onPageNavigate?.(); setSelected(c.id); }}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.brand} /></View>
@@ -320,7 +375,7 @@ export function Community({
                   <Text style={s.small}>Request a community meeting and follow the recorded decision.</Text>
                 </View>
               </View>
-              <Button secondary title="Request a meeting" onPress={() => setTab("request")} />
+              <Button secondary title="Request a meeting" onPress={() => navigateTab("request")} />
             </View>
           )}
         </>
@@ -334,6 +389,13 @@ export function Community({
             const acceptedInvitations = r.invitations.filter((invitation) => invitation.status === "accepted").length;
             const waitingInvitations = r.invitations.filter((invitation) => invitation.status === "pending").length;
             const declinedInvitations = r.invitations.filter((invitation) => invitation.status === "declined").length;
+            const acceptedBarangayInvitations = r.barangayInvitations.filter((invitation) => invitation.status === "accepted").length;
+            const waitingBarangayInvitations = r.barangayInvitations.filter((invitation) => invitation.status === "pending").length;
+            const joined = r.participants.some((participant) => participant.resident_id === residentId);
+            const canJoin = r.participation_mode === "open" && r.status === "approved" && !r.schedule?.completed && (
+              r.resident_id === residentId || r.barangay_id === defaultBarangay ||
+              r.barangayInvitations.some((invitation) => invitation.barangay_id === defaultBarangay && invitation.status === "accepted")
+            );
             return <View style={[s.card, { gap: 14, padding: 18 }]} key={r.id}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: "#edf3fb", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={22} color="#426ca6" /></View>
@@ -341,11 +403,24 @@ export function Community({
                 <Ionicons name={expandedMeeting === r.id ? "chevron-up" : "chevron-forward"} size={18} color={colors.muted} />
               </View>
               <Text style={[s.title, { fontSize: 18, lineHeight: 24 }]}>{r.title}</Text>
+              <View style={{ alignSelf: "flex-start", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: r.participation_mode === "open" ? "#e4f6ef" : "#f0f3f6" }}><Text style={{ color: r.participation_mode === "open" ? "#146f50" : colors.muted, fontSize: 11, fontWeight: "800" }}>{r.participation_mode === "open" ? "OPEN TO JOIN" : "CLOSED MEETING"}</Text></View>
+              {r.is_sample && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 11, borderRadius: 13, borderWidth: 1, borderColor: "#d6eee8", backgroundColor: "#f0faf7" }}><Ionicons name="information-circle-outline" size={18} color={colors.brand} style={{ marginTop: 1 }} /><View style={{ flex: 1, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 12, lineHeight: 16, fontWeight: "800" }}>Sample meeting · safe to try</Text><Text style={[s.small, { lineHeight: 17 }]}>Join to see the participant flow, then leave with the same button. This is sample data, not a real event.</Text></View></View>}
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}><Ionicons name="location-outline" size={15} color={colors.brand} /><Text style={s.small}>{barangays.find((item) => item.id === r.barangay_id)?.name ?? "Iligan City"}{categoryName ? ` · ${categoryName}` : ""}</Text></View>
               <Text style={[s.small, { color: colors.brandDark }]}>{state.detail}</Text>
               {!!r.schedule && <View style={{ flexDirection: "row", alignItems: "center", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f0f8f6" }}><Ionicons name="calendar-outline" size={16} color={colors.brand} /><Text style={[s.small, { flex: 1, color: colors.brandDark, fontWeight: "700" }]}>{formatMeetingTimeRange(r.schedule.starts_at, r.schedule.ends_at)}</Text></View>}
               <Text style={s.body}>{r.body}</Text>
               {!!r.invitations.length && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7 }}><Ionicons name="people-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>Office replies: {acceptedInvitations} accepted · {waitingInvitations} awaiting · {declinedInvitations} declined</Text></View>}
+              {!!r.barangayInvitations.length && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7 }}><Ionicons name="business-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>Barangay invitations: {acceptedBarangayInvitations} accepted · {waitingBarangayInvitations} awaiting</Text></View>}
+              {!!r.participants.length && <View style={{ gap: 4, padding: 11, borderRadius: 13, backgroundColor: "#f2faf7" }}>
+                <Text style={{ color: colors.brandDark, fontSize: 12, fontWeight: "800" }}>Participants ({r.participants[0].participant_count})</Text>
+                <Text style={s.small}>{r.participants.slice(0, 5).map((participant) => participant.resident_name).join(", ")}{r.participants[0].participant_count > 5 ? ` and ${r.participants[0].participant_count - 5} more` : ""}</Text>
+              </View>}
+              {canJoin && <Button secondary disabled={busy} title={joined ? (r.is_sample ? "Joined sample · Leave meeting" : "Joined · Leave meeting") : (r.is_sample ? "Join sample meeting" : "Join open meeting")} onPress={() => void save(
+                joined ? db!.rpc("leave_meeting_request", { p_request: r.id }) : db!.rpc("join_meeting_request", { p_request: r.id }),
+                joined ? (r.is_sample ? "You left the sample meeting." : "You left this meeting.") : (r.is_sample ? "You joined the sample meeting. Use the same button to leave when you’re done." : "You joined this meeting. Meeting updates will be sent to your notifications."),
+                "We couldn’t update your participation. Please try again.",
+              )} />}
+              {r.participation_mode === "open" && r.status !== "approved" && <Text style={s.small}>Residents can join after the meeting request is approved.</Text>}
               {r.decision_reason && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 10, borderRadius: 13, backgroundColor: "#f0f8f6" }}><Ionicons name="document-text-outline" size={17} color={colors.brand} style={{ marginTop: 2 }} /><Text style={[s.small, { flex: 1, color: colors.brandDark }]}><Text style={{ fontWeight: "800" }}>Decision: </Text>{r.decision_reason}</Text></View>}
               {r.status === "pending" && (
                 <Button
@@ -374,15 +449,16 @@ export function Community({
               {expandedMeeting === r.id && <MeetingDetails requestId={r.id} requestStatus={r.status} />}
             </View>;
           })}
-          {!q.data?.requests.length && !q.isPending && !q.error && <View style={[s.card, { alignItems: "center", paddingVertical: 22, gap: 7 }]}><View style={{ width: 44, height: 44, borderRadius: 15, backgroundColor: "#eaf7f3", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={21} color={colors.brand} /></View><Text style={s.title}>No meeting requests found</Text><Text style={[s.small, { textAlign: "center" }]}>{search || area ? "Try another search or barangay." : "Your meeting requests and updates will appear here."}</Text>{(search || area) ? <Button secondary title="Clear meeting filters" onPress={() => { setSearch(""); setArea(""); setPage(0); }} /> : <Button title="Request a meeting" onPress={() => setTab("request")} />}</View>}
+          {!q.data?.requests.length && !q.isPending && !q.error && <View style={[s.card, { alignItems: "center", paddingVertical: 22, gap: 7 }]}><View style={{ width: 44, height: 44, borderRadius: 15, backgroundColor: "#eaf7f3", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={21} color={colors.brand} /></View><Text style={s.title}>{meetingScope === "yours" ? "No requests yet" : "No barangay meetings found"}</Text><Text style={[s.small, { textAlign: "center" }]}>{search ? "Try a different meeting search." : meetingScope === "yours" ? "Meeting requests you send to any barangay will appear here." : "Open meetings and accepted cross-barangay invitations will appear here."}</Text>{search ? <Button secondary title="Clear search" onPress={() => { setSearch(""); setPage(0); }} /> : <Button title="Request a meeting" onPress={() => navigateTab("request")} />}</View>}
         </>
       )}
       {tab === "request" && (
           <View style={[s.card, { gap: 18, padding: 18 }]}>
           <View style={{ minHeight: 104, flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: 18, backgroundColor: "#f0faf7" }}><View style={{ width: 52, height: 52, borderRadius: 17, backgroundColor: "#def4ee", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-number-outline" size={24} color={colors.brand} /></View><View style={{ flex: 1, gap: 5 }}><Text style={[s.title, { fontSize: 18, lineHeight: 24 }]}>Request a meeting</Text><Text style={[s.small, { fontSize: 13, lineHeight: 19 }]}>Your barangay reviews the request and posts its decision here.</Text></View></View>
-          <View accessibilityLabel="Meeting request steps" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, paddingVertical: 5 }}>
+          <View accessibilityLabel="Meeting request steps" style={{ position: "relative", flexDirection: "row", alignItems: "flex-start", paddingVertical: 5 }}>
+            <View pointerEvents="none" style={{ position: "absolute", top: 18, left: "16.667%", right: "16.667%", height: 2, backgroundColor: "#b8ded6" }} />
             {[{ n: "1", title: "Send request" }, { n: "2", title: "Barangay review" }, { n: "3", title: "See updates" }].map((step) => <View key={step.n} style={{ flex: 1, minWidth: 0, alignItems: "center", gap: 7 }}>
-              <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#e2f5ef" }}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>{step.n}</Text></View>
+              <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#e2f5ef", zIndex: 1 }}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>{step.n}</Text></View>
               <Text style={{ color: colors.brandDark, fontSize: 11, lineHeight: 15, fontWeight: "700", textAlign: "center" }}>{step.title}</Text>
             </View>)}
           </View>
@@ -405,6 +481,22 @@ export function Community({
             leading={<Ionicons name="create-outline" size={19} color={colors.muted} />}
             style={{ minHeight: 118, paddingTop: 14 }}
           />
+          <View style={{ gap: 8 }}>
+            <View style={{ gap: 3 }}><Text style={s.fieldLabel}>Who can participate?</Text><Text style={s.small}>Set who can join after the barangay reviews your request.</Text></View>
+            <View accessibilityRole="radiogroup" accessibilityLabel="Who can participate?" style={{ gap: 8 }}>
+              {[
+                { id: "closed", title: "Closed meeting", detail: "Residents cannot join. Invited offices can still coordinate.", icon: "lock-closed-outline" as const },
+                { id: "open", title: "Open meeting", detail: "Residents in this barangay can join after approval. Other barangays need an accepted invite.", icon: "people-outline" as const },
+              ].map((option) => {
+                const active = participationMode === option.id;
+                return <Pressable key={option.id} accessibilityRole="radio" accessibilityState={{ checked: active }} onPress={() => setParticipationMode(option.id as "open" | "closed")} style={({ pressed }) => [{ minHeight: 68, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 15, borderWidth: 1, borderColor: active ? colors.brand : colors.line, backgroundColor: active ? "#eff9f6" : "white" }, pressed && { opacity: 0.82 }]}>
+                  <View style={{ width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: active ? colors.brandSoft : "#f1f5f7" }}><Ionicons name={option.icon} size={20} color={active ? colors.brand : colors.muted} /></View>
+                  <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 17, fontWeight: "800" }}>{option.title}</Text><Text style={[s.small, { lineHeight: 17 }]}>{option.detail}</Text></View>
+                  <Ionicons name={active ? "checkmark-circle" : "ellipse-outline"} size={20} color={active ? colors.brand : colors.line} />
+                </Pressable>;
+              })}
+            </View>
+          </View>
           <View style={{ gap: 7, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12 }}><Text style={s.fieldLabel}>Add context (optional)</Text><Text style={s.small}>Link a report to send this request to the barangay responsible for that report.</Text></View>
           {ownReports.isPending ? <ListSkeleton variant="report" count={1} label="Loading your reports" /> : ownReports.error ? <View style={{ gap: 8 }}><Text style={s.error}>Your reports could not be loaded. You can still request a meeting without a linked report.</Text><Button secondary title="Retry report choices" onPress={() => void ownReports.refetch()} /></View> : <Choices compact title="Choose a related report" items={[{ id: "", name: "No linked report" }, ...(ownReports.data ?? []).map((r) => ({ id: r.id, name: r.title }))]} value={report} onChange={(id) => {
             setReport(id);
@@ -412,18 +504,40 @@ export function Community({
             setBarangay(linked?.barangay_id ?? defaultBarangay);
             setCategory(linked?.category_id ?? "");
           }} />}
-          {!!report && !!ownReports.data?.find((item) => item.id === report) ? <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 10, borderRadius: 13, backgroundColor: "#f0faf7" }}><Ionicons name="checkmark-circle-outline" size={18} color={colors.brand} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1, color: colors.brandDark }]}>This request will go to {barangays.find((item) => item.id === barangay)?.name ?? "the report’s barangay"}. The report category is linked automatically.</Text></View> : <>
-            <View style={{ gap: 6 }}><Text style={s.fieldLabel}>Which barangay should review it? <Text style={{ color: "#b4453e" }}>*</Text></Text><Text style={s.small}>Choose the barangay connected to this meeting.</Text><Choices compact title="Choose a barangay" sheetTitle="Choose a barangay" items={barangays} value={barangay} onChange={setBarangay} leadingIcon="location-outline" /></View>
-          <View style={{ gap: 10 }}><Text style={[s.fieldLabel, { fontSize: 14 }]}>Related category (optional)</Text><View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 10 }}>
-              {[{ id: "", name: "Not specified" }, ...categories].map((item) => {
-                const selected = category === item.id;
-                const tone = item.id ? categoryToneFor(item.name) : { background: "#eef3f6", foreground: colors.muted };
-                const icon = item.id ? categoryIconFor(item.name) : "grid-outline" as const;
-                return <Pressable key={item.id || "unspecified"} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => setCategory(item.id)} style={({ pressed }) => [{ width: "48.5%", minHeight: 70, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 11, paddingVertical: 10, borderRadius: 15, backgroundColor: selected ? "#effaf7" : "white", borderWidth: selected ? 1.5 : 1, borderColor: selected ? colors.brand : colors.line }, pressed && { opacity: 0.8 }]}>
-                  <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={icon} size={19} color={tone.foreground} /></View><Text style={{ flex: 1, minWidth: 0, color: selected ? colors.brand : colors.brandDark, fontSize: 12, lineHeight: 16, fontWeight: selected ? "800" : "600" }}>{item.id ? item.name : "Not specified"}</Text>{selected && <Ionicons name="checkmark-circle" size={17} color={colors.brand} />}
-                </Pressable>;
-              })}
-            </View></View>
+          {linkedMeetingReport ? <View style={{ gap: 6 }}>
+            <Text style={s.fieldLabel}>Which barangay should review it? <Text style={{ color: "#b4453e" }}>*</Text></Text>
+            <View accessibilityLabel={`Barangay locked to linked report: ${barangays.find((item) => item.id === meetingBarangay)?.name ?? "report barangay"}`} style={{ minHeight: 58, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, borderRadius: 15, borderWidth: 1, borderColor: colors.line, backgroundColor: "#f0faf7" }}>
+              <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="location-outline" size={19} color={colors.brand} /></View>
+              <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 14, fontWeight: "700" }}>{barangays.find((item) => item.id === meetingBarangay)?.name ?? "Report barangay"}</Text><Text style={s.small}>Set by the linked report</Text></View>
+              <Ionicons name="lock-closed-outline" size={17} color={colors.brand} />
+            </View>
+            <Text style={s.small}>Change or remove the linked report to choose a different barangay. The report category is linked automatically.</Text>
+          </View> : <>
+            <View style={{ gap: 6 }}><Text style={s.fieldLabel}>Which barangay should review it? <Text style={{ color: "#b4453e" }}>*</Text></Text><Text style={s.small}>Choose the barangay connected to this meeting.</Text><Choices compact title="Choose a barangay" sheetTitle="Choose a barangay" items={barangays} value={barangay} onChange={setBarangay} leadingIcon="location-outline" myBarangayId={defaultBarangay || undefined} /></View>
+          <View style={{ gap: 7 }}>
+            <Text style={s.fieldLabel}>Related category (optional)</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={selectedMeetingCategory ? `Change related category, currently ${categoryDisplayName(selectedMeetingCategory.name)}` : "Choose a related category, optional"} accessibilityState={{ expanded: categoryPickerOpen }} accessibilityHint="Opens the searchable report category selector" onPress={() => setCategoryPickerOpen(true)} style={({ pressed }) => [{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, borderRadius: 15, borderWidth: 1, borderColor: categoryPickerOpen ? colors.brand : colors.line, backgroundColor: "white" }, pressed && { opacity: 0.82 }]}>
+              <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: selectedMeetingCategoryTone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={selectedMeetingCategory ? categoryIconFor(selectedMeetingCategory.name) : "grid-outline"} size={19} color={selectedMeetingCategoryTone.foreground} /></View>
+              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                <Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 13, fontWeight: "700" }}>{selectedMeetingCategory ? categoryDisplayName(selectedMeetingCategory.name) : "Not specified"}</Text>
+                <Text numberOfLines={1} style={s.small}>{selectedMeetingCategory ? categoryDescriptionFor(selectedMeetingCategory.name) : "Choose an optional category"}</Text>
+              </View>
+              <Ionicons name={categoryPickerOpen ? "chevron-up" : "chevron-down"} size={18} color={colors.muted} />
+            </Pressable>
+            <SelectionSheet
+              visible={categoryPickerOpen}
+              onClose={() => setCategoryPickerOpen(false)}
+              title="Choose a report type"
+              subtitle="Select the category related to your meeting request, or leave it unspecified."
+              searchPlaceholder="Search report type"
+              items={[
+                { id: "", name: "Not specified", description: "Leave this optional detail blank.", icon: "grid-outline", tone: { background: colors.brandSoft, foreground: colors.brand }, featured: true },
+                ...categories.map((item) => ({ id: item.id, name: categoryDisplayName(item.name), description: categoryDescriptionFor(item.name), icon: categoryIconFor(item.name), tone: categoryToneFor(item.name) })),
+              ]}
+              value={category}
+              onConfirm={setCategory}
+            />
+          </View>
           </>}
           {ownReports.data?.length === 50 && <Text style={s.small}>Showing your 50 most recent reports.</Text>}
           <View style={{ gap: 7, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12 }}><Text style={s.fieldLabel}>Invite offices (optional)</Text><Text style={s.small}>Choose any offices you want to invite. They can accept or decline later.</Text></View>

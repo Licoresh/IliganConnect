@@ -6,7 +6,9 @@ import { createClient } from "@supabase/supabase-js";
 const env = Object.fromEntries(readFileSync("web/.env.local", "utf8").split(/\r?\n/)
   .filter(line => line.includes("=") && !line.trim().startsWith("#"))
   .map(line => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1).trim()]));
-const accounts = Object.assign({}, ...[".env.demo.json", ".env.rbac-demo.json"].map(path => JSON.parse(readFileSync(path, "utf8"))));
+const accounts = process.env.ILIGAN_ACCEPTANCE_ACCOUNTS_JSON
+  ? JSON.parse(process.env.ILIGAN_ACCEPTANCE_ACCOUNTS_JSON)
+  : Object.assign({}, ...[".env.demo.json", ".env.rbac-demo.json"].map(path => JSON.parse(readFileSync(path, "utf8"))));
 const make = () => createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   { auth: { persistSession: false, autoRefreshToken: false } });
 const clients = {};
@@ -18,14 +20,15 @@ try {
   for (const [name, account] of Object.entries(accounts)) {
     const client = clients[name] = make();
     const login = await data(client.auth.signInWithPassword({ email: account.email, password: account.password }));
-    check(login.user.id === account.id, `${name}: account identity`);
+    check(!account.id || login.user.id === account.id, `${name}: account identity`);
+    account.id ??= login.user.id;
   }
   const allReports = await data(clients.admin.from("reports").select("*").order("id").range(0, 999));
-  const publicReports = await data(clients.resident.rpc("public_reports"));
+  const publicReports = clients.resident ? await data(clients.resident.rpc("public_reports")) : [];
   const {include_samples:includeSamples}=await data(clients.admin.from("analytics_settings").select("include_samples").single());
   const permittedSample=row=>!row.is_demo || includeSamples;
   check(allReports.every(row => permittedSample(row) && !/^\s*\[(?:DEMO|TEST|SYNTHETIC)/i.test(row.title)), "Record origins follow the configured visibility mode");
-  check(publicReports.every(permittedSample), "Public reports follow the configured sample mode");
+  if (clients.resident) check(publicReports.every(permittedSample), "Public reports follow the configured sample mode");
   for (const [name, client] of Object.entries(clients)) {
     const context = await data(client.rpc("staff_context"));
     const profile = context.profile;
@@ -33,6 +36,7 @@ try {
     const active = profile.account_status === "active";
     const staff = context.authorized;
     const publicAccess = active && (profile.role === "resident" || staff);
+    // Office reads follow category, barangay and assignment_only scope.
     const expected = allReports.filter(row => active && (profile.role === "resident" ? row.resident_id === profile.id :
       staff && (profile.role === "admin" || profile.role === "barangay" && profile.barangay_id === row.barangay_id ||
         profile.role === "office" && context.rules.some(rule => rule.enabled &&

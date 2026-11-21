@@ -109,7 +109,8 @@ begin
   perform set_config('request.jwt.claim.sub',reviewer::text,true);
   update public.meeting_requests set status='approved',decision_reason=null where id=request;
   assert exists(select 1 from public.meeting_requests where id=request and status='approved'), 'Meeting approval failed';
-  insert into public.meetings(id,request_id,starts_at,venue) values(meeting,request,now()+interval '1 day','Rollback-only venue');
+  insert into public.meetings(id,request_id,starts_at,ends_at,venue)
+    values(meeting,request,now()+interval '1 day',now()+interval '1 day'+interval '1 hour','Rollback-only venue');
   perform set_config('request.jwt.claim.sub',officer::text,true);
   perform public.respond_meeting_office_invitation(request,organization,true,null);
   perform set_config('request.jwt.claim.sub',reviewer::text,true);

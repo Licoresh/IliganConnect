@@ -45,6 +45,7 @@ type Row = {
   body: string;
   status: string;
   coordination_status?: "open" | "unavailable";
+  participation_mode?: "open" | "closed";
   barangay_id: string | null;
   organization_id?: string | null;
   outcome?: string;
@@ -172,7 +173,7 @@ export function Community({
   const searchTerm = useDebouncedValue(search.trim());
   const relatedReportSearchTerm = useDebouncedValue(relatedReportSearch.trim());
   const columns = table === "meeting_requests"
-    ? "id,title,body,status,coordination_status,barangay_id,decision_reason,consultation_id,category_id,report_id,created_at"
+    ? "id,title,body,status,coordination_status,participation_mode,barangay_id,decision_reason,consultation_id,category_id,report_id,created_at"
     : "*";
   const selectedId = selection === undefined ? initialRecordId : selection;
   const target = useQuery({
@@ -245,6 +246,7 @@ export function Community({
     refetchInterval: 60000,
     queryFn: async () => {
       let invitedRequestIds: string[] | null = null;
+      let invitedBarangayRequestIds: string[] | null = null;
       if (table === "meeting_requests" && profile.role === "office") {
         if (memberships.error) throw memberships.error;
         if (!officeIds.length) return [];
@@ -254,16 +256,26 @@ export function Community({
         invitedRequestIds = [...new Set(invitations.map((invitation) => invitation.request_id))];
         if (!invitedRequestIds.length) return [];
       }
+      if (table === "meeting_requests" && profile.role === "barangay" && profile.barangay_id) {
+        const invitations = await result<{ request_id: string }[]>(db!.from("meeting_request_barangays")
+          .select("request_id").eq("barangay_id", profile.barangay_id));
+        invitedBarangayRequestIds = [...new Set(invitations.map((invitation) => invitation.request_id))];
+      }
       let query = db!
         .from(table)
         .select(columns)
         .order("created_at", { ascending: sort === "oldest" })
         .range(page * 20, page * 20 + 19);
       if (invitedRequestIds) query = query.in("id", invitedRequestIds);
+      if (invitedBarangayRequestIds && profile.barangay_id) {
+        query = invitedBarangayRequestIds.length
+          ? query.or(`barangay_id.eq.${profile.barangay_id},id.in.(${invitedBarangayRequestIds.join(",")})`)
+          : query.eq("barangay_id", profile.barangay_id);
+      }
       if (searchTerm) query = query.ilike("title", `%${searchTerm}%`);
       if (status === "unavailable" && table === "meeting_requests") query = query.eq("coordination_status", status);
       else if (status) query = query.eq("status", status);
-      if (barangay) query = query.eq("barangay_id", barangay);
+      if (barangay && !invitedBarangayRequestIds) query = query.eq("barangay_id", barangay);
       if (dateRange !== "all") {
         const start = new Date();
         start.setDate(start.getDate() - Number(dateRange));
@@ -814,7 +826,7 @@ export function Community({
           ) : table === "meeting_requests" ? (
             <Meeting row={selected} refs={refs} isOffice={profile.role === "office"} manage={profile.role !== "office" && canManage(selected)} manageSchedule={profile.role === "barangay" && canManage(selected)}
               canInvite={profile.role === "admin" || (profile.role === "barangay" && profile.barangay_id === selected.barangay_id)}
-              officeIds={officeIds} />
+              profileRole={profile.role} profileBarangayId={profile.barangay_id} officeIds={officeIds} />
           ) : (
             <Announcement
               row={selected}
@@ -1182,6 +1194,8 @@ function Meeting({
   manage,
   manageSchedule,
   canInvite,
+  profileRole,
+  profileBarangayId,
   officeIds,
 }: {
   row: Row;
@@ -1190,6 +1204,8 @@ function Meeting({
   manage: boolean;
   manageSchedule: boolean;
   canInvite: boolean;
+  profileRole: Profile["role"];
+  profileBarangayId: string | null;
   officeIds: string[];
 }) {
   const { run, message, failed, busy } = useSave();
@@ -1197,6 +1213,7 @@ function Meeting({
   const [meetingInputError, setMeetingInputError] = useState("");
   const [meetingInputErrorMode, setMeetingInputErrorMode] = useState<MeetingInputErrorMode>("save");
   const [venueType, setVenueType] = useState<"venue" | "online">("venue");
+  const [barangayInvite, setBarangayInvite] = useState("");
   const q = useQuery({
     queryKey: ["meeting", row.id],
     queryFn: async () => {
@@ -1216,6 +1233,9 @@ function Meeting({
         meeting,
         invitations: await result<{ organization_id: string; status: string; decline_reason: string | null }[]>(
           db!.from("meeting_request_offices").select("organization_id,status,decline_reason").eq("request_id", row.id),
+        ),
+        barangayInvitations: await result<{ barangay_id: string; status: "pending" | "accepted" | "declined" }[]>(
+          db!.from("meeting_request_barangays").select("barangay_id,status").eq("request_id", row.id),
         ),
         actions: meeting
           ? await result<
@@ -1242,6 +1262,11 @@ function Meeting({
   }, [meeting?.id, meeting?.venue_type, meeting?.meet_url]);
   const meetingLink = normalizeGoogleMeetUrl(meeting?.meet_url || "");
   const invitations = q.data?.invitations || [];
+  const barangayInvitations = q.data?.barangayInvitations || [];
+  const currentBarangayInvitation = barangayInvitations.find((invitation) => invitation.barangay_id === profileBarangayId);
+  const availableBarangays = refs.barangays.filter((item) => item.id !== row.barangay_id &&
+    !barangayInvitations.some((invitation) => invitation.barangay_id === item.id && invitation.status !== "declined"));
+  const canRespondToBarangayInvitation = profileRole === "barangay" && currentBarangayInvitation?.status === "pending";
   const ownInvitations = isOffice && officeIds.length ? invitations.filter((invitation) => officeIds.includes(invitation.organization_id)) : invitations;
   const acceptedOfficeIds = ownInvitations.filter((invitation) => invitation.status === "accepted").map((invitation) => invitation.organization_id);
   const canEditOfficeActions = isOffice && acceptedOfficeIds.length > 0;
@@ -1274,6 +1299,35 @@ function Meeting({
           <CalendarDays size={21} aria-hidden="true" />
           <div><strong>Meeting date and time</strong><span>{meeting ? formatMeetingTimeRange(meeting.starts_at, meeting.ends_at) : "Not scheduled yet"}</span></div>
         </div>
+      </section>
+
+      <section className="meeting-section">
+        <div className="meeting-section-heading">
+          <span className="meeting-section-icon"><Users size={20} /></span>
+          <div><h3>{row.participation_mode === "open" ? "Open meeting participation" : "Closed meeting"}</h3><p>{row.participation_mode === "open" ? "Residents can join after approval. Cross-barangay residents need an accepted barangay invitation." : "This meeting is limited to the organizer and barangay staff."}</p></div>
+        </div>
+        {canRespondToBarangayInvitation && <div className="meeting-barangay-invitation-response">
+          <p>Your barangay has been invited to this open meeting. Accepting will let residents in your barangay join.</p>
+          <div className="meeting-form-actions">
+            <button type="button" disabled={busy} onClick={() => void run(db!.rpc("respond_meeting_barangay_invitation", { p_request: row.id, p_barangay: profileBarangayId, p_accept: true }))}>{busy ? "Saving…" : "Accept invitation"}</button>
+            <button type="button" className="secondary" disabled={busy} onClick={() => void run(db!.rpc("respond_meeting_barangay_invitation", { p_request: row.id, p_barangay: profileBarangayId, p_accept: false }))}>Decline</button>
+          </div>
+        </div>}
+        {!!barangayInvitations.length && <div className="meeting-office-invitations" aria-live="polite">
+          {barangayInvitations.map((invitation) => <span className={`meeting-invitation-status ${invitation.status}`} key={invitation.barangay_id}>
+            <strong>{refs.barangays.find((item) => item.id === invitation.barangay_id)?.name ?? "Invited barangay"}</strong>
+            <span>{invitation.status === "pending" ? "Reply needed" : label(invitation.status)}</span>
+          </span>)}
+        </div>}
+        {canInvite && row.participation_mode === "open" && requestOpen && availableBarangays.length > 0 && <form className="meeting-form" onSubmit={(event) => {
+          event.preventDefault();
+          if (!barangayInvite) return;
+          void run(db!.rpc("invite_meeting_barangay", { p_request: row.id, p_barangay: barangayInvite })).then((saved) => { if (saved) setBarangayInvite(""); });
+        }}>
+          <label className="meeting-field"><span>Invite another barangay</span><select value={barangayInvite} required onChange={(event) => setBarangayInvite(event.target.value)}><option value="">Choose a barangay</option>{availableBarangays.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <div className="meeting-form-actions"><button type="submit" disabled={busy || !barangayInvite}>{busy ? "Sending…" : "Send invitation"}</button></div>
+        </form>}
+        {canInvite && row.participation_mode === "open" && requestOpen && !availableBarangays.length && <p className="meeting-feedback">Every other barangay has already been invited.</p>}
       </section>
 
       {(row.report_id || row.decision_reason) && (

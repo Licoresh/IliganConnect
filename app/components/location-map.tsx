@@ -25,6 +25,8 @@ export type Point = {
 };
 export type MapProps = {
   point?: Point;
+  pointLabel?: string;
+  showPointCoordinates?: boolean;
   points?: Point[];
   onChoose?: (p: Point) => void;
   onPointPress?: (p: Point) => void;
@@ -92,6 +94,7 @@ const ReportPin = memo(function ReportPin({ selected, onPointPress, ...p }: Poin
 
 export default function LocationMap({
   point,
+  pointLabel,
   points = EMPTY_POINTS,
   onChoose,
   onPointPress,
@@ -137,6 +140,7 @@ export default function LocationMap({
   const currentRegion = useRef(initialRegion ?? defaultRegion);
   const [zoomLevel, setZoomLevel] = useState(() => mapZoomFromLongitudeDelta(currentRegion.current.longitudeDelta));
   const [localBase, setLocalBase] = useState<MapStyle>("satellite"), [stylePickerOpen, setStylePickerOpen] = useState(false);
+  const [styleSelectorExpanded, setStyleSelectorExpanded] = useState(false);
   const base = mapStyle ?? localBase;
   const nextBase: MapStyle = base === "map" ? "terrain" : base === "terrain" ? "satellite" : "map";
   const baseName = base === "map" ? "Map" : base === "terrain" ? "Terrain" : "Satellite";
@@ -312,8 +316,15 @@ export default function LocationMap({
             coordinate={point}
             pinColor={colors.brand}
             zIndex={1003}
+            accessibilityLabel={pointLabel ? `Issue pin, ${pointLabel}` : "Issue location pin"}
             onDragEnd={(e) => choosePoint(e.nativeEvent.coordinate)}
-          />
+          >
+            {pointLabel && <View style={{ alignItems: "center" }}>
+              <View style={{ maxWidth: 220, marginBottom: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: "#dce8e4", backgroundColor: "white", elevation: 4 }}><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 11, fontWeight: "800" }}>{pointLabel}</Text></View>
+              <View style={{ width: 34, height: 34, borderRadius: 18, borderWidth: 2.5, borderColor: "white", backgroundColor: colors.brand, alignItems: "center", justifyContent: "center", elevation: 5 }}><Ionicons name="location" size={18} color="white" /></View>
+              <View style={{ width: 10, height: 10, marginTop: -7, transform: [{ rotate: "45deg" }], backgroundColor: colors.brand, borderBottomRightRadius: 2 }} />
+            </View>}
+          </Marker>
         )}
         {userPoint && <Marker coordinate={userPoint} title="Your current location" pinColor="#3976d2" zIndex={1004} />}
         {showBarangayTotals && barangayTotalMarkers.map((item) => <Marker key={`barangay-total-${item.name}`} coordinate={item} zIndex={1001} accessibilityLabel={`${item.count} reports assigned to ${item.name}`} onPress={() => { onBarangayPress?.(item.name); zoomInto(item.latitude, item.longitude, 3); }}>
@@ -327,7 +338,10 @@ export default function LocationMap({
         ))}
       </MapView>
       {mapStyleSelector === "tabs" ? <View style={{ position: "absolute", left: 9, top: 9, flexDirection: "row", alignItems: "center", gap: 2, padding: 4, borderRadius: 23, backgroundColor: "#ffffffed", elevation: 3 }}>
-        {(["map", "terrain", "satellite"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); map.current?.animateCamera({ pitch: value === "terrain" ? 40 : 0 }, { duration: 300 }); }} style={{ minWidth: 57, minHeight: 38, paddingHorizontal: 8, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: base === value ? colors.brand : "transparent" }}><Text style={{ color: base === value ? "white" : "#34486b", fontSize: 10, fontWeight: base === value ? "800" : "600" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text></Pressable>)}
+        {styleSelectorExpanded ? <>
+          {(["map", "terrain", "satellite"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); map.current?.animateCamera({ pitch: value === "terrain" ? 40 : 0 }, { duration: 300 }); }} style={{ minWidth: 57, minHeight: 38, paddingHorizontal: 8, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: base === value ? colors.brand : "transparent" }}><Text style={{ color: base === value ? "white" : "#34486b", fontSize: 10, fontWeight: base === value ? "800" : "600" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text></Pressable>)}
+          <Pressable accessibilityRole="button" accessibilityLabel="Collapse map styles" accessibilityState={{ expanded: true }} onPress={() => setStyleSelectorExpanded(false)} style={{ width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 19, backgroundColor: "white" }}><Ionicons name="chevron-back" size={18} color={colors.brandDark} /></Pressable>
+        </> : <Pressable accessibilityRole="button" accessibilityLabel="Show map styles" accessibilityState={{ expanded: false }} onPress={() => setStyleSelectorExpanded(true)} style={{ width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "white" }}><Ionicons name="chevron-forward" size={19} color={colors.brandDark} /></Pressable>}
       </View> : <View style={{ position: "absolute", left: 10, top: 10, flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 14, padding: 4, backgroundColor: "#ffffffed", elevation: 3 }}>
         <Pressable accessibilityRole="button" accessibilityLabel="Map style" accessibilityState={{ expanded: stylePickerOpen }} onPress={() => setStylePickerOpen(!stylePickerOpen)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, borderRadius: 11, backgroundColor: colors.brandSoft }}>
           <Ionicons name="layers-outline" size={16} color={colors.brand} />

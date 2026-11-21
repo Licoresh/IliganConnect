@@ -14,9 +14,15 @@ For each release:
    ```json
    {
      "version": "1.1.0",
-     "downloadUrl": "https://github.com/Licoresh/IliganConnect/releases/download/v1.1.0/Iligan-Connect-Resident.apk"
+     "downloadUrl": "https://github.com/Licoresh/IliganConnect/releases/download/v1.1.0/Iligan-Connect-Resident.apk",
+     "releaseNotes": [
+       "Improved map gestures and loading feedback.",
+       "Refined profile and community screens."
+     ]
    }
    ```
+
+   Keep `releaseNotes` to a few short bullets describing the changes in that version. The resident app shows them in its update dialog before download.
 
 The APK checks `https://github.com/Licoresh/IliganConnect/releases/latest/download/android-update.json`. Keep the version and release URL in the manifest aligned. The current sideload APK is debug-key signed; keep that signing key safe for compatible installs. A production signing-key change requires residents to install the new app separately.
 

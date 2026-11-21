@@ -58,13 +58,16 @@ begin
   insert into public.meeting_requests(id,resident_id,barangay_id,title,body,status,decision_reason,is_sample)
     values(request_id,owner_id,b,marker||' sample meeting','Rollback-only sample meeting request for visibility checks.','approved','Rollback-only approval',true),
       (actual_request,owner_id,b,marker||' actual meeting','Rollback-only actual meeting request for visibility checks.','approved','Rollback-only approval',false);
-  insert into public.meetings(id,request_id,starts_at,venue)
-    values(meeting_id,request_id,now()+interval '1 day','Rollback-only sample venue'),
-      (actual_meeting,actual_request,now()+interval '1 day','Rollback-only actual venue');
+  insert into public.meetings(id,request_id,starts_at,ends_at,venue)
+    values(meeting_id,request_id,now()+interval '1 day',now()+interval '1 day'+interval '1 hour','Rollback-only sample venue'),
+      (actual_meeting,actual_request,now()+interval '1 day',now()+interval '1 day'+interval '1 hour','Rollback-only actual venue');
   perform set_config('request.jwt.claim.sub',administrator::text,true);
   insert into public.announcements(id,barangay_id,title,body,status,publish_at,created_by,is_sample)
     values(announcement,b,marker||' sample announcement','Rollback-only published sample announcement.','published',now()-interval '1 minute',administrator,true),
       (actual_announcement,b,marker||' actual announcement','Rollback-only published actual announcement.','published',now()-interval '1 minute',administrator,false);
+  perform private.deliver_announcement(actual_announcement);
+  insert into public.notifications(user_id,title,announcement_id)
+    values(owner_id,'Rollback-only sample announcement notification',announcement);
 
   set local role authenticated;
   foreach mode in array array[false,true] loop

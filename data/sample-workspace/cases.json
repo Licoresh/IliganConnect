@@ -896,9 +896,10 @@
     {
       "id": "11ab8628-7b09-5325-a57b-b0da16b6e6c6",
       "key": "request:2",
-      "title": "Road access planning session",
-      "body": "Please arrange a coordination meeting to review the linked report, confirm office responsibilities and agree on next steps. Include a clear way for residents to receive updates.",
+      "title": "Sample open meeting: Road access planning",
+      "body": "Sample walkthrough for residents: join to appear on the participant list, then leave to try the full flow. This is sample data, not a real meeting.",
       "status": "approved",
+      "participation_mode": "open",
       "report_id": "33b6d759-ab82-51eb-ad4e-c99749deda90",
       "category": "Damaged roads and potholes",
       "barangay": "Tibanga",
@@ -920,7 +921,7 @@
     {
       "id": "42f1e6b8-e219-5a3c-87fe-4537fe67041c",
       "request_id": "11ab8628-7b09-5325-a57b-b0da16b6e6c6",
-      "starts_in_days": 5,
+      "starts_in_days": 45,
       "venue": "Community coordination room, Iligan City",
       "outcome": null,
       "completed": false,

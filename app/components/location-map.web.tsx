@@ -10,6 +10,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 const EMPTY_POINTS: NonNullable<MapProps["points"]> = [];
 export default function LocationMap({
   point,
+  pointLabel,
   points = EMPTY_POINTS,
   onChoose,
   onPointPress,
@@ -221,7 +222,7 @@ export default function LocationMap({
     markers.current = [...(point ? [point] : []), ...(userPoint ? [userPoint] : []), ...(showPoints && !showBarangayBoundaries && (zoomBehavior === "issue-map" || zoomLevel >= INDIVIDUAL_REPORT_PIN_ZOOM) ? reportPoints : [])].map((p, index) => {
       const isUser = p === userPoint;
       const markerKey = isUser ? "user" : p === point ? "chosen" : p.id ?? `${p.latitude}:${p.longitude}:${index}`;
-      const signature = JSON.stringify([p.latitude, p.longitude, p.title, p.subtitle, p.categoryName, p.color, p.createdAt, p.photoUrl, p.statusLabel, p.barangayName, !!onChoose]);
+      const signature = JSON.stringify([p.latitude, p.longitude, p.title, p.subtitle, p.categoryName, p.color, p.createdAt, p.photoUrl, p.statusLabel, p.barangayName, p === point ? pointLabel : "", !!onChoose]);
       const existing = previous.get(markerKey);
       previous.delete(markerKey);
       if (existing?.getElement().dataset.signature === signature) return existing;
@@ -239,6 +240,12 @@ export default function LocationMap({
       const core = document.createElement("span");
       core.className = "report-map-pin__core";
       core.setAttribute("aria-hidden", "true");
+      if (p === point && pointLabel) {
+        const label = document.createElement("span");
+        label.className = "report-map-pin__label";
+        label.textContent = pointLabel;
+        pin.append(label);
+      }
       const iconName = isUser ? "locate" : categoryIconFor(p.categoryName || "");
       core.textContent = String.fromCodePoint(Number(Ionicons.glyphMap[iconName]));
       pin.append(core);
@@ -391,7 +398,7 @@ export default function LocationMap({
       return marker;
     });
     previous.forEach((marker) => marker.remove());
-  }, [point?.latitude, point?.longitude, ready, userPoint?.latitude, userPoint?.longitude, !!onChoose, reportPoints, showPoints, showBarangayBoundaries, zoomLevel, zoomBehavior]);
+  }, [point?.latitude, point?.longitude, pointLabel, ready, userPoint?.latitude, userPoint?.longitude, !!onChoose, reportPoints, showPoints, showBarangayBoundaries, zoomLevel, zoomBehavior]);
   useEffect(() => {
     aggregateMarkers.current.forEach((marker) => marker.remove());
     aggregateMarkers.current = [];
@@ -442,7 +449,8 @@ export default function LocationMap({
   return (
     <>
       <style>{`
-        .report-map-pin{width:48px;height:48px;padding:6px;border:0;border-radius:50%;background:transparent;cursor:pointer;overflow:visible}
+        .report-map-pin{position:relative;width:48px;height:48px;padding:6px;border:0;border-radius:50%;background:transparent;cursor:pointer;overflow:visible}
+        .report-map-pin__label{position:absolute;left:50%;bottom:calc(100% + 4px);z-index:2;max-width:220px;overflow:hidden;padding:6px 9px;transform:translateX(-50%);border:1px solid #dce8e4;border-radius:12px;background:#fff;color:#173b3a;box-shadow:0 3px 10px #173b3a30;font:700 11px system-ui,sans-serif;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
         .report-map-pin__core{display:flex;width:36px;height:36px;align-items:center;justify-content:center;border:3px solid #fff;border-radius:50%;background:var(--pin-color,${colors.brand});color:#fff;box-shadow:0 2px 8px #173b3a66;font:20px Ionicons,ionicons,sans-serif;box-sizing:border-box}
         .report-map-pin--you .report-map-pin__core{border-radius:50%;transform:none}
         .report-map-pin--selected .report-map-pin__core{box-shadow:0 0 0 4px #f5b840aa,0 2px 8px #173b3a66}

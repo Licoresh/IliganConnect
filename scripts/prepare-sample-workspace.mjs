@@ -155,22 +155,30 @@ begin
   for req in select value from jsonb_array_elements(dataset->'requests') loop
     if exists(select 1 from public.meeting_requests where id=(req->>'id')::uuid) then
       if not exists(select 1 from public.meeting_requests where id=(req->>'id')::uuid and is_sample and resident_id=owner_id) then raise exception 'Meeting-request UUID collision'; end if;
+      update public.meeting_requests set title=req->>'title',body=req->>'body',participation_mode=coalesce(req->>'participation_mode','closed')
+        where id=(req->>'id')::uuid and is_sample and resident_id=owner_id;
       continue;
     end if;
     select b.id into strict barangay_id from public.barangays b where b.name=req->>'barangay';
     select rc.id into strict category_id from public.report_categories rc where rc.name=req->>'category';
     perform set_config('request.jwt.claim.sub',owner_id::text,true);
-    insert into public.meeting_requests(id,barangay_id,resident_id,title,body,category_id,report_id,consultation_id,is_sample)
-      values((req->>'id')::uuid,barangay_id,owner_id,req->>'title',req->>'body',category_id,(req->>'report_id')::uuid,(req->>'consultation_id')::uuid,true);
+    insert into public.meeting_requests(id,barangay_id,resident_id,title,body,category_id,report_id,consultation_id,participation_mode,is_sample)
+      values((req->>'id')::uuid,barangay_id,owner_id,req->>'title',req->>'body',category_id,(req->>'report_id')::uuid,(req->>'consultation_id')::uuid,coalesce(req->>'participation_mode','closed'),true);
     update public.meeting_requests set created_at=anchor-interval '6 days' where id=(req->>'id')::uuid;
     insert into public.meeting_supporters(request_id,user_id) values((req->>'id')::uuid,owner_id);
     perform set_config('request.jwt.claim.sub',administrator::text,true);
     if req->>'status'='approved' then update public.meeting_requests set status='approved',decision_reason='Coordination request approved.' where id=(req->>'id')::uuid; end if;
   end loop;
   for meeting in select value from jsonb_array_elements(dataset->'meetings') loop
-    if exists(select 1 from public.meetings where id=(meeting->>'id')::uuid) then continue; end if;
-    insert into public.meetings(id,request_id,starts_at,venue,outcome,completed)
+    if exists(select 1 from public.meetings where id=(meeting->>'id')::uuid) then
+      if not exists(select 1 from public.meetings m join public.meeting_requests r on r.id=m.request_id where m.id=(meeting->>'id')::uuid and r.is_sample) then raise exception 'Meeting UUID collision'; end if;
+      update public.meetings set starts_at=anchor+make_interval(days=>(meeting->>'starts_in_days')::int),ends_at=anchor+make_interval(days=>(meeting->>'starts_in_days')::int)+interval '1 hour',venue=meeting->>'venue',outcome=meeting->>'outcome',completed=(meeting->>'completed')::bool
+        where id=(meeting->>'id')::uuid;
+      continue;
+    end if;
+    insert into public.meetings(id,request_id,starts_at,ends_at,venue,outcome,completed)
       values((meeting->>'id')::uuid,(meeting->>'request_id')::uuid,anchor+make_interval(days=>(meeting->>'starts_in_days')::int),
+        anchor+make_interval(days=>(meeting->>'starts_in_days')::int)+interval '1 hour',
         meeting->>'venue',meeting->>'outcome',(meeting->>'completed')::bool);
     update public.meetings set created_at=anchor-interval '6 days' where id=(meeting->>'id')::uuid;
     select id into strict organization_id from public.organizations where name=meeting->>'organization';

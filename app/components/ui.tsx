@@ -1,5 +1,5 @@
 import type { ReactNode, Ref } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -35,17 +35,42 @@ export function PhotoViewer({
   style,
   resizeMode = "cover",
   onError,
+  loadingTimeoutMs,
+  onLoadTimeout,
 }: {
   source: ImageSourcePropType;
   label: string;
   style?: ImageProps["style"];
   resizeMode?: ImageProps["resizeMode"];
   onError?: ImageProps["onError"];
+  loadingTimeoutMs?: number;
+  onLoadTimeout?: () => void;
 }) {
   const [visible, setVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timeoutCallback = useRef(onLoadTimeout);
+  timeoutCallback.current = onLoadTimeout;
+  useEffect(() => () => { if (loadTimer.current) clearTimeout(loadTimer.current); }, []);
+  const startLoading = () => {
+    if (!loadingTimeoutMs) return;
+    setLoading(true);
+    if (loadTimer.current) clearTimeout(loadTimer.current);
+    loadTimer.current = setTimeout(() => {
+      loadTimer.current = null;
+      setLoading(false);
+      timeoutCallback.current?.();
+    }, loadingTimeoutMs);
+  };
+  const finishLoading = () => {
+    if (loadTimer.current) clearTimeout(loadTimer.current);
+    loadTimer.current = null;
+    setLoading(false);
+  };
   return <>
     <Pressable accessibilityRole="button" accessibilityLabel={`View ${label} full screen`} accessibilityHint="Opens this photo full screen" onPress={(event) => { event.stopPropagation(); setVisible(true); }} style={{ position: "relative" }}>
-      <Image source={source} accessibilityLabel={label} resizeMode={resizeMode} style={style} onError={onError} />
+      <Image source={source} accessibilityLabel={label} resizeMode={resizeMode} style={style} onLoadStart={startLoading} onLoad={finishLoading} onError={(event) => { finishLoading(); onError?.(event); }} />
+      {loading && <View pointerEvents="none" style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center" }}><ActivityIndicator size="small" color={colors.brand} /></View>}
       <View pointerEvents="none" style={{ position: "absolute", right: 6, bottom: 6, width: 25, height: 25, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#ffffffed" }}><Ionicons name="expand-outline" size={14} color={colors.brandDark} /></View>
     </Pressable>
     {visible && <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={() => setVisible(false)}>
@@ -414,8 +439,10 @@ export function Choices({
   shortCategoryNames = false,
   sheetKind,
   categoryName = "",
+  myBarangayId,
   subtitle,
   sheetTitle,
+  searchable = true,
 }: {
   items: { id: string; name: string }[];
   value: string;
@@ -429,14 +456,20 @@ export function Choices({
   shortCategoryNames?: boolean;
   sheetKind?: "category" | "problem" | "barangay" | "generic";
   categoryName?: string;
+  myBarangayId?: string;
   subtitle?: string;
   sheetTitle?: string;
+  searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false), selectedName = items.find((i) => i.id === value)?.name;
+  const kind = sheetKind || (shortCategoryNames ? "category" : title.toLowerCase().includes("problem") ? "problem" : items.length > 10 ? "barangay" : "generic");
+  const selectionItems = kind === "barangay" && myBarangayId
+    ? [...items.filter((item) => item.id === myBarangayId), ...items.filter((item) => item.id !== myBarangayId)]
+    : items;
   if (compact || items.length > 10)
     return (
       <>
-        <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityHint="Opens a searchable selection" onPress={() => setOpen(true)} style={({ pressed }) => [{ flex: grow ? 1 : undefined, minWidth: 0, minHeight: grow ? 48 : 58, borderRadius: 16, borderWidth: 1, borderColor: "#e3edf0", backgroundColor: "white", paddingHorizontal: grow ? 9 : 13, flexDirection: "row", alignItems: "center", gap: grow ? 6 : 9, shadowColor: colors.brandDark, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 }, pressed && { opacity: 0.78 }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityHint={searchable ? "Opens a searchable selection" : "Opens a selection"} onPress={() => setOpen(true)} style={({ pressed }) => [{ flex: grow ? 1 : undefined, minWidth: 0, minHeight: grow ? 48 : 58, borderRadius: 16, borderWidth: 1, borderColor: "#e3edf0", backgroundColor: "white", paddingHorizontal: grow ? 9 : 13, flexDirection: "row", alignItems: "center", gap: grow ? 6 : 9, shadowColor: colors.brandDark, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 }, pressed && { opacity: 0.78 }]}>
           {leadingIcon && <Ionicons name={leadingIcon} size={grow ? 16 : 19} color={colors.brand} />}
           <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: colors.brandDark, fontSize: grow ? 12 : 14, fontWeight: "700" }}>{selectedName ? (shortCategoryNames ? categoryDisplayName(selectedName) : selectedName) : placeholder || title}</Text>
           <Ionicons name="chevron-down" size={16} color={colors.muted} />
@@ -447,16 +480,16 @@ export function Choices({
           title={sheetTitle || title}
           subtitle={subtitle || (shortCategoryNames ? "Select the category that best matches the issue." : "Choose an option to continue.")}
           searchPlaceholder={shortCategoryNames ? "Search report type" : title.toLowerCase().includes("problem") ? "Search problems" : "Search barangay"}
-          items={items.map((item) => {
-            const kind = sheetKind || (shortCategoryNames ? "category" : title.toLowerCase().includes("problem") ? "problem" : items.length > 10 ? "barangay" : "generic");
+          searchable={searchable}
+          items={selectionItems.map((item) => {
             const tone = kind === "problem" ? categoryToneFor(categoryName) : kind === "category" ? (item.id ? categoryToneFor(item.name) : { background: "#e5f6f2", foreground: colors.brand }) : { background: "#e5f6f2", foreground: colors.brand };
             const icon = kind === "problem" ? problemIconFor(categoryName, item.name) : kind === "category" ? (item.id ? categoryIconFor(item.name) : "grid-outline") : kind === "barangay" ? "location-outline" : leadingIcon || "chevron-forward";
             return {
               ...item,
-              description: kind === "category" ? (item.id ? categoryDescriptionFor(item.name) : "View all report categories") : kind === "problem" ? problemDescriptionFor(categoryName, item.name) : kind === "barangay" ? (item.id ? `Browse public reports in ${item.name}` : "Browse reports across Iligan City") : undefined,
+              description: kind === "category" ? (item.id ? categoryDescriptionFor(item.name) : "View all report categories") : kind === "problem" ? problemDescriptionFor(categoryName, item.name) : kind === "barangay" ? (myBarangayId && item.id === myBarangayId ? "Your barangay" : item.id ? `Browse public reports in ${item.name}` : "Browse reports across Iligan City") : undefined,
               icon: kind === "barangay" && !item.id ? "grid-outline" : icon,
               tone,
-              featured: (kind === "category" || kind === "barangay") && !item.id,
+              featured: (kind === "category" && !item.id) || (kind === "barangay" && (!item.id || (!!myBarangayId && item.id === myBarangayId))),
             };
           })}
           value={value}
@@ -503,6 +536,7 @@ export function SelectionSheet({
   value,
   onConfirm,
   searchPlaceholder = "Search",
+  searchable = true,
   confirmLabel = "Confirm selection",
   loading = false,
   error,
@@ -515,6 +549,7 @@ export function SelectionSheet({
   value: string;
   onConfirm: (id: string) => void | boolean | Promise<void | boolean>;
   searchPlaceholder?: string;
+  searchable?: boolean;
   confirmLabel?: string;
   loading?: boolean;
   error?: string;
@@ -546,10 +581,10 @@ export function SelectionSheet({
               <Ionicons name="close" size={21} color="#5d7378" />
             </Pressable>
           </View>
-          <View style={{ minHeight: 52, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 10 }}>
+          {searchable && <View style={{ minHeight: 52, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, paddingHorizontal: 13, flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Ionicons name="search-outline" size={20} color={colors.muted} />
             <TextInput accessibilityLabel={searchPlaceholder} placeholder={searchPlaceholder} placeholderTextColor={colors.muted} value={search} onChangeText={setSearch} maxLength={160} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 48, color: colors.brandDark, fontSize: 16 }} />
-          </View>
+          </View>}
           <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 8, paddingBottom: 2 }}>
             {filteredItems.map((item) => {
               const selected = draft === item.id, tone = item.tone || { background: "#e5f6f2", foreground: colors.brand };

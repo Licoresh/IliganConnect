@@ -3652,6 +3652,8 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-report-id span { color: #6b8298; font-size: 11px; }
 .meeting-report-id code { min-width: 0; color: #193954; font-size: 12px; overflow-wrap: anywhere; }
 .meeting-form { display: grid; min-width: 0; gap: 12px; margin: 0; }
+.meeting-barangay-invitation-response { display: grid; gap: 10px; padding: 12px; border: 1px solid #d8ebe6; border-radius: 10px; background: #f4faf8; }
+.meeting-barangay-invitation-response p { margin: 0; color: #38596a; font-size: 12px; line-height: 1.5; }
 .meeting-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 .meeting-time-range { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 9px; }
 .meeting-time-separator { padding-bottom: 12px; color: var(--muted); font-size: 12px; font-weight: 600; }

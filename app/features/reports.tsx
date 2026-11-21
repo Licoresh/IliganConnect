@@ -36,6 +36,14 @@ import { ListSkeleton } from "../components/loading";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryToneFor, categoryIconFor, categoryDescriptionFor, categoryDisplayName, statusToneFor } from "../components/ui";
 
 type NoticeTone = "info" | "warning" | "success" | "error";
+type ManualPinResolution = {
+  latitude: number;
+  longitude: number;
+  barangayId: string;
+  barangayName: string;
+  address: string;
+  exact: boolean;
+};
 
 function issueDetailsMessage(values: ReportInput) {
   const issues = [
@@ -170,7 +178,6 @@ export function ReportForm({
   onSaved,
   residentProfile,
   onEditProfile,
-  onMapPageScroll,
   onScrollToReportSection,
   initialCategory = "",
   initialBarangay = "",
@@ -180,11 +187,12 @@ export function ReportForm({
   onSaved: () => void;
   residentProfile?: Profile;
   onEditProfile?: () => void;
-  onMapPageScroll?: (delta: number) => void;
   onScrollToReportSection?: (y: number) => void;
   initialCategory?: string;
   initialBarangay?: string;
 }) {
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const {
     control,
     handleSubmit,
@@ -217,12 +225,12 @@ export function ReportForm({
   const [step, setStep] = useState(0),
     [locationSource, setLocationSource] = useState<"gps" | "pin" | "coordinates" | null>(null),
     [locationAccuracy, setLocationAccuracy] = useState<number | null>(null),
-    [detectedBarangayName, setDetectedBarangayName] = useState(""),
     [locationAddress, setLocationAddress] = useState(""),
     [cityConfirmed, setCityConfirmed] = useState(false),
     [manualBarangayConfirmed, setManualBarangayConfirmed] = useState(false),
     [barangayReviewRequired, setBarangayReviewRequired] = useState(false),
     [locating, setLocating] = useState(false),
+    [locationCheckSource, setLocationCheckSource] = useState<"gps" | "pin" | "coordinates" | null>(null),
     [locationError, setLocationError] = useState(""),
     [showCoordinates, setShowCoordinates] = useState(false),
     [photo, setPhoto] = useState<string | null>(null),
@@ -232,7 +240,11 @@ export function ReportForm({
     [message, setMessage] = useState(""),
     [messageTone, setMessageTone] = useState<NoticeTone>("info"),
     [categorySheetOpen, setCategorySheetOpen] = useState(false),
-    [barangaySelectionSource, setBarangaySelectionSource] = useState<"pin" | "manual" | null>(null),
+    [pinModalOpen, setPinModalOpen] = useState(false),
+    [manualPin, setManualPin] = useState<Pick<Point, "latitude" | "longitude"> | null>(null),
+    [manualPinResolution, setManualPinResolution] = useState<ManualPinResolution | null>(null),
+    [checkingManualPin, setCheckingManualPin] = useState(false),
+    [manualPinError, setManualPinError] = useState(""),
     [uploaded, setUploaded] = useState(false),
     [draftKey, setDraftKey] = useState(""),
     [coordinates, setCoordinates] = useState({ latitude: "", longitude: "" });
@@ -244,8 +256,9 @@ export function ReportForm({
   function showMessage(text: string, tone: NoticeTone = "info") { setMessage(text); setMessageTone(tone); }
   function clearMessage() { showMessage(""); }
   const locationRequest = useRef(0);
+  const pinLookupRequest = useRef(0);
   const submissionLock = useRef(false);
-  useEffect(() => () => { locationRequest.current++; }, []);
+  useEffect(() => () => { locationRequest.current++; pinLookupRequest.current++; }, []);
   function navigateToStep(next: 0 | 1 | 2, target: "details" | "location" | "review" | "category" | "title" | "description" | "photos" = next === 0 ? "details" : next === 1 ? "location" : "review") {
     pendingScrollTarget.current = target;
     setStep(next);
@@ -286,6 +299,7 @@ export function ReportForm({
   ) {
     const request = activeRequest ?? ++locationRequest.current;
     setLocating(true);
+    setLocationCheckSource(source);
     setLocationError("");
     setCityConfirmed(false);
     setManualBarangayConfirmed(false);
@@ -311,35 +325,97 @@ export function ReportForm({
       setValue("location_source", source);
       setValue("location_accuracy", source === "gps" ? accuracy : null);
       setValue("location_address", resolved.address || "");
-      setDetectedBarangayName(matchedBarangay?.name ?? "");
       setBarangayReviewRequired(!resolved.barangay_id);
       setLocationAddress(resolved.address);
       setCityConfirmed(true);
       setManualBarangayConfirmed(false);
       if (matchedBarangay) {
         setValue("barangay_id", matchedBarangay.id, { shouldValidate: true, shouldDirty: true });
-        setBarangaySelectionSource("pin");
       } else {
         setValue("barangay_id", "", { shouldValidate: false, shouldDirty: true });
-        setBarangaySelectionSource(null);
       }
       setLocationSource(source);
       setLocationAccuracy(accuracy);
-      setLocationError(matchedBarangay ? "" : "Iligan City found. The available data does not identify one barangay here; please choose it below.");
+      setLocationError(matchedBarangay ? "" : "Iligan City found, but its barangay needs confirmation. Pin the location manually to continue.");
       clearMessage();
       return true;
     } catch (error) {
       if (request === locationRequest.current) setLocationError((error as Error).message || "We couldn’t check this location. Please try again.");
       return false;
     } finally {
-      if (request === locationRequest.current) setLocating(false);
+      if (request === locationRequest.current) {
+        setLocating(false);
+        setLocationCheckSource(null);
+      }
     }
   }
+  const checkingCurrentLocation = locationCheckSource === "gps";
   const selectedBarangay = barangays.find((item) => item.id === values.barangay_id);
-  const detectedBarangay = barangays.find((item) => item.name === detectedBarangayName);
-  const barangayMismatch = !!detectedBarangay && !!selectedBarangay && detectedBarangay.id !== selectedBarangay.id;
   const coordinatesApplied = coordinates.latitude === String(values.latitude ?? "") && coordinates.longitude === String(values.longitude ?? "");
-  const locationReady = Boolean(locationSource && cityConfirmed && hasReportCoordinates(values) && coordinatesApplied && selectedBarangay && !locating && (!(barangayReviewRequired || barangayMismatch) || manualBarangayConfirmed));
+  const locationReady = Boolean(locationSource && cityConfirmed && hasReportCoordinates(values) && coordinatesApplied && selectedBarangay && !locating && (!barangayReviewRequired || manualBarangayConfirmed));
+  function openManualPin() {
+    const currentPin = hasReportCoordinates(values) ? { latitude: values.latitude, longitude: values.longitude } : null;
+    setManualPin(currentPin);
+    setManualPinResolution(currentPin && selectedBarangay ? { ...currentPin, barangayId: selectedBarangay.id, barangayName: selectedBarangay.name, address: locationAddress, exact: !barangayReviewRequired } : null);
+    setManualPinError("");
+    setPinModalOpen(true);
+  }
+  function closeManualPin() {
+    pinLookupRequest.current++;
+    setPinModalOpen(false);
+    setCheckingManualPin(false);
+  }
+  async function checkManualPin(point: Pick<Point, "latitude" | "longitude">) {
+    const request = ++pinLookupRequest.current;
+    setManualPin(point);
+    setManualPinResolution(null);
+    setManualPinError("");
+    setCheckingManualPin(true);
+    try {
+      if (!db) throw new Error("Location checking is not configured for this app.");
+      const resolved = await result<{ city: "inside" | "outside" | "unknown"; barangay_id: string | null; barangay: string | null; suggested_barangay_id?: string | null; suggested_barangay?: string | null; address: string }>(
+        db.rpc("resolve_report_location", { p_latitude: point.latitude, p_longitude: point.longitude }),
+      );
+      if (request !== pinLookupRequest.current) return;
+      if (resolved.city !== "inside") {
+        setManualPinError(resolved.city === "outside"
+          ? `This pin is outside Iligan City${resolved.address ? ` (${resolved.address})` : ""}. Move it inside the city boundary.`
+          : "This pin is too close to the city boundary to confirm. Move it farther inside Iligan City.");
+        return;
+      }
+      const barangayId = resolved.barangay_id ?? resolved.suggested_barangay_id;
+      const matched = barangays.find((item) => item.id === barangayId);
+      if (!matched) {
+        setManualPinError("No mapped barangay was found here. Move the pin to a location inside a mapped barangay.");
+        return;
+      }
+      setManualPinResolution({ ...point, barangayId: matched.id, barangayName: matched.name, address: resolved.address || "", exact: !!resolved.barangay_id });
+    } catch (error) {
+      if (request === pinLookupRequest.current) setManualPinError((error as Error).message || "We couldn’t check this pin. Try again.");
+    } finally {
+      if (request === pinLookupRequest.current) setCheckingManualPin(false);
+    }
+  }
+  function confirmManualPin() {
+    const pin = manualPinResolution;
+    if (!pin) return;
+    setValue("latitude", pin.latitude);
+    setValue("longitude", pin.longitude);
+    setCoordinates({ latitude: String(pin.latitude), longitude: String(pin.longitude) });
+    setValue("location_source", "pin");
+    setValue("location_accuracy", null);
+    setValue("location_address", pin.address);
+    setValue("barangay_id", pin.barangayId, { shouldValidate: true, shouldDirty: true });
+    setBarangayReviewRequired(!pin.exact);
+    setLocationAddress(pin.address);
+    setCityConfirmed(true);
+    setManualBarangayConfirmed(true);
+    setLocationSource("pin");
+    setLocationAccuracy(null);
+    setLocationError("");
+    clearMessage();
+    closeManualPin();
+  }
   const selectedCategory = categories.find((item) => item.id === values.category_id);
   const problemOptions = [...(selectedCategory?.problem_types ?? [])].sort((a, b) => a.sort_order - b.sort_order);
   const drainage = selectedCategory?.name.toLowerCase().startsWith("drainage");
@@ -352,17 +428,7 @@ export function ReportForm({
     }
     if (!locationReady || !(await trigger(["latitude", "longitude", "barangay_id", "purok", "zone", "landmark", "location_source", "location_address", "location_accuracy"]))) {
       navigateToStep(1, "location");
-      showMessage("Choose a valid pin and barangay before reviewing.", "warning");
-      return;
-    }
-    if (barangayReviewRequired && !manualBarangayConfirmed) {
-      navigateToStep(1, "location");
-      showMessage("Please review the suggested barangay below. Change it if needed, then tap Confirm barangay.", "warning");
-      return;
-    }
-    if (barangayMismatch && !manualBarangayConfirmed) {
-      navigateToStep(1, "location");
-      showMessage(`Boundary data suggests ${detectedBarangayName}, but you selected ${selectedBarangay?.name}. Use the detected barangay or confirm your choice.`, "warning");
+      showMessage("Set the issue location and confirm its barangay in the map before reviewing.", "warning");
       return;
     }
     clearMessage();
@@ -438,17 +504,7 @@ export function ReportForm({
     if (submissionLock.current) return;
     if (!locationReady || !locationSource || !hasReportCoordinates(v) || !cityConfirmed || locating) {
       navigateToStep(1, "location");
-      showMessage("Choose a valid issue location before submitting.", "warning");
-      return;
-    }
-    if (barangayReviewRequired && !manualBarangayConfirmed) {
-      navigateToStep(1, "location");
-      showMessage("Please review and confirm the barangay before submitting.", "warning");
-      return;
-    }
-    if (barangayMismatch && !manualBarangayConfirmed) {
-      navigateToStep(1, "location");
-      showMessage(`Boundary data suggests ${detectedBarangayName}, but you selected ${selectedBarangay?.name}. Please confirm the barangay before submitting.`, "warning");
+      showMessage("Set the issue location and confirm its barangay before submitting.", "warning");
       return;
     }
     submissionLock.current = true;
@@ -667,14 +723,15 @@ export function ReportForm({
           )}
           {step === 1 && (
             <View style={{ gap: 14 }}>
-              <View style={[s.card, { gap: 7, padding: 14, backgroundColor: "#f6fbfa", borderColor: "#dcefeb" }]}>
+              <View style={[s.card, { gap: 10, padding: 14, backgroundColor: "#f6fbfa", borderColor: "#dcefeb" }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                   <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: "#e1f5ef", alignItems: "center", justifyContent: "center" }}><Ionicons name="location-outline" size={22} color={colors.brand} /></View>
-                  <View style={{ flex: 1, gap: 3 }}><Text style={s.fieldLabel}>Find the location</Text><Text style={s.small}>Use your current location or tap the map to place the exact issue pin.</Text></View>
+                  <View style={{ flex: 1, gap: 3 }}><Text style={s.fieldLabel}>Set the issue location</Text><Text style={s.small}>Choose your current location, or open the map to pin the spot manually.</Text></View>
                 </View>
-                <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || locating, busy: locating }} disabled={busy || locating} onPress={async () => {
+                <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || locating, busy: checkingCurrentLocation }} disabled={busy || locating} onPress={async () => {
                   const request = ++locationRequest.current;
                   setLocating(true);
+                  setLocationCheckSource("gps");
                   setLocationError("");
                   try {
                     const loc = await currentDeviceLocation();
@@ -682,31 +739,22 @@ export function ReportForm({
                   } catch (e) {
                     if (request === locationRequest.current) setLocationError((e as Error).message);
                   } finally {
-                    if (request === locationRequest.current) setLocating(false);
+                    if (request === locationRequest.current) {
+                      setLocating(false);
+                      setLocationCheckSource(null);
+                    }
                   }
-                }} style={({ pressed }) => [{ minHeight: 50, marginTop: 4, borderRadius: 14, backgroundColor: colors.brand, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: busy || locating ? 0.6 : pressed ? 0.84 : 1 }]}>
-                  {locating ? <ActivityIndicator size="small" color="white" /> : <Ionicons name="locate-outline" size={19} color="white" />}
-                  <Text style={{ color: "white", fontSize: 14, fontWeight: "800" }}>{locating ? "Checking location…" : "Use my current location"}</Text>
+                }} style={({ pressed }) => [{ minHeight: 50, marginTop: 4, borderRadius: 14, backgroundColor: colors.brand, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: busy || checkingCurrentLocation ? 0.6 : pressed ? 0.84 : 1 }]}>
+                  {checkingCurrentLocation ? <ActivityIndicator size="small" color="white" /> : <Ionicons name="locate-outline" size={19} color="white" />}
+                  <Text style={{ color: "white", fontSize: 14, fontWeight: "800" }}>{checkingCurrentLocation ? "Checking location…" : "Use my current location"}</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={hasReportCoordinates(values) ? "Adjust location pin manually" : "Pin location manually"} accessibilityState={{ disabled: busy || locating }} disabled={busy || locating} onPress={openManualPin} style={({ pressed }) => [{ minHeight: 58, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, borderColor: "#bfe7df", backgroundColor: "white", flexDirection: "row", alignItems: "center", gap: 10, opacity: busy || locating ? 0.6 : pressed ? 0.82 : 1 }]}>
+                  <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="map-outline" size={19} color={colors.brand} /></View>
+                  <View style={{ flex: 1, gap: 2 }}><Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "800" }}>{hasReportCoordinates(values) ? "Adjust pin manually" : "Pin location manually"}</Text><Text style={s.small}>Open the map and confirm the barangay.</Text></View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.brand} />
                 </Pressable>
               </View>
-              {!!locationError && <View style={{ gap: 8 }}><Text accessibilityRole="alert" style={s.error}>{locationError}</Text><Text style={s.small}>GPS is optional. Tap the map to place the issue pin manually.</Text></View>}
-              <View style={[s.card, { gap: 10, padding: 10 }]}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 4, paddingTop: 2 }}>
-                  <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: "#edf3fb", alignItems: "center", justifyContent: "center" }}><Ionicons name="map-outline" size={19} color="#526c9c" /></View>
-                  <View style={{ flex: 1, gap: 2 }}><Text style={[s.fieldLabel, { fontSize: 14 }]}>Place the issue pin</Text><Text style={s.small}>Tap the map to mark the exact spot.</Text></View>
-                  {locationSource === "pin" && <View style={{ paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12, backgroundColor: "#e6f7f1" }}><Text style={{ color: colors.brand, fontSize: 10, fontWeight: "800" }}>PIN SET</Text></View>}
-                </View>
-                <LocationMap height={300} point={hasReportCoordinates(values) ? { latitude: values.latitude, longitude: values.longitude } : undefined} onChoose={(point) => { void chooseLocation(point, "pin"); }} onPageScroll={onMapPageScroll} bounds={ILIGAN_MAP_BOUNDS} />
-                <Text style={[s.small, { paddingHorizontal: 4 }]}>Free location check: PSGC (2023) and © OpenStreetMap contributors. Boundaries are indicative; confirm or correct the barangay below.</Text>
-              </View>
-              <View style={[s.card, { gap: 10, padding: 14 }]}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <View style={{ width: 38, height: 38, borderRadius: 13, backgroundColor: locationReady ? colors.brandSoft : "#fff5e7", alignItems: "center", justifyContent: "center" }}><Ionicons name={locationReady ? "checkmark-circle-outline" : "navigate-outline"} size={21} color={locationReady ? colors.brand : "#b7791f"} /></View>
-                  <View style={{ flex: 1, gap: 3 }}><Text style={s.fieldLabel}>{locationReady ? "Location confirmed" : locationSource ? "Location checked" : "Choose a spot on the map"}</Text><Text style={s.small}>{hasReportCoordinates(values) ? `${locationAddress || "Iligan City"} · ${values.latitude.toFixed(5)}, ${values.longitude.toFixed(5)}` : "Your report location stays private from the public."}</Text></View>
-                </View>
-                {locationSource === "gps" && <Text style={[s.small, { paddingLeft: 48 }]}>{locationAccuracy === null ? "GPS accuracy is unavailable. Check the pin on the map." : `GPS accuracy: about ±${Math.round(locationAccuracy)} m.${locationAccuracy > 100 ? " Move the pin to the issue location." : " Move the pin if the issue is elsewhere."}`}</Text>}
-
-              </View>
+              {!!locationError && <Text accessibilityRole="alert" style={s.error}>{locationError}</Text>}
               {!!errors.latitude && <Text accessibilityRole="alert" style={s.error}>{errors.latitude.message}</Text>}
               <Pressable accessibilityRole="button" accessibilityState={{ expanded: showCoordinates }} onPress={() => setShowCoordinates(!showCoordinates)} style={{ minHeight: 48, justifyContent: "center" }}><Text style={[s.small, { color: colors.brand, fontWeight: "700" }]}>{showCoordinates ? "Hide coordinate entry" : "Enter coordinates instead"}</Text></Pressable>
               {showCoordinates && <>{(["latitude", "longitude"] as const).map((name) => (
@@ -734,25 +782,17 @@ export function ReportForm({
                   void chooseLocation(point, "coordinates");
                 }}
               /></>}
-              <View style={[s.card, { gap: 8, padding: 14, backgroundColor: "#fbfdfd" }]}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}><Ionicons name="business-outline" size={20} color={colors.brand} /><Text style={s.fieldLabel}>Check the barangay</Text></View>
-                <Text style={s.small}>{barangayReviewRequired ? detectedBarangayName ? `Nearest mapped barangay: ${detectedBarangayName}. We couldn’t identify an exact match at this pin. Please check the suggestion and change it below if needed.` : "We couldn’t identify a barangay here. Please choose and confirm the correct barangay below." : barangaySelectionSource === "pin" ? `Boundary data suggests ${detectedBarangayName}. You can change it if needed.` : barangaySelectionSource === "manual" ? `Barangay chosen manually${detectedBarangayName ? ` · Boundary data: ${detectedBarangayName}` : ""}.` : "Choose the barangay where the issue is. Your profile barangay is only a suggestion."}</Text>
-                <Choices title="Choose a barangay" subtitle="Select the barangay where the issue is located." sheetKind="barangay" items={barangays} value={values.barangay_id} onChange={(value) => { setValue("barangay_id", value, { shouldValidate: true, shouldDirty: true }); setBarangaySelectionSource("manual"); setManualBarangayConfirmed(false); }} />
-                {barangayReviewRequired && <View style={{ gap: 8, padding: 12, borderRadius: 14, backgroundColor: "#effaf7", borderWidth: 1, borderColor: "#cdece5" }}>
-                  <Text accessibilityLiveRegion="polite" style={s.small}>{manualBarangayConfirmed ? `Barangay confirmed: ${selectedBarangay?.name}.` : "Review needed · The nearest barangay may not be the correct one for this location."}</Text>
-                  <Button secondary={manualBarangayConfirmed} disabled={!selectedBarangay || !cityConfirmed || locating || manualBarangayConfirmed} title={manualBarangayConfirmed ? "Barangay confirmed" : "Confirm barangay"} onPress={() => setManualBarangayConfirmed(true)} />
-                </View>}
-                {barangayMismatch && !barangayReviewRequired && <View style={{ gap: 9, padding: 11, borderRadius: 14, borderWidth: 1, borderColor: manualBarangayConfirmed ? "#cdece5" : "#f0dfb8", backgroundColor: manualBarangayConfirmed ? "#f1fbf8" : "#fff9ed" }}>
-                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}><Ionicons name={manualBarangayConfirmed ? "checkmark-circle-outline" : "alert-circle-outline"} size={18} color={manualBarangayConfirmed ? colors.brand : "#a66a12"} /><Text style={{ flex: 1, color: colors.brandDark, fontSize: 12, lineHeight: 17 }}>{manualBarangayConfirmed ? `You’re keeping ${selectedBarangay?.name}; Boundary data suggests ${detectedBarangayName}.` : `Boundary data suggests ${detectedBarangayName}, but you selected ${selectedBarangay?.name}. Please check before continuing.`}</Text></View>
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    <Pressable accessibilityRole="button" onPress={() => { if (detectedBarangay) { setValue("barangay_id", detectedBarangay.id, { shouldValidate: true, shouldDirty: true }); setBarangaySelectionSource("pin"); setManualBarangayConfirmed(false); } }} style={{ minHeight: 48, flex: 1, paddingHorizontal: 8, borderRadius: 11, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center" }}><Text numberOfLines={1} style={{ color: "white", fontSize: 11, fontWeight: "800" }}>Use {detectedBarangayName}</Text></Pressable>
-                    <Pressable accessibilityRole="button" onPress={() => setManualBarangayConfirmed(true)} style={{ minHeight: 48, flex: 1, paddingHorizontal: 8, borderRadius: 11, borderWidth: 1, borderColor: "#d8e2ea", backgroundColor: "white", alignItems: "center", justifyContent: "center" }}><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 11, fontWeight: "700" }}>Keep {selectedBarangay?.name}</Text></Pressable>
-                  </View>
-                </View>}
-                {!!errors.barangay_id && <Text accessibilityRole="alert" style={s.error}>{errors.barangay_id.message}</Text>}
-              </View>
+              {hasReportCoordinates(values) && <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 10, padding: 12, backgroundColor: locationReady ? "#f1fbf8" : "#fff9ed", borderColor: locationReady ? "#cdece5" : "#f0dfb8" }]}>
+                <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: locationReady ? colors.brandSoft : "#fff1d7", alignItems: "center", justifyContent: "center" }}><Ionicons name={locationReady ? "checkmark-circle-outline" : "location-outline"} size={21} color={locationReady ? colors.brand : "#a66a12"} /></View>
+                <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+                  <Text style={s.fieldLabel}>{locationReady ? "Location confirmed" : "Location needs a manual pin"}</Text>
+                  <Text style={s.small}>{selectedBarangay?.name || "Barangay not confirmed"}{locationAddress ? ` · ${locationAddress}` : ""}</Text>
+                  <Text numberOfLines={1} style={[s.small, { fontSize: 10 }]}>{values.latitude.toFixed(5)}, {values.longitude.toFixed(5)}{locationSource === "gps" && locationAccuracy !== null ? ` · GPS ±${Math.round(locationAccuracy)} m` : ""}</Text>
+                </View>
+                <Pressable accessibilityRole="button" accessibilityLabel="Change pinned location" onPress={openManualPin} style={{ minWidth: 48, minHeight: 48, paddingHorizontal: 6, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "white" }}><Ionicons name="pencil-outline" size={18} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 9, fontWeight: "800" }}>Change</Text></Pressable>
+              </View>}
               <View style={{ gap: 14 }}>
-                <View style={{ gap: 4 }}><Text style={s.fieldLabel}>Address details (optional)</Text><Text style={s.small}>Add the Purok, Zone or a landmark if known. If you do not know them, use the map pin to show the exact spot.</Text></View>
+                <View style={{ gap: 4 }}><Text style={s.fieldLabel}>Address details (optional)</Text><Text style={s.small}>Add the Purok, Zone or a nearby landmark if known. Your confirmed pin already marks the exact spot.</Text></View>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14 }}>
                   {(["purok", "zone"] as const).map((name) => <View key={name} style={{ flex: 1, minWidth: 140 }}><Controller control={control} name={name} render={({ field }) => <Field label={`${label(name)} (optional)`} validationKind="address" value={field.value || ""} placeholder={name === "purok" ? "e.g. 3 or Riverside" : "e.g. 2 or Central"} maxLength={80} error={errors[name]?.message} inputRef={field.ref} onBlur={field.onBlur} onChangeText={field.onChange} />} /></View>)}
                 </View>
@@ -810,6 +850,35 @@ export function ReportForm({
           )}
         </>
       )}
+      {pinModalOpen && <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeManualPin}>
+        <View style={{ flex: 1, backgroundColor: "#f4f8f7" }}>
+          <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+            <View style={{ minHeight: 64, paddingHorizontal: 14, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close pin map" onPress={closeManualPin} style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: "white", alignItems: "center", justifyContent: "center" }}><Ionicons name="close" size={23} color={colors.brandDark} /></Pressable>
+              <View style={{ flex: 1, gap: 2 }}><Text style={[s.fieldLabel, { fontSize: 16 }]}>Pin the issue location</Text><Text style={s.small}>Tap the map to place your pin.</Text></View>
+            </View>
+            <View style={{ flex: 1, minHeight: 260, marginHorizontal: 12, marginVertical: 6, borderRadius: 18, overflow: "hidden", backgroundColor: "#e8f1ee" }}>
+              <LocationMap
+                height={Math.max(240, windowHeight - insets.top - insets.bottom - 174)}
+                point={manualPin ? { ...manualPin, barangayName: manualPinResolution?.barangayName } : undefined}
+                pointLabel={manualPinResolution ? manualPinResolution.exact ? manualPinResolution.barangayName : `Near ${manualPinResolution.barangayName}` : undefined}
+                showPointCoordinates={false}
+                onChoose={(point) => { void checkManualPin(point); }}
+                bounds={ILIGAN_MAP_BOUNDS}
+              />
+            </View>
+            <View style={{ gap: 9, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10 }}>
+              <Text accessibilityLiveRegion="polite" accessibilityRole={manualPinError ? "alert" : undefined} style={manualPinError ? s.error : s.small}>
+                {manualPinError || (checkingManualPin ? "Checking barangay…" : manualPinResolution ? manualPinResolution.exact ? `Barangay ${manualPinResolution.barangayName}` : `Nearest mapped barangay: ${manualPinResolution.barangayName}. Confirm if this is correct.` : "Tap the map to set the pin and identify its barangay.")}
+              </Text>
+              <View style={s.actionRow}>
+                <Button secondary grow title="Cancel" onPress={closeManualPin} />
+                <Button grow icon="checkmark" title="Confirm location" disabled={!manualPinResolution || checkingManualPin} onPress={confirmManualPin} />
+              </View>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>}
     </>
   );
 }
@@ -919,12 +988,14 @@ export function ReportTracking({
       </>} />
       {currentReport.error && <View style={s.card}><Text accessibilityRole="alert" style={s.error}>Could not refresh this report. The details below may be out of date.</Text><Button secondary title="Retry report" loading={currentReport.isFetching} onPress={() => void currentReport.refetch()} /></View>}
       <View style={{ gap: 9, paddingHorizontal: 2, paddingBottom: 2 }}>
-        <View style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, backgroundColor: tone.background }}><Ionicons name={r.status === "resolved" ? "checkmark-circle" : r.status === "rejected" ? "close-circle" : "time-outline"} size={16} color={tone.foreground} /><Text style={{ color: tone.foreground, fontSize: 12, fontWeight: "800" }}>{r.status === "duplicate" ? "Linked duplicate" : reportStatusLabel(r.status)}</Text></View>
         <Text accessibilityRole="header" style={[s.heading, { fontSize: 25, lineHeight: 31 }]}>{r.title}</Text>
         {!!r.description && <>
           <Text style={[s.body, { color: colors.muted }]}>{r.description}</Text>
         </>}
-        <View style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 13, backgroundColor: categoryTone.background }}><Ionicons name={categoryIconFor(categoryName)} size={16} color={categoryTone.foreground} /><Text style={{ color: categoryTone.foreground, fontSize: 12, fontWeight: "800" }}>{categoryDisplayName(categoryName)}{q.data?.problem ? ` · ${q.data.problem.label}` : ""}</Text></View>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+          <View style={{ maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 13, backgroundColor: categoryTone.background }}><Ionicons name={categoryIconFor(categoryName)} size={16} color={categoryTone.foreground} /><Text style={{ color: categoryTone.foreground, fontSize: 12, fontWeight: "800", flexShrink: 1 }}>{categoryDisplayName(categoryName)}{q.data?.problem ? ` · ${q.data.problem.label}` : ""}</Text></View>
+          <View style={{ maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, backgroundColor: tone.background }}><Ionicons name={r.status === "resolved" ? "checkmark-circle" : r.status === "rejected" ? "close-circle" : "time-outline"} size={16} color={tone.foreground} /><Text style={{ color: tone.foreground, fontSize: 12, fontWeight: "800", flexShrink: 1 }}>{r.status === "duplicate" ? "Linked duplicate" : reportStatusLabel(r.status)}</Text></View>
+        </View>
         {!!r.problem_other && <Text style={s.small}>{r.problem_other}</Text>}
       </View>
 
@@ -1104,6 +1175,7 @@ function ReportAttachments({ items, loading, error, onRetry }: { items: { path: 
 export function Explore({
   categories,
   barangays,
+  myBarangayId = "",
   onOpenReport,
   onMapGestureActiveChange,
   onMapPageScroll,
@@ -1112,6 +1184,7 @@ export function Explore({
 }: {
   categories: Lookup[];
   barangays: Lookup[];
+  myBarangayId?: string;
   onOpenReport: (report: Report) => void;
   onMapGestureActiveChange?: (active: boolean) => void;
   onMapPageScroll?: (delta: number) => void;
@@ -1122,7 +1195,7 @@ export function Explore({
   const safeArea = useSafeAreaInsets();
   const thumbnailWidth = windowWidth < 390 ? 76 : 88;
   const mapHeight = windowWidth < 600
-    ? Math.max(190, Math.min(230, Math.round(windowHeight * 0.235)))
+    ? Math.max(260, Math.min(300, Math.round(windowHeight * 0.3)))
     : Math.max(330, Math.min(400, Math.round(windowHeight * 0.43)));
   const [category, setCategory] = useState(""),
     [barangay, setBarangay] = useState(""),
@@ -1135,7 +1208,6 @@ export function Explore({
     [selectedChoroplethName, setSelectedChoroplethName] = useState(""),
     [density, setDensity] = useState(false),
     [mapStatus, setMapStatus] = useState("active"),
-    [hoveredStatus, setHoveredStatus] = useState<string | null>(null),
     [recentOnly, setRecentOnly] = useState(false),
     [expandedMap, setExpandedMap] = useState(false),
     [mapStyle, setMapStyle] = useState<MapStyle>("satellite"),
@@ -1143,6 +1215,7 @@ export function Explore({
     [densityCellCount, setDensityCellCount] = useState<number | null>(null),
     [selectedReportId, setSelectedReportId] = useState<string | null>(null),
     [selectedListReportId, setSelectedListReportId] = useState<string | null>(null),
+    [reportActionsOpen, setReportActionsOpen] = useState(false),
     [failedPhotos, setFailedPhotos] = useState<Record<string, boolean>>({}),
     [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | undefined>(),
     [locating, setLocating] = useState(false),
@@ -1151,6 +1224,7 @@ export function Explore({
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   const qc = useQueryClient();
+  const photoRetryIds = useRef(new Set<string>());
   const mapViewport = useRef<Region>({ latitude: 8.228, longitude: 124.2452, latitudeDelta: 0.05, longitudeDelta: 0.05 });
   const setMapViewport = useCallback((region: Region) => { mapViewport.current = region; }, []);
   const selectMapPoint = useCallback((point: Point) => setSelectedReportId(point.id ?? null), []);
@@ -1207,29 +1281,49 @@ export function Explore({
     queryKey: ["explore-report-photos", photoReportIds],
     enabled: photoReportIds.length > 0,
     staleTime: 45 * 60 * 1000,
+    retry: 2,
     queryFn: async () => {
       const empty = { urls: {} as Record<string, string>, counts: {} as Record<string, number> };
+      const attachments = await result<{ report_id: string; path: string }[]>(
+        db!.from("report_attachments").select("report_id,path").in("report_id", photoReportIds).order("report_id").order("path"),
+      );
+      if (!attachments.length) return empty;
+      const reportPhotoUrls: Record<string, string> = {};
+      let signingError: unknown;
       try {
-        const attachments = await result<{ report_id: string; path: string }[]>(
-          db!.from("report_attachments").select("report_id,path").in("report_id", photoReportIds),
-        );
-        if (!attachments.length) return empty;
-        const urls = await db!.storage.from("report-evidence").createSignedUrls(
-          attachments.map((item) => item.path), 3600,
-        );
-        if (urls.error) return empty;
-        return { urls: Object.fromEntries(attachments.flatMap((item, index) =>
-          urls.data[index]?.signedUrl ? [[item.report_id, urls.data[index].signedUrl!]] : [],
-        )), counts: attachments.reduce<Record<string, number>>((counts, item) => {
-          counts[item.report_id] = (counts[item.report_id] ?? 0) + 1;
-          return counts;
-        }, {}) };
-      } catch {
-        // Public report evidence remains subject to the existing attachment and storage RLS policies.
-        return empty;
+        const signed = await db!.storage.from("report-evidence").createSignedUrls(attachments.map((item) => item.path), 3600);
+        if (signed.error) throw signed.error;
+        signed.data?.forEach((item, index) => {
+          const reportId = attachments[index]?.report_id;
+          if (reportId && item?.signedUrl && !reportPhotoUrls[reportId]) reportPhotoUrls[reportId] = item.signedUrl;
+        });
+      } catch (error) { signingError = error; }
+      const missingReports = [...new Set(attachments.map((item) => item.report_id))].filter((id) => !reportPhotoUrls[id]);
+      const recovered = await Promise.all(missingReports.map(async (reportId) => {
+        for (const item of attachments.filter((attachment) => attachment.report_id === reportId)) {
+          try {
+            const signed = await db!.storage.from("report-evidence").createSignedUrl(item.path, 3600);
+            if (!signed.error && signed.data?.signedUrl) return [reportId, signed.data.signedUrl] as const;
+          } catch { /* Try the next attachment for this report. */ }
+        }
+        return null;
+      }));
+      recovered.forEach((item) => { if (item) reportPhotoUrls[item[0]] = item[1]; });
+      if (missingReports.length && !Object.keys(reportPhotoUrls).length) {
+        throw signingError ?? new Error("Could not create report photo links.");
       }
+      return { urls: reportPhotoUrls, counts: attachments.reduce<Record<string, number>>((counts, item) => {
+        counts[item.report_id] = (counts[item.report_id] ?? 0) + 1;
+        return counts;
+      }, {}) };
     },
   });
+  const retryReportPhoto = (id: string) => {
+    if (photoRetryIds.current.has(id)) { setFailedPhotos((value) => ({ ...value, [id]: true })); return; }
+    photoRetryIds.current.add(id);
+    setFailedPhotos((value) => ({ ...value, [id]: true }));
+    void reportPhotos.refetch().then(({ data }) => setFailedPhotos((value) => ({ ...value, [id]: !data?.urls[id] })));
+  };
   const mapPoints = useMemo(() => mapReports.filter(hasReportCoordinates).map((report) => {
     const categoryName = categoryNames.get(report.category_id) || "Other reports";
     return { ...report, createdAt: report.created_at, categoryName, color: categoryToneFor(categoryName).foreground,
@@ -1271,7 +1365,7 @@ export function Explore({
     const tone = categoryToneFor(name);
     const photo = reportPhotos.data?.urls[report.id];
     return <Pressable key={report.id} accessibilityRole="button" accessibilityLabel={`Open report: ${report.title}`} onPress={() => onOpenReport(report)} style={({ pressed }) => [{ minHeight: 60, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderTopWidth: 1, borderColor: "#e7eff1" }, pressed && { opacity: 0.75 }]}>
-      {photo && !failedPhotos[report.id] ? <PhotoViewer source={{ uri: photo }} label={`${categoryDisplayName(name)} report photo`} onError={() => setFailedPhotos((value) => ({ ...value, [report.id]: true }))} style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background }} /> : <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(name)} size={19} color={tone.foreground} /></View>}
+      {photo && !failedPhotos[report.id] ? <PhotoViewer source={{ uri: photo }} label={`${categoryDisplayName(name)} report photo`} onError={() => retryReportPhoto(report.id)} style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background }} /> : <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: tone.background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(name)} size={19} color={tone.foreground} /></View>}
       <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>{report.title}</Text><Text numberOfLines={1} style={s.small}>{categoryDisplayName(name)} · {reportStatusLabel(report.status)} · {new Date(report.created_at).toLocaleDateString()}</Text></View><Ionicons name="chevron-forward" size={17} color={colors.muted} />
     </Pressable>;
   });
@@ -1302,16 +1396,23 @@ export function Explore({
     } catch (error) { setMessage((error as Error).message); }
     finally { setBusy(false); }
   }
+  const shareListReport = () => {
+    if (!selectedListReport) return;
+    setReportActionsOpen(false);
+    void Share.share({ title: "Iligan Connect report", message: `Iligan Connect · ${selectedListReport.title} · ${barangays.find((item) => item.id === selectedListReport.barangay_id)?.name ?? "Iligan City"}` })
+      .catch((error) => setMessage((error as Error).message));
+  };
   return (
     <>
-      <View style={{ minHeight: 154, justifyContent: "center", overflow: "hidden", padding: 16, borderRadius: 22, borderWidth: 1, borderColor: "#d9edf0", backgroundColor: "#eaf8f8" }}>
-        <View pointerEvents="none" style={{ position: "absolute", right: -46, top: -16, width: 246, height: 186, borderRadius: 110, borderWidth: 10, borderColor: "#69d4ce", backgroundColor: "#18aaa0", padding: 8 }}>
-          <Image source={require("../assets/iligan-explore-aerial.png")} accessible={false} resizeMode="cover" style={{ width: "100%", height: "100%", borderRadius: 100 }} />
+      <View style={{ minHeight: 140, justifyContent: "center", overflow: "hidden", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24, borderWidth: 1, borderColor: "#dcece8", backgroundColor: "#edf8f5" }}>
+        <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={{ position: "absolute", right: -8, top: -8, width: "70%", height: "116%", opacity: 0.72 }}>
+          <Image source={require("../assets/iligan-explore-aerial.png")} accessible={false} resizeMode="contain" style={{ width: "100%", height: "100%" }} />
         </View>
-        <View style={{ width: windowWidth < 390 ? "69%" : "64%", gap: 6 }}>
-          <Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 24, lineHeight: 28, fontWeight: "800", letterSpacing: -0.5 }}>Around your community</Text>
-          <Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 13, lineHeight: 18 }}>See what neighbors have reported nearby.</Text>
-          <View style={{ alignSelf: "flex-start", minHeight: 34, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 9, borderRadius: 18, backgroundColor: "#d9f3f0" }}><Ionicons name="location" size={15} color={colors.brand} /><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 11, fontWeight: "600" }}>Locations are approximate.</Text></View>
+        <View pointerEvents="none" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "64%", backgroundColor: "#ffffff35" }} />
+        <View style={{ width: windowWidth < 390 ? "64%" : "58%", gap: 4, zIndex: 1 }}>
+          <Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 21, lineHeight: 24, fontWeight: "800", letterSpacing: -0.35 }}>Around your community</Text>
+          <Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 12, lineHeight: 16 }}>See what neighbors have reported nearby.</Text>
+          <View style={{ alignSelf: "flex-start", minHeight: 30, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 8, borderRadius: 18, backgroundColor: "#d9f3f0" }}><Ionicons name="location" size={14} color={colors.brand} /><Text numberOfLines={1} style={{ color: colors.brandDark, fontSize: 10, fontWeight: "600" }}>Locations are approximate.</Text></View>
         </View>
       </View>
       <View style={{ minHeight: 52, flexDirection: "row", gap: 5, padding: 4, borderRadius: 28, backgroundColor: "white", borderWidth: 1, borderColor: "#deebed" }}>
@@ -1340,66 +1441,39 @@ export function Explore({
           <TextInput maxLength={200} accessibilityLabel="Search public reports" placeholder="Search public reports…" placeholderTextColor={colors.muted} value={search} onChangeText={(v) => { setSearch(v); setDensityCellCount(null); setPage(0); }} returnKeyType="search" style={{ flex: 1, minWidth: 0, minHeight: 40, color: colors.brandDark, fontSize: 14 }} />
           {!!search && <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => { setSearch(""); setAppliedSearch(""); setDensityCellCount(null); setPage(0); }} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center" }}><Ionicons name="close-circle" size={19} color={colors.muted} /></Pressable>}
       </View>
-      <View style={{ flexDirection: "row", alignItems: "stretch", gap: 7 }}>
-        <Choices
-          grow
-          items={[{ id: "", name: "All categories" }, ...categories]}
-          value={category}
-          compact
-          title="Choose a report type"
-          leadingIcon="grid-outline"
-          shortCategoryNames
-          onChange={(v) => { setCategory(v); setDensityCellCount(null); setPage(0); }}
-        />
-        <Choices
-          grow
-          items={[{ id: "", name: "All barangays" }, ...barangays]}
-          value={barangay}
-          leadingIcon="location-outline"
-          onChange={(v) => { setBarangay(v); setDensityCellCount(null); setPage(0); }}
-        />
-        <Pressable accessibilityRole="button" accessibilityLabel="Filter reports" accessibilityHint="Shows or hides report status and date filters" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((value) => !value)} style={({ pressed }) => [{ width: 86, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: 6, borderRadius: 24, borderWidth: 1, borderColor: "#dce9ed", backgroundColor: "white", shadowColor: colors.brandDark, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 }, pressed && { opacity: 0.78 }]}><Ionicons name="options-outline" size={16} color={colors.brand} /><Text style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>Filter</Text><Ionicons name={filtersOpen ? "chevron-up" : "chevron-down"} size={14} color={colors.muted} /></Pressable>
-      </View>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 3 }}><View style={{ width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#fff1c9" }}><Ionicons name="bulb-outline" size={14} color="#a67b12" /></View><Text numberOfLines={1} style={{ flex: 1, color: colors.muted, fontSize: 12 }}>Try ‘pothole’, ‘streetlight’, or a barangay</Text></View>
-      <View style={{ minHeight: 42, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, borderRadius: 24, borderWidth: 1, borderColor: "#dce9ed", backgroundColor: "white" }}>
-        <Ionicons name="stats-chart-outline" size={17} color={colors.brand} />
-        <Text numberOfLines={1} accessibilityLiveRegion="polite" style={{ color: colors.brandDark, fontSize: 12, fontWeight: "700" }}>{mapQuery.isFetching ? "Updating…" : `${mapPoints.length} mapped reports`}</Text>
-        <View style={{ width: 1, height: 22, backgroundColor: "#c3d9df" }} />
-        <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: colors.muted, fontSize: 11 }}>{mapScope}</Text>
-      </View>
-      {filtersOpen && <View style={[s.card, { gap: 10, padding: 11, borderRadius: 17, borderColor: "#d8e8e7" }]}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}><Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "800" }}>Filter reports</Text>
+      <View style={[s.card, { gap: filtersOpen ? 10 : 0, paddingHorizontal: 11, paddingVertical: filtersOpen ? 11 : 4, borderRadius: 17, borderColor: "#d8e8e7" }]}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Filter reports" accessibilityHint="Shows or hides category, barangay, and status filters" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((value) => !value)} style={({ pressed }) => [{ minHeight: 44, flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 7 }, pressed && { opacity: 0.75 }]}>
+            <Ionicons name="options-outline" size={18} color={colors.brand} /><Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "800" }}>Filter reports</Text><Ionicons name={filtersOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.muted} />
+          </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Clear all report filters" disabled={!hasActiveFilters} onPress={() => { setCategory(""); setBarangay(""); setSearch(""); setAppliedSearch(""); setMapStatus("active"); setRecentOnly(false); setNearbyRadius("0"); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} style={({ pressed }) => [{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 4, opacity: hasActiveFilters ? 1 : 0.48 }, pressed && hasActiveFilters && { opacity: 0.72 }]}><Ionicons name="refresh" size={17} color={colors.muted} /><Text style={[s.small, { fontSize: 12, fontWeight: "600" }]}>Clear all</Text></Pressable>
         </View>
-        <View style={{ flexDirection: "row", gap: 7 }}>
-          {[
-            { id: "all", title: "All statuses", count: counts.all_count },
-            { id: "active", title: "Unresolved", count: counts.active_count },
-            { id: "resolved", title: "Resolved", count: counts.resolved_count },
-          ].map(({ id, title, count }) => {
-            const selected = mapStatus === id;
-            const hovered = hoveredStatus === id;
-            return <Pressable key={id} accessibilityRole="button" accessibilityState={{ selected }} onHoverIn={() => setHoveredStatus(id)} onHoverOut={() => setHoveredStatus((value) => value === id ? null : value)} onPress={() => { setMapStatus(id); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 42, borderRadius: 22, borderWidth: 1, borderColor: selected ? colors.brand : "#d8e9e7", backgroundColor: selected ? colors.brand : hovered ? "#effaf7" : "white", alignItems: "center", justifyContent: "center", paddingHorizontal: 3 }, pressed && { opacity: 0.82 }]}><Text numberOfLines={2} style={{ color: selected ? "white" : colors.muted, fontSize: 10, lineHeight: 13, fontWeight: selected ? "700" : "600", textAlign: "center" }}>{title} ({count})</Text></Pressable>;
-          })}
-        </View>
+        {filtersOpen && <>
+          <View style={{ flexDirection: "row", alignItems: "stretch", gap: 7 }}>
+            <Choices grow compact items={[{ id: "", name: "All categories" }, ...categories]} value={category} title="Choose a report type" leadingIcon="grid-outline" shortCategoryNames onChange={(v) => { setCategory(v); setDensityCellCount(null); setPage(0); }} />
+            <Choices grow compact items={[{ id: "", name: "All barangays" }, ...barangays]} value={barangay} title="Choose a barangay" leadingIcon="location-outline" myBarangayId={myBarangayId || undefined} onChange={(v) => { setBarangay(v); setDensityCellCount(null); setPage(0); }} />
+            <Choices grow compact items={[{ id: "all", name: `All statuses (${counts.all_count})` }, { id: "active", name: `Unresolved (${counts.active_count})` }, { id: "resolved", name: `Resolved (${counts.resolved_count})` }]} value={mapStatus} title="Choose a report status" sheetTitle="Filter by status" leadingIcon="options-outline" searchable={false} onChange={(v) => { setMapStatus(v); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} />
+          </View>
         <Pressable accessibilityRole="switch" accessibilityLabel="Reported in last 30 days" accessibilityState={{ checked: recentOnly }} onPress={() => { setRecentOnly(!recentOnly); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 9, borderRadius: 15, borderWidth: 1, borderColor: recentOnly ? "#b8e9df" : "#d8e9e7", backgroundColor: recentOnly ? "#f2fbf8" : "white", paddingHorizontal: 10 }, pressed && { opacity: 0.82 }]}>
           <Ionicons name="calendar-outline" size={18} color={colors.brand} />
           <Text style={[s.body, { flex: 1, fontSize: 12, fontWeight: "600" }]}>Reported in last 30 days</Text>
           <View style={{ width: 38, height: 23, borderRadius: 12, padding: 3, backgroundColor: recentOnly ? colors.brand : "#d5e0e8", justifyContent: "center" }}><View style={{ width: 17, height: 17, borderRadius: 9, backgroundColor: "white", alignSelf: recentOnly ? "flex-end" : "flex-start", shadowColor: "#123", shadowOpacity: 0.14, shadowRadius: 3, elevation: 1 }} /></View>
         </Pressable>
-      </View>}
+        </>}
+      </View>
       {showMap && (
         <>
           {mapQuery.error && <View style={s.card}><Text style={s.error}>Could not refresh map reports.</Text><Button secondary title="Retry map" loading={mapQuery.isFetching} onPress={() => void mapQuery.refetch()} /></View>}
           {!showBarangayMap && <>
-            <View style={{ gap: 10, marginBottom: 10 }}>
+            <View style={{ gap: 10, marginTop: 8, marginBottom: 10 }}>
               {mapReports.length > mapPoints.length && <Text style={s.small}>{mapReports.length - mapPoints.length} reports use manual addresses. Open List to view them.</Text>}
               <View style={{ flexDirection: "row", gap: 8 }}>
                 {([[showPins, setShowPins, "Pins", "location"], [density, setDensity, "Heatmap", "layers"]] as const).map(([enabled, setEnabled, title, icon]) => <Pressable key={title} accessibilityRole="checkbox" accessibilityLabel={`${title === "Pins" ? "Report pins" : title} layer`} accessibilityState={{ checked: enabled }} aria-checked={enabled} {...(Platform.OS === "web" ? { onKeyDown: (event: KeyboardEvent<HTMLElement>) => { if (event.key === " ") { event.preventDefault(); if (!event.repeat) { setEnabled(!enabled); if (title === "Heatmap") setDensityCellCount(null); } } } } : {})} onPress={() => { setEnabled(!enabled); if (title === "Heatmap") setDensityCellCount(null); }} style={({ pressed }) => [{ flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 24, borderWidth: 1, borderColor: enabled ? "#c8e9e5" : colors.line, paddingHorizontal: 10, backgroundColor: enabled ? "#ddf7f3" : "white", shadowColor: colors.brandDark, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 }, pressed && { opacity: 0.78 }]}><Ionicons name={icon} size={19} color={enabled ? colors.brand : colors.muted} /><Text style={{ color: enabled ? colors.brandDark : colors.muted, fontSize: 12, fontWeight: "700" }}>{title}</Text><View style={{ width: 38, height: 23, borderRadius: 12, padding: 3, backgroundColor: enabled ? colors.brand : "#cbd7df", justifyContent: "center" }}><View style={{ width: 17, height: 17, borderRadius: 9, backgroundColor: "white", alignSelf: enabled ? "flex-end" : "flex-start", shadowColor: "#123", shadowOpacity: 0.14, shadowRadius: 3, elevation: 1 }} /></View></Pressable>)}
               </View>
             </View>
           </>}
-          {expandedMap ? <View style={{ height: mapHeight }} /> : <LocationMap
+          {expandedMap ? <View style={{ height: mapHeight }} /> : <View style={{ position: "relative" }}>
+            <LocationMap
             points={mapPoints}
             height={mapHeight}
             zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"}
@@ -1428,7 +1502,12 @@ export function Explore({
             initialRegion={mapViewport.current}
             onViewportChange={setMapViewport}
             bounds={ILIGAN_MAP_BOUNDS}
-          />}
+            />
+            <View pointerEvents="none" style={{ position: "absolute", left: 10, right: 105, bottom: 8, gap: 1 }}>
+              <Text numberOfLines={1} accessibilityLiveRegion="polite" style={{ color: "white", fontSize: 11, fontWeight: "800", textShadowColor: "#0a2533", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>{mapQuery.isFetching ? "Updating…" : `${mapPoints.length} mapped reports`}</Text>
+              <Text numberOfLines={2} style={{ color: "white", fontSize: 10, fontWeight: "600", textShadowColor: "#0a2533", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 }}>{mapScope}</Text>
+            </View>
+          </View>}
           {showBarangayMap && <View style={[s.card, { gap: 10, padding: 13, borderRadius: 19, borderColor: "#dce9ed", shadowOpacity: 0.05 }]}>
             <View style={[s.row, { flexWrap: "nowrap", alignItems: "center", justifyContent: "space-between" }]}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}><View style={{ width: 32, height: 32, borderRadius: 11, backgroundColor: "#e1f5f2", alignItems: "center", justifyContent: "center" }}><Ionicons name="analytics-outline" size={17} color={colors.brand} /></View><View><Text style={[s.title, { fontSize: 14 }]}>Barangay reports</Text><Text style={[s.small, { fontSize: 10 }]}>{mappedBarangayReportCount} mapped · current filters</Text></View></View>
@@ -1531,22 +1610,22 @@ export function Explore({
           <View style={[s.card, { gap: 8, padding: 10, borderRadius: 20, borderColor: "#dce9ed", shadowOpacity: 0.045 }]} key={r.id}>
             <View style={{ flexDirection: "row", alignItems: "stretch", gap: 10 }}>
               <Pressable accessibilityRole="button" accessibilityLabel={`View photo and details for ${r.title}`} onPress={() => setSelectedListReportId(r.id)} style={({ pressed }) => [{ width: thumbnailWidth, height: thumbnailWidth, borderRadius: 15, overflow: "hidden", backgroundColor: categoryTone.background, borderWidth: 1, borderColor: `${categoryTone.foreground}24`, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.82 : 1 }]}>
-                {photoUrl && !failedPhotos[r.id] ? <PhotoViewer source={{ uri: photoUrl }} label={`${categoryDisplayName(categoryName)} report photo`} onError={() => setFailedPhotos((value) => ({ ...value, [r.id]: true }))} style={{ width: "100%", height: "100%", backgroundColor: "#eaf2f1" }} /> : <Ionicons name={categoryIconFor(categoryName)} size={31} color={categoryTone.foreground} />}
+                {photoUrl && !failedPhotos[r.id] ? <PhotoViewer source={{ uri: photoUrl }} label={`${categoryDisplayName(categoryName)} report photo`} onError={() => retryReportPhoto(r.id)} loadingTimeoutMs={15000} onLoadTimeout={() => retryReportPhoto(r.id)} style={{ width: thumbnailWidth, height: thumbnailWidth, backgroundColor: "#eaf2f1" }} /> : <Ionicons name={categoryIconFor(categoryName)} size={31} color={categoryTone.foreground} />}
                 <View pointerEvents="none" style={{ position: "absolute", right: 5, bottom: 5, width: 25, height: 25, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#ffffffed", borderWidth: 1, borderColor: "#e2eceb" }}><Ionicons name="location" size={14} color={colors.brand} /></View>
               </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`View public details for ${r.title}`} onPress={() => setSelectedListReportId(r.id)} style={({ pressed }) => [{ flex: 1, minWidth: 0, gap: 6, opacity: pressed ? 0.82 : 1 }]}>
+              <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                  <View style={{ maxWidth: "58%", minHeight: 24, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, borderRadius: 13, backgroundColor: categoryTone.background }}><Ionicons name={categoryIconFor(categoryName)} size={12} color={categoryTone.foreground} /><Text numberOfLines={1} style={{ color: categoryTone.foreground, fontSize: 10, fontWeight: "700" }}>{categoryDisplayName(categoryName)}</Text></View>
-                  <View style={{ maxWidth: "42%", paddingHorizontal: 8, paddingVertical: 5, borderRadius: 14, backgroundColor: statusTone.background }}><Text numberOfLines={1} style={{ color: statusTone.foreground, fontSize: 10, fontWeight: "700" }}>{reportStatusLabel(r.status)}</Text></View>
+                  <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 5 }}>
+                    <View style={{ maxWidth: "58%", minHeight: 24, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, borderRadius: 13, backgroundColor: categoryTone.background }}><Ionicons name={categoryIconFor(categoryName)} size={12} color={categoryTone.foreground} /><Text numberOfLines={1} style={{ color: categoryTone.foreground, fontSize: 10, fontWeight: "700" }}>{categoryDisplayName(categoryName)}</Text></View>
+                    <View style={{ maxWidth: "42%", paddingHorizontal: 8, paddingVertical: 5, borderRadius: 14, backgroundColor: statusTone.background }}><Text numberOfLines={1} style={{ color: statusTone.foreground, fontSize: 10, fontWeight: "700" }}>{reportStatusLabel(r.status)}</Text></View>
+                  </View>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`More options for ${r.title}`} onPress={() => setSelectedListReportId(r.id)} style={({ pressed }) => [{ width: 40, minHeight: 40, alignItems: "center", justifyContent: "center", borderRadius: 20, opacity: pressed ? 0.72 : 1 }]}><Ionicons name="ellipsis-vertical" size={18} color={colors.brandDark} /></Pressable>
                 </View>
-                <Text numberOfLines={2} style={[s.title, { fontSize: 14, lineHeight: 18 }]}>{r.title}</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}><Ionicons name="calendar-outline" size={13} color={colors.muted} /><Text numberOfLines={1} style={[s.small, { flex: 1, fontSize: 10 }]}>{new Date(r.created_at).toLocaleDateString()} · {barangays.find((b) => b.id === r.barangay_id)?.name ?? "Iligan City"}, Iligan</Text></View>
-                {photoCount > 0 && <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}><Ionicons name="image-outline" size={13} color={colors.muted} /><Text style={[s.small, { fontSize: 10 }]}>{photoCount} {photoCount === 1 ? "photo" : "photos"}</Text></View>}
-              </Pressable>
-            </View>
-            <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 7, paddingLeft: thumbnailWidth + 10 }}>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Show ${r.title} on map`} onPress={() => { setCategory(r.category_id); setBarangay(r.barangay_id); setSearch(""); setAppliedSearch(""); setMapStatus("all"); setRecentOnly(false); setNearbyRadius("0"); setSelectedReportId(r.id); setShowMap(true); }} style={({ pressed }) => [{ minHeight: 38, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 11, borderRadius: 20, backgroundColor: "#def6f3", opacity: pressed ? 0.8 : 1 }]}><Ionicons name="location" size={15} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 11, fontWeight: "700" }}>View on Map</Text></Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`More options for ${r.title}`} onPress={() => setSelectedListReportId(r.id)} style={({ pressed }) => [{ minWidth: 42, minHeight: 42, alignItems: "center", justifyContent: "center", borderRadius: 21, opacity: pressed ? 0.72 : 1 }]}><Ionicons name="ellipsis-vertical" size={18} color={colors.brandDark} /></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={`View public details for ${r.title}`} onPress={() => setSelectedListReportId(r.id)} style={({ pressed }) => [{ minWidth: 0, gap: 6, opacity: pressed ? 0.82 : 1 }]}>
+                  <Text numberOfLines={2} style={[s.title, { fontSize: 14, lineHeight: 18 }]}>{r.title}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}><View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 4 }}><Ionicons name="calendar-outline" size={13} color={colors.muted} /><Text numberOfLines={1} style={[s.small, { flex: 1, fontSize: 10 }]}>{new Date(r.created_at).toLocaleDateString()} · {barangays.find((b) => b.id === r.barangay_id)?.name ?? "Iligan City"}, Iligan</Text></View>{photoCount > 0 && <View style={{ flexShrink: 0, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 12, backgroundColor: "#f2f7f6" }}><Ionicons name="image-outline" size={12} color={colors.muted} /><Text style={[s.small, { fontSize: 10 }]}>{photoCount} {photoCount === 1 ? "photo" : "photos"}</Text></View>}</View>
+                </Pressable>
+              </View>
             </View>
           </View>
         );
@@ -1561,22 +1640,34 @@ export function Explore({
         </>
       )}
       </>}
-      <Modal visible={!!selectedListReport} animationType="slide" transparent onRequestClose={() => setSelectedListReportId(null)}>
+      <Modal visible={!!selectedListReport} animationType="slide" transparent onRequestClose={() => { setReportActionsOpen(false); setSelectedListReportId(null); }}>
         {selectedListReport && (() => {
           const categoryName = categories.find((item) => item.id === selectedListReport.category_id)?.name ?? "Community report";
           const tone = statusToneFor(selectedListReport.status);
           const photoUrl = reportPhotos.data?.urls[selectedListReport.id];
+          const isFollowing = follows.data?.some((item) => item.report_id === selectedListReport.id);
           return <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "#0a253344" }}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Close report details" onPress={() => setSelectedListReportId(null)} style={{ flex: 1 }} />
-            <View style={{ maxHeight: "82%", borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingBottom: 28, gap: 13, backgroundColor: "white" }}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}><Text style={[s.eyebrow, { color: colors.brand }]}>PUBLIC REPORT</Text><Pressable accessibilityRole="button" accessibilityLabel="Close report details" onPress={() => setSelectedListReportId(null)} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#f2f7f6" }}><Ionicons name="close" size={21} color={colors.brandDark} /></Pressable></View>
-              {photoUrl && !failedPhotos[selectedListReport.id] ? <PhotoViewer source={{ uri: photoUrl }} label={`${categoryDisplayName(categoryName)} report photo`} onError={() => setFailedPhotos((value) => ({ ...value, [selectedListReport.id]: true }))} style={{ width: "100%", height: 190, borderRadius: 17, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: "100%", height: 140, borderRadius: 17, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={48} color={categoryToneFor(categoryName).foreground} /></View>}
+            <Pressable accessibilityRole="button" accessibilityLabel="Close report details" onPress={() => { setReportActionsOpen(false); setSelectedListReportId(null); }} style={{ flex: 1 }} />
+            <View style={{ maxHeight: "82%", position: "relative", borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingBottom: 28, gap: 13, backgroundColor: "white" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}><Text style={[s.eyebrow, { color: colors.brand }]}>PUBLIC REPORT</Text><Pressable accessibilityRole="button" accessibilityLabel="Close report details" onPress={() => { setReportActionsOpen(false); setSelectedListReportId(null); }} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#f2f7f6" }}><Ionicons name="close" size={21} color={colors.brandDark} /></Pressable></View>
+              {photoUrl && !failedPhotos[selectedListReport.id] ? <PhotoViewer source={{ uri: photoUrl }} label={`${categoryDisplayName(categoryName)} report photo`} onError={() => retryReportPhoto(selectedListReport.id)} style={{ width: "100%", height: 190, borderRadius: 17, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: "100%", height: 140, borderRadius: 17, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={48} color={categoryToneFor(categoryName).foreground} /></View>}
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}><View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><Ionicons name={categoryIconFor(categoryName)} size={18} color={categoryToneFor(categoryName).foreground} /><Text style={[s.eyebrow, { flexShrink: 1 }]}>{categoryDisplayName(categoryName)}</Text></View><View style={{ borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: tone.background }}><Text style={{ color: tone.foreground, fontSize: 11, fontWeight: "700" }}>{label(selectedListReport.status)}</Text></View></View>
               <Text style={[s.title, { fontSize: 21, lineHeight: 27 }]}>{selectedListReport.title}</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="location-outline" size={18} color={colors.muted} /><Text style={[s.body, { flex: 1 }]}>{barangays.find((item) => item.id === selectedListReport.barangay_id)?.name ?? "Iligan City"} · approximate public location</Text></View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="calendar-outline" size={18} color={colors.muted} /><Text style={s.body}>{new Date(selectedListReport.created_at).toLocaleDateString()}</Text></View>
               <Text style={s.small}>Exact report locations and private descriptions are not shown in public details.</Text>
-              <View style={{ flexDirection: "row", gap: 9 }}><Pressable accessibilityRole="button" onPress={() => { const report = selectedListReport; setSelectedListReportId(null); setCategory(report.category_id); setBarangay(report.barangay_id); setSearch(""); setAppliedSearch(""); setMapStatus("all"); setRecentOnly(false); setNearbyRadius("0"); setSelectedReportId(report.id); setShowMap(true); }} style={{ flex: 1, minHeight: 48, borderRadius: 14, backgroundColor: "#eff6f4", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 }}><Ionicons name="map-outline" size={17} color={colors.brand} /><Text style={{ color: colors.brand, fontWeight: "700" }}>View on map</Text></Pressable><Pressable accessibilityRole="button" disabled={busy || follows.isPending || !!follows.error} onPress={() => void toggleFollow(selectedListReport.id)} style={{ flex: 1, minHeight: 48, borderRadius: 14, backgroundColor: colors.brand, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, opacity: busy || follows.isPending || !!follows.error ? 0.55 : 1 }}><Ionicons name={follows.data?.some((item) => item.report_id === selectedListReport.id) ? "bookmark" : "bookmark-outline"} size={17} color="white" /><Text style={{ color: "white", fontWeight: "700" }}>{follows.data?.some((item) => item.report_id === selectedListReport.id) ? "Following" : "Follow"}</Text></Pressable></View>
+              <View style={{ flexDirection: "row", gap: 7 }}>
+                <Pressable accessibilityRole="button" accessibilityLabel="View this report on the map" onPress={() => { const report = selectedListReport; setReportActionsOpen(false); setSelectedListReportId(null); setCategory(report.category_id); setBarangay(report.barangay_id); setSearch(""); setAppliedSearch(""); setMapStatus("all"); setRecentOnly(false); setNearbyRadius("0"); setSelectedReportId(report.id); setShowMap(true); }} style={{ flex: 1, minWidth: 0, minHeight: 48, paddingHorizontal: 4, borderRadius: 14, backgroundColor: "#eff6f4", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 }}><Ionicons name="map-outline" size={16} color={colors.brand} /><Text numberOfLines={1} style={{ color: colors.brand, fontSize: 11, fontWeight: "700" }}>View on map</Text></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={`View full details for ${selectedListReport.title}`} onPress={() => { const report = selectedListReport; setReportActionsOpen(false); setSelectedListReportId(null); onOpenReport(report); }} style={{ flex: 1, minWidth: 0, minHeight: 48, paddingHorizontal: 4, borderRadius: 14, backgroundColor: colors.brandSoft, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 }}><Ionicons name="document-text-outline" size={16} color={colors.brand} /><Text numberOfLines={1} style={{ color: colors.brand, fontSize: 11, fontWeight: "700" }}>View details</Text></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="More report actions" accessibilityState={{ expanded: reportActionsOpen }} onPress={() => setReportActionsOpen((open) => !open)} style={{ width: 48, minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#f2f7f6" }}><Ionicons name="ellipsis-horizontal" size={21} color={colors.brandDark} /></Pressable>
+              </View>
+              {reportActionsOpen && <>
+                <Pressable accessibilityRole="button" accessibilityLabel="Close report actions" onPress={() => setReportActionsOpen(false)} style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 5 }} />
+                <View style={{ position: "absolute", right: 20, bottom: 84, width: 188, padding: 6, borderRadius: 16, backgroundColor: "white", borderWidth: 1, borderColor: "#e1eceb", shadowColor: colors.brandDark, shadowOpacity: 0.15, shadowRadius: 14, elevation: 8, zIndex: 6 }}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={isFollowing ? "Unfollow this report" : "Follow this report"} disabled={busy || follows.isPending || !!follows.error} onPress={() => { setReportActionsOpen(false); void toggleFollow(selectedListReport.id); }} style={({ pressed }) => [{ minHeight: 48, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", gap: 9, opacity: busy || follows.isPending || !!follows.error ? 0.5 : 1 }, pressed && { backgroundColor: "#f2f8f7" }]}><Ionicons name={isFollowing ? "bookmark" : "bookmark-outline"} size={18} color={colors.brand} /><Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "700" }}>{isFollowing ? "Unfollow" : "Follow"}</Text></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Share this report" onPress={shareListReport} style={({ pressed }) => [{ minHeight: 48, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", gap: 9 }, pressed && { backgroundColor: "#f2f8f7" }]}><Ionicons name="share-social-outline" size={18} color={colors.brand} /><Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "700" }}>Share</Text></Pressable>
+                </View>
+              </>}
             </View>
           </View>;
         })()}

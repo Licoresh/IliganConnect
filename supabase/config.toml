@@ -3,8 +3,20 @@ project_id = "kbihklfbqhmtowcqojir"
 [auth]
 additional_redirect_urls = ["iliganconnect:///"]
 
+[auth.email]
+otp_length = 8
+otp_expiry = 3600
+
 [auth.email.template.confirmation]
 subject = "Your Iligan Connect email verification code"
+content_path = "./supabase/templates/confirm-sign-up.html"
+
+[auth.email.template.magic_link]
+subject = "Your Iligan Connect verification code"
+content_path = "./supabase/templates/confirm-sign-up.html"
+
+[auth.email.template.email_change]
+subject = "Confirm your Iligan Connect email change"
 content_path = "./supabase/templates/confirm-sign-up.html"
 
 [functions.reverse-geocode]

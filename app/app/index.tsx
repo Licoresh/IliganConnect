@@ -17,7 +17,7 @@ import {
   RefreshControl,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
@@ -110,6 +110,8 @@ export default function Home() {
     [authError, setAuthError] = useState(""),
     [page, setPage] = useState(0),
     [showAllCategories, setShowAllCategories] = useState(false),
+    [showAllReports, setShowAllReports] = useState(false),
+    [reportsReturnTab, setReportsReturnTab] = useState<"Home" | "Profile">("Home"),
     [barangaysOpen, setBarangaysOpen] = useState(false),
     [barangayBusy, setBarangayBusy] = useState(false),
     [barangayMessage, setBarangayMessage] = useState(""),
@@ -130,6 +132,10 @@ export default function Home() {
     if (tab === "Explore" && !selected) exploreScrollY.current = nextY;
     scroll.current?.scrollTo({ y: nextY, animated: false });
   }, [tab, selected]);
+  const scrollToPageTop = useCallback(() => {
+    mainScrollY.current = 0;
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  }, []);
   const onScrollToReportSection = useCallback((y: number) => {
     const nextY = Math.max(0, y);
     mainScrollY.current = nextY;
@@ -312,9 +318,11 @@ export default function Home() {
   const report = (id = "") => {
     setCategory(id);
     setSelected(null);
+    setShowAllReports(false);
     setTab("Report");
   };
   const homeReports = reportsQuery.data?.reports ?? [];
+  const navigationTab = showAllReports ? reportsReturnTab : tab;
   return (
     <SafeAreaView style={s.screen}>
       <View
@@ -339,7 +347,7 @@ export default function Home() {
         </View>
         <Pressable
           accessibilityLabel={q.data?.unreadCount ? `Notifications, ${q.data.unreadCount} unread` : "Notifications"}
-          accessibilityHint="Opens your notifications"
+          accessibilityHint="Opens notifications and marks current updates as read"
           accessibilityRole="button"
           accessibilityState={{ selected: tab === "Notifications" }}
           onPress={() => {
@@ -361,14 +369,25 @@ export default function Home() {
             <View
               style={{
                 position: "absolute",
-                right: 8,
-                top: 6,
-                width: 8,
-                height: 8,
-                backgroundColor: colors.brand,
-                borderRadius: 4,
+                right: 3,
+                top: 3,
+                minWidth: 19,
+                height: 19,
+                paddingHorizontal: 4,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#d93025",
+                borderRadius: 10,
+                borderWidth: 1.5,
+                borderColor: "white",
               }}
-            />
+              pointerEvents="none"
+              accessible={false}
+            >
+              <Text style={{ color: "white", fontSize: 10, lineHeight: 13, fontWeight: "800" }}>
+                {q.data.unreadCount > 99 ? "99+" : q.data.unreadCount}
+              </Text>
+            </View>
           )}
         </Pressable>
       </View>
@@ -379,7 +398,7 @@ export default function Home() {
         <ScrollView
           style={Platform.select({ web: { flex: 1, scrollPaddingBottom: 124 } })}
           ref={scroll}
-          scrollEnabled={!(tab === "Explore" && !selected && exploreMapGestureActive)}
+          scrollEnabled={Platform.OS === "android" || !(tab === "Explore" && !selected && exploreMapGestureActive)}
           onScroll={(event) => { mainScrollY.current = event.nativeEvent.contentOffset.y; if (tab === "Explore" && !selected) exploreScrollY.current = mainScrollY.current; }}
           scrollEventThrottle={16}
           contentContainerStyle={[s.scroll, tab === "Home" && { gap: 9, paddingTop: 12 }]}
@@ -416,6 +435,7 @@ export default function Home() {
                   <Explore
                     categories={q.data.categories}
                     barangays={q.data.barangays}
+                    myBarangayId={q.data.profile.barangay_id || ""}
                     onOpenReport={openExploreReport}
                     onMapGestureActiveChange={setExploreMapGestureActive}
                     onMapPageScroll={onMapPageScroll}
@@ -442,7 +462,6 @@ export default function Home() {
                     barangays={q.data.barangays}
                     initialCategory={category}
                     initialBarangay={q.data.profile.barangay_id || ""}
-                    onMapPageScroll={onMapPageScroll}
                     onScrollToReportSection={onScrollToReportSection}
                     onSaved={() => {
                       setTab("Home");
@@ -456,6 +475,7 @@ export default function Home() {
                     barangays={q.data.barangays}
                     categories={q.data.categories}
                     defaultBarangay={q.data.profile.barangay_id || ""}
+                    onPageNavigate={scrollToPageTop}
                     initialTab={communityInitialTab}
                     initialConsultationId={communityTarget.consultationId}
                     initialMeetingRequestId={communityTarget.meetingRequestId}
@@ -487,15 +507,24 @@ export default function Home() {
                   <ProfileForm
                     profile={q.data.profile}
                     barangays={q.data.barangays}
-                    onNavigate={(destination, communityTab) => {
+                    onPageNavigate={scrollToPageTop}
+                    onNavigate={(destination, communityTab, homePage) => {
                       if (communityTab) setCommunityInitialTab(communityTab);
                       if (destination === "Community") setCommunityTarget({});
-                      if (destination === "Home") setPage(0);
+                      if (destination === "Home") {
+                        setPage(0);
+                        setReportsReturnTab(homePage === "reports" ? "Profile" : "Home");
+                        setShowAllReports(homePage === "reports");
+                        scrollToPageTop();
+                      } else setShowAllReports(false);
                       setTab(destination);
                     }}
                   />
                 ) : (
                   <>
+                    {showAllReports ? (
+                      <Pressable accessibilityRole="button" accessibilityLabel={`Back to ${reportsReturnTab}`} onPress={() => { setShowAllReports(false); setPage(0); setTab(reportsReturnTab); scrollToPageTop(); }} style={({ pressed }) => [{ alignSelf: "flex-start", minHeight: 44, flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 12, borderRadius: 22, backgroundColor: "#def6f3" }, pressed && { opacity: 0.8 }]}><Ionicons name="arrow-back" size={17} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>Back to {reportsReturnTab}</Text></Pressable>
+                    ) : <>
                     <View style={{ minHeight: 120, justifyContent: "flex-end", paddingHorizontal: 3, paddingBottom: 4, overflow: "hidden" }}>
                       <View pointerEvents="none" style={{ position: "absolute", right: -14, top: -8, width: "108%", height: 150 }}>
                         <Image source={require("../assets/iligan-home-header.jpg")} accessible={false} resizeMode="cover" style={{ width: "100%", height: "100%" }} />
@@ -539,21 +568,24 @@ export default function Home() {
                         </Pressable>;
                       })}
                     </View>
-                    <View style={{ gap: 6, marginTop: 3 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 30 }}><Text style={{ color: "#12343d", fontSize: 14, fontWeight: "800", letterSpacing: -0.2 }}>From your community</Text><Pressable accessibilityRole="button" accessibilityLabel="View all announcements" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 3, paddingLeft: 8 }}><Text style={{ color: colors.brand, fontSize: 11, fontWeight: "700" }}>View all</Text><Ionicons name="chevron-forward" size={13} color={colors.brand} /></Pressable></View>
+                    <View style={{ gap: 8, marginTop: 3 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 34 }}><Text style={{ color: "#12343d", fontSize: 15, fontWeight: "800", letterSpacing: -0.2 }}>From your community</Text><Pressable accessibilityRole="button" accessibilityLabel="View all announcements" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 3, paddingLeft: 8 }}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "700" }}>View all</Text><Ionicons name="chevron-forward" size={14} color={colors.brand} /></Pressable></View>
                     {q.data.announcements.length ? q.data.announcements.map((a) => (
-                      <Pressable key={a.id} accessibilityRole="button" accessibilityLabel={`${a.kind}: ${a.title}. Open official update`} style={({ pressed }) => [{ minHeight: 60, flexDirection: "row", alignItems: "center", gap: 8, padding: 8, borderRadius: 15, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }, pressed && { opacity: 0.85, backgroundColor: "#f9fcfb" }]} onPress={() => { setSelectedAnnouncement(a.id); setTab("Announcements"); }}>
-                        <View style={{ width: compactPhone ? 34 : 38, height: compactPhone ? 34 : 38, borderRadius: 14, backgroundColor: "#e5f7f4", alignItems: "center", justifyContent: "center" }}><Ionicons name={a.kind.toLowerCase().includes("meeting") ? "calendar-outline" : "megaphone-outline"} size={18} color={colors.brand} /></View>
-                        <View style={{ flex: 1, minWidth: 0, gap: 1 }}><Text numberOfLines={1} style={{ color: "#008d86", fontSize: 8, lineHeight: 10, fontWeight: "800", letterSpacing: 0.7 }}>{a.kind.toUpperCase()}</Text><Text numberOfLines={2} style={{ color: "#10263f", fontSize: 11, lineHeight: 14, fontWeight: "700" }}>{a.title}</Text><Text style={{ color: "#5d7378", fontSize: 9, lineHeight: 11 }}>Read official update</Text></View>
+                      <Pressable key={a.id} accessibilityRole="button" accessibilityLabel={`${a.kind}: ${a.title}. Open official update`} style={({ pressed }) => [{ minHeight: 76, flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderRadius: 16, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }, pressed && { opacity: 0.85, backgroundColor: "#f9fcfb" }]} onPress={() => { setSelectedAnnouncement(a.id); setTab("Announcements"); }}>
+                        <View style={{ width: compactPhone ? 40 : 44, height: compactPhone ? 40 : 44, borderRadius: 15, backgroundColor: "#e5f7f4", alignItems: "center", justifyContent: "center" }}><Ionicons name={a.kind.toLowerCase().includes("meeting") ? "calendar-outline" : "megaphone-outline"} size={20} color={colors.brand} /></View>
+                        <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text numberOfLines={1} style={{ color: "#008d86", fontSize: 10, lineHeight: 12, fontWeight: "800", letterSpacing: 0.7 }}>{a.kind.toUpperCase()}</Text><Text numberOfLines={2} style={{ color: "#10263f", fontSize: 13, lineHeight: 16, fontWeight: "700" }}>{a.title}</Text><Text style={{ color: "#5d7378", fontSize: 11, lineHeight: 14 }}>Read official update</Text></View>
                         <Ionicons name="chevron-forward" size={16} color="#8499a8" />
                       </Pressable>
-                    )) : <View style={{ minHeight: 52, flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 14, paddingHorizontal: 10, backgroundColor: "white", borderWidth: 1, borderColor: "#e4eff0" }}><View style={{ width: 32, height: 32, borderRadius: 12, backgroundColor: "#e5f7f4", alignItems: "center", justifyContent: "center" }}><Ionicons name="megaphone-outline" size={16} color={colors.brand} /></View><View style={{ flex: 1, gap: 2 }}><Text style={{ color: "#12343d", fontSize: 11, fontWeight: "700" }}>No new community announcements.</Text><Text style={{ color: "#5d7378", fontSize: 10 }}>Check back for city and barangay updates.</Text></View></View>}
-                    <Pressable accessibilityRole="button" accessibilityLabel="View all official announcements" onPress={() => { setSelectedAnnouncement(null); setTab("Announcements"); }} style={({ pressed }) => [{ minHeight: 36, borderRadius: 18, backgroundColor: "#def6f3", alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 }, pressed && { opacity: 0.82 }]}><Ionicons name="megaphone-outline" size={13} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 10, fontWeight: "800" }}>All official announcements</Text><Ionicons name="chevron-forward" size={12} color={colors.brand} /></Pressable>
+                    )) : <View style={{ minHeight: 58, flexDirection: "row", alignItems: "center", gap: 9, borderRadius: 15, paddingHorizontal: 11, backgroundColor: "white", borderWidth: 1, borderColor: "#e4eff0" }}><View style={{ width: 36, height: 36, borderRadius: 13, backgroundColor: "#e5f7f4", alignItems: "center", justifyContent: "center" }}><Ionicons name="megaphone-outline" size={18} color={colors.brand} /></View><View style={{ flex: 1, gap: 2 }}><Text style={{ color: "#12343d", fontSize: 12, lineHeight: 15, fontWeight: "700" }}>No new community announcements.</Text><Text style={{ color: "#5d7378", fontSize: 11, lineHeight: 14 }}>Check back for city and barangay updates.</Text></View></View>}
                     </View>
-                    <View style={{ gap: 6 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 30 }}>
-                      <Text style={{ color: "#10263f", fontSize: 15, fontWeight: "800", letterSpacing: -0.2 }}>Your reports</Text>
-                      <Text accessibilityLiveRegion="polite" style={{ color: "#5d7378", fontSize: 10, fontWeight: "600" }}>{reportsQuery.data ? `${reportsQuery.data.count} total` : ""}</Text>
+                    </>}
+                    <View style={{ gap: 8 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 44, gap: 8 }}>
+                      <Text style={{ flex: 1, minWidth: 0, color: "#10263f", fontSize: 16, fontWeight: "800", letterSpacing: -0.2 }}>Your reports</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <Text accessibilityLiveRegion="polite" style={{ color: "#5d7378", fontSize: 11, fontWeight: "600" }}>{reportsQuery.data ? `${reportsQuery.data.count} total` : ""}</Text>
+                        {!showAllReports && <Pressable accessibilityRole="button" accessibilityLabel="View all your reports" onPress={() => { setPage(0); setReportsReturnTab("Home"); setShowAllReports(true); scrollToPageTop(); }} style={({ pressed }) => [{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 3, paddingLeft: 4 }, pressed && { opacity: 0.75 }]}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "700" }}>View all</Text><Ionicons name="chevron-forward" size={14} color={colors.brand} /></Pressable>}
+                      </View>
                     </View>
                     {reportsLoading ? <ListSkeleton variant="report" count={REPORT_PAGE_SIZE} label={`Loading report page ${page + 1}`} /> : reportsQuery.error ? (
                       <View style={s.card}><Text style={s.error}>Could not load your reports. {reportsQuery.error.message}</Text><Button secondary title="Retry reports" onPress={() => void reportsQuery.refetch()} /></View>
@@ -565,18 +597,18 @@ export default function Home() {
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel={`${r.title}, ${label(r.status)}, open report progress`}
-                          style={({ pressed }) => [{ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 8, padding: 7, borderRadius: 15, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }, pressed && { backgroundColor: "#f8fbf9", opacity: 0.9 }]}
+                          style={({ pressed }) => [{ minHeight: 88, flexDirection: "row", alignItems: "center", gap: 11, padding: 11, borderRadius: 16, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }, pressed && { backgroundColor: "#f8fbf9", opacity: 0.9 }]}
                           key={r.id}
                           onPress={() => { setReportReturnTab("Home"); setSelected(r); }}
                         >
-                          {reportPhotos.data?.urls[r.id] && !failedReportPhotos[r.id] ? <PhotoViewer source={{ uri: reportPhotos.data.urls[r.id] }} label={`${categoryName} report photo`} onError={() => setFailedReportPhotos((value) => ({ ...value, [r.id]: true }))} style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={21} color={categoryToneFor(categoryName).foreground} /></View>}
+                          {reportPhotos.data?.urls[r.id] && !failedReportPhotos[r.id] ? <PhotoViewer source={{ uri: reportPhotos.data.urls[r.id] }} label={`${categoryName} report photo`} onError={() => setFailedReportPhotos((value) => ({ ...value, [r.id]: true }))} style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: "#eaf2f1" }} /> : <View style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: categoryToneFor(categoryName).background, alignItems: "center", justifyContent: "center" }}><Ionicons name={categoryIconFor(categoryName)} size={26} color={categoryToneFor(categoryName).foreground} /></View>}
                           <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-                            <Text style={[s.title, { fontSize: 12, lineHeight: 15 }]} numberOfLines={2}>{r.title}</Text>
+                            <Text style={[s.title, { fontSize: 13, lineHeight: 16 }]} numberOfLines={2}>{r.title}</Text>
                             <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                               <View style={[s.statusBadge, { backgroundColor: tone.background }]}>
-                                <Text numberOfLines={1} style={{ color: tone.foreground, fontSize: 9, fontWeight: "700" }}>{label(r.status)}</Text>
+                                <Text numberOfLines={1} style={{ color: tone.foreground, fontSize: 10, fontWeight: "700" }}>{label(r.status)}</Text>
                               </View>
-                              <Text style={{ color: colors.muted, fontSize: 10 }}>{new Date(r.created_at).toLocaleDateString()}</Text>
+                              <Text style={{ color: colors.muted, fontSize: 11 }}>{new Date(r.created_at).toLocaleDateString()}</Text>
                             </View>
                           </View>
                           <Ionicons name="chevron-forward" size={18} color={colors.muted} />
@@ -584,11 +616,11 @@ export default function Home() {
                         );
                       })
                     ) : (
-                      <View style={{ minHeight: 58, flexDirection: "row", alignItems: "center", gap: 9, padding: 10, borderRadius: 15, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }}>
-                        <View style={{ width: 32, height: 32, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#f0f6f8" }}><Ionicons name="documents-outline" size={18} color="#3976a8" /></View>
+                      <View style={{ minHeight: 64, flexDirection: "row", alignItems: "center", gap: 9, padding: 11, borderRadius: 16, borderWidth: 1, borderColor: "#e4eff0", backgroundColor: "white" }}>
+                        <View style={{ width: 36, height: 36, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#f0f6f8" }}><Ionicons name="documents-outline" size={20} color="#3976a8" /></View>
                         <View style={{ flex: 1, gap: 2 }}>
-                          <Text style={{ color: "#12343d", fontSize: 11, lineHeight: 14, fontWeight: "700" }}>{page ? "No reports on this page." : "Your reports will appear here."}</Text>
-                          <Text style={{ color: "#5d7378", fontSize: 10, lineHeight: 13 }}>Once submitted, you can follow every recorded update.</Text>
+                          <Text style={{ color: "#12343d", fontSize: 12, lineHeight: 15, fontWeight: "700" }}>{page ? "No reports on this page." : "Your reports will appear here."}</Text>
+                          <Text style={{ color: "#5d7378", fontSize: 11, lineHeight: 14 }}>Once submitted, you can follow every recorded update.</Text>
                         </View>
                       </View>
                     )}
@@ -642,11 +674,12 @@ export default function Home() {
           <Pressable
             key={name}
             accessibilityRole="tab"
-            accessibilityState={{ selected: tab === name }}
-          style={[s.navItem, tab === name && s.navItemActive]}
+            accessibilityState={{ selected: navigationTab === name }}
+          style={[s.navItem, navigationTab === name && s.navItemActive]}
             onPress={() => {
-              if (tab === name && !selected) return;
+              if (tab === name && !selected && !(name === "Home" && showAllReports)) return;
               setSelected(null);
+              setShowAllReports(false);
               if (name === "Report") report();
               else {
                 if (name === "Community") { setCommunityInitialTab("consultations"); setCommunityTarget({}); }
@@ -655,17 +688,17 @@ export default function Home() {
             }}
           >
             {name === "Report" ? (
-              <View style={[s.navAction, tab === name && s.navActionActive]}>
+              <View style={[s.navAction, navigationTab === name && s.navActionActive]}>
                 <Ionicons name={icon} size={22} color="white" />
               </View>
             ) : (
               <Ionicons
                 name={icon}
                 size={22}
-                color={tab === name ? colors.brand : colors.muted}
+                color={navigationTab === name ? colors.brand : colors.muted}
               />
             )}
-            <Text style={[s.navText, tab === name && { color: colors.brand }]}>
+            <Text style={[s.navText, navigationTab === name && { color: colors.brand }]}>
               {name}
             </Text>
           </Pressable>
@@ -675,6 +708,7 @@ export default function Home() {
   );
 }
 function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRecoveryVerified: () => void }) {
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState("login"),
     [firstName, setFirstName] = useState(""),
     [middleName, setMiddleName] = useState(""),
@@ -810,12 +844,14 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
     } finally { setBusy(false); }
   }
   return (
-    <SafeAreaView edges={["top"]} style={[s.screen, { backgroundColor: colors.brandDark }]}>
-      <StatusBar style="light" />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1, backgroundColor: colors.paper }}
-      >
+    <View style={{ flex: 1, backgroundColor: "white" }}>
+      <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, height: insets.top, backgroundColor: colors.brandDark }} />
+      <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: "transparent" }}>
+        <StatusBar style="light" />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1, backgroundColor: colors.paper }}
+        >
         <ScrollView
           style={{ flex: 1, backgroundColor: colors.paper }}
           contentContainerStyle={s.authScroll}
@@ -1214,8 +1250,9 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
           </Text>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 function PasswordChange({ onDone }: { onDone?: () => void }) {
@@ -1265,11 +1302,13 @@ function PasswordChange({ onDone }: { onDone?: () => void }) {
 function ProfileForm({
   profile: p,
   barangays,
+  onPageNavigate,
   onNavigate,
 }: {
   profile: Profile;
   barangays: Lookup[];
-  onNavigate: (destination: "Home" | "Community", communityTab?: "consultations" | "meetings") => void;
+  onPageNavigate: () => void;
+  onNavigate: (destination: "Home" | "Community", communityTab?: "consultations" | "meetings", homePage?: "reports") => void;
 }) {
   const [profilePage, setProfilePage] = useState<"profile" | "settings" | "help">("profile"),
     [firstName, setFirstName] = useState(p.first_name || ""),
@@ -1292,7 +1331,15 @@ function ProfileForm({
     [photoMenu, setPhotoMenu] = useState(false),
     [photoBusy, setPhotoBusy] = useState(false),
     [signOutConfirm, setSignOutConfirm] = useState(false),
-    [signOutBusy, setSignOutBusy] = useState(false);
+    [signOutBusy, setSignOutBusy] = useState(false),
+    [currentEmailInput, setCurrentEmailInput] = useState(""),
+    [newEmailInput, setNewEmailInput] = useState(""),
+    [emailCode, setEmailCode] = useState(""),
+    [verifiedCurrentEmail, setVerifiedCurrentEmail] = useState(""),
+    [pendingEmail, setPendingEmail] = useState(""),
+    [emailStage, setEmailStage] = useState<"idle" | "verify-current" | "new" | "verify-new" | "verify-current-change">("idle"),
+    [emailBusy, setEmailBusy] = useState(false),
+    [emailResendSeconds, setEmailResendSeconds] = useState(0);
   const qc = useQueryClient();
   const writeLock = useRef(false);
   const photoLock = useRef(false);
@@ -1300,7 +1347,12 @@ function ProfileForm({
   const contentWidth = Math.min(screenWidth, 620) - 36;
   const compactProfile = contentWidth < 320;
   const wideProfile = contentWidth >= 500;
-  const avatarSize = compactProfile ? 82 : 96;
+  const avatarSize = wideProfile ? 108 : compactProfile ? 82 : 96;
+  useEffect(() => {
+    if (emailResendSeconds <= 0) return;
+    const timer = setTimeout(() => setEmailResendSeconds((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [emailResendSeconds]);
   useEffect(() => {
     if (Platform.OS === "web") return;
     let active = true;
@@ -1400,6 +1452,155 @@ function ProfileForm({
     } catch (error) {
       setMessage((error as Error).message || "Could not remove your profile photo. Please try again.");
     } finally { setPhotoBusy(false); photoLock.current = false; }
+  }
+
+  function clearEmailChange() {
+    setCurrentEmailInput("");
+    setNewEmailInput("");
+    setEmailCode("");
+    setVerifiedCurrentEmail("");
+    setPendingEmail("");
+    setEmailStage("idle");
+    setEmailResendSeconds(0);
+  }
+
+  function toggleProfileEditing() {
+    setMessage("");
+    if (!editing) {
+      setFirstName(p.first_name || "");
+      setMiddleName(p.middle_name || "");
+      setLastName(p.last_name || "");
+      setAge(p.age == null ? "" : String(p.age));
+      setPhone(p.phone || "");
+      setBarangay(p.barangay_id || "");
+      setEditing(true);
+      return;
+    }
+    setFirstName(p.first_name || "");
+    setMiddleName(p.middle_name || "");
+    setLastName(p.last_name || "");
+    setAge(p.age == null ? "" : String(p.age));
+    setPhone(p.phone || "");
+    setBarangay(p.barangay_id || "");
+    setEditing(false);
+    if (emailStage === "verify-new" || emailStage === "verify-current-change") {
+      setEmailCode("");
+      setMessage("Profile editing canceled. Your email change is still waiting for verification.");
+    } else {
+      clearEmailChange();
+    }
+  }
+
+  async function sendCurrentEmailCode() {
+    if (emailBusy || emailResendSeconds > 0) return;
+    const enteredEmail = currentEmailInput.trim().toLowerCase();
+    if (emailInputError(enteredEmail)) { setMessage(emailInputError(enteredEmail)); return; }
+    setEmailBusy(true);
+    setMessage("");
+    try {
+      const { data, error } = await db!.auth.getUser();
+      if (error) throw error;
+      if (data.user?.id !== p.id || !data.user.email) throw new Error("Your session changed. Sign in again to update your email.");
+      const accountEmail = data.user.email.trim().toLowerCase();
+      if (enteredEmail !== accountEmail) throw new Error("Enter the current email address on your account to continue.");
+      const { error: sendError } = await db!.auth.signInWithOtp({ email: data.user.email, options: { shouldCreateUser: false } });
+      if (sendError) throw sendError;
+      setVerifiedCurrentEmail(data.user.email);
+      setEmailCode("");
+      setEmailStage("verify-current");
+      setEmailResendSeconds(EMAIL_RESEND_INTERVAL_SECONDS);
+      setMessage("Verification code sent to your current email.");
+    } catch (error) {
+      setMessage((error as Error).message || "Could not send the verification code. Please try again.");
+    } finally { setEmailBusy(false); }
+  }
+
+  async function requestEmailChange() {
+    if (emailBusy || emailResendSeconds > 0) return;
+    const nextEmail = newEmailInput.trim().toLowerCase();
+    const problem = emailInputError(nextEmail);
+    if (problem) { setMessage(problem); return; }
+    if (nextEmail === verifiedCurrentEmail.trim().toLowerCase()) { setMessage("Choose an email address different from your current one."); return; }
+    setEmailBusy(true);
+    setMessage("");
+    try {
+      const { data, error } = await db!.auth.getUser();
+      if (error) throw error;
+      if (data.user?.id !== p.id || data.user.email?.trim().toLowerCase() !== verifiedCurrentEmail.trim().toLowerCase()) {
+        throw new Error("Your current email changed. Start the verification again.");
+      }
+      const { error: updateError } = await db!.auth.updateUser({ email: nextEmail });
+      if (updateError) throw updateError;
+      setPendingEmail(nextEmail);
+      setEmailCode("");
+      setEmailStage("verify-new");
+      setEmailResendSeconds(EMAIL_RESEND_INTERVAL_SECONDS);
+      setMessage("Confirmation codes sent. Confirm the new address and, if prompted, the code sent to your current email.");
+    } catch (error) {
+      setMessage((error as Error).message || "Could not start the email change. Please try again.");
+    } finally { setEmailBusy(false); }
+  }
+
+  async function resendEmailCode() {
+    if (emailBusy || emailResendSeconds > 0) return;
+    if (emailStage === "verify-current") return void sendCurrentEmailCode();
+    setEmailBusy(true);
+    setMessage("");
+    try {
+      const { error } = await db!.auth.resend({ type: "email_change", email: verifiedCurrentEmail });
+      if (error) throw error;
+      setEmailResendSeconds(EMAIL_RESEND_INTERVAL_SECONDS);
+      setEmailCode("");
+      setMessage("A new email-change code was sent.");
+    } catch (error) {
+      setMessage((error as Error).message || "Could not resend the code. Please try again shortly.");
+    } finally { setEmailBusy(false); }
+  }
+
+  async function verifyEmailCode() {
+    if (emailBusy) return;
+    if (!new RegExp(`^\\d{${EMAIL_OTP_LENGTH}}$`).test(emailCode)) { setMessage(`Enter the ${EMAIL_OTP_LENGTH}-digit code from your email.`); return; }
+    const verifyingCurrentAddress = emailStage === "verify-current";
+    const email = emailStage === "verify-new" ? pendingEmail : verifiedCurrentEmail;
+    setEmailBusy(true);
+    setMessage("");
+    try {
+      const { data, error } = await db!.auth.verifyOtp({ email, token: emailCode, type: verifyingCurrentAddress ? "email" : "email_change" });
+      if (error) throw error;
+      let verifiedUser = data.user;
+      if (!verifiedUser) {
+        const { data: current, error: currentError } = await db!.auth.getUser();
+        if (currentError) throw currentError;
+        verifiedUser = current.user;
+      }
+      if (verifiedUser?.id !== p.id) {
+        await db!.auth.signOut();
+        await qc.invalidateQueries({ queryKey: ["profile-auth", p.id] });
+        throw new Error("This code belongs to another account. Sign in to the correct account and try again.");
+      }
+      setEmailCode("");
+      setEmailResendSeconds(0);
+      if (verifyingCurrentAddress) {
+        setEmailStage("new");
+        setMessage("Current email verified. Enter the new email address below.");
+        return;
+      }
+      const { data: latest, error: latestError } = await db!.auth.getUser();
+      if (latestError) throw latestError;
+      if (latest.user?.id !== p.id) throw new Error("Your session changed. Sign in again to finish the email change.");
+      if (latest.user.email?.trim().toLowerCase() === pendingEmail.trim().toLowerCase()) {
+        clearEmailChange();
+        await qc.invalidateQueries({ queryKey: ["profile-auth", p.id] });
+        setMessage("Email address updated.");
+      } else if (emailStage === "verify-new") {
+        setEmailStage("verify-current-change");
+        setMessage("New email confirmed. Enter the code sent to your current email to finish the secure change.");
+      } else {
+        throw new Error("The email change is not complete yet. Check both inboxes for the remaining confirmation code.");
+      }
+    } catch (error) {
+      setMessage((error as Error).message || "Could not verify that code. Check it and try again.");
+    } finally { setEmailBusy(false); }
   }
 
   async function saveProfile() {
@@ -1523,7 +1724,7 @@ function ProfileForm({
   }
 
   const activityCards = [
-    { key: "reports", title: "Reports submitted", count: totals?.reports_submitted, icon: "document-text-outline" as const, tone: { background: "#e4f3ff", foreground: "#0875d1" }, action: () => onNavigate("Home") },
+    { key: "reports", title: "Reports submitted", count: totals?.reports_submitted, icon: "document-text-outline" as const, tone: { background: "#e4f3ff", foreground: "#0875d1" }, action: () => onNavigate("Home", undefined, "reports") },
     { key: "discussions", title: "My discussions", count: totals?.discussions, icon: "chatbubble-ellipses-outline" as const, tone: { background: "#edf0ff", foreground: "#435fce" }, action: () => onNavigate("Community", "consultations") },
     { key: "meetings", title: "Meeting requests", count: totals?.meeting_requests, icon: "calendar-outline" as const, tone: { background: "#e5f6f2", foreground: colors.brand }, action: () => onNavigate("Community", "meetings") },
   ];
@@ -1539,44 +1740,77 @@ function ProfileForm({
     { key: "community", title: "Join a discussion or request a meeting", bisayaTitle: "Apil sa panaghisgot o hangyo og meeting", icon: "chatbubbles-outline" as const, english: ["Open Community from the bottom menu.", "Choose a discussion or consultation to read and join. Keep comments respectful and do not post passwords, private addresses, or other sensitive details.", "To ask for an in-person conversation, open Meeting requests and submit what you want to discuss. The barangay will review the request and send meeting details when arranged."], bisaya: ["Ablihi ang Community sa ubos nga menu.", "Pilia ang panaghisgot o consultation nga gusto nimong basahon ug apilan. Magtinahuray sa comments ug ayaw pagbutang og password, pribadong adres, o sensitibong detalye.", "Kung gusto kag personal nga panagkita, ablihi ang Meeting requests ug isulat ang gusto nimong hisgotan. Susihon kini sa barangay ug ipadala ang detalye kung ma-arrange na ang meeting."] },
     { key: "announcements", title: "Read city and barangay announcements", bisayaTitle: "Pagbasa sa mga pahibalo sa siyudad ug barangay", icon: "megaphone-outline" as const, english: ["Open Announcements from Home or the Community area.", "Choose an announcement to read its details, date, and any attached image.", "Check back for schedule changes or new official information."], bisaya: ["Ablihi ang Announcements gikan sa Home o Community.", "Pilia ang pahibalo aron mabasa ang detalye, petsa, ug litrato kung naa.", "Balik-balik og tan-aw kung adunay kausaban sa iskedyul o bag-ong opisyal nga impormasyon."] },
   ];
+  const emailChangeSubtitle = emailStage === "verify-current" ? `Enter the code sent to ${verifiedCurrentEmail}.`
+    : emailStage === "new" ? "Your current email is verified. Enter the new address to continue."
+    : emailStage === "verify-new" ? `Enter the code sent to ${pendingEmail}.`
+    : emailStage === "verify-current-change" ? "Confirm the code sent to your current email to finish."
+    : "Verify your current email before requesting a change.";
+  const emailChangeSection = <View style={{ gap: 10, marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.line }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: "#e5f5f1", alignItems: "center", justifyContent: "center" }}><Ionicons name="mail-outline" size={18} color={colors.brand} /></View><View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={s.fieldLabel}>Change email address</Text><Text style={s.small}>{emailChangeSubtitle}</Text></View></View>
+    {emailStage === "idle" && <>
+      <Field label="Current email" required validationKind="email" placeholder="Enter your current email" value={currentEmailInput} onChangeText={setCurrentEmailInput} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" maxLength={254} />
+      <Button icon="mail-outline" loading={emailBusy} disabled={!!emailInputError(currentEmailInput)} title="Send code to current email" onPress={() => void sendCurrentEmailCode()} />
+    </>}
+    {emailStage === "verify-current" && <>
+      <Text style={s.body}>Enter the {EMAIL_OTP_LENGTH}-digit code sent to {verifiedCurrentEmail}.</Text>
+      <Field label="Verification code" required placeholder={`${EMAIL_OTP_LENGTH}-digit code`} value={emailCode} onChangeText={(value) => setEmailCode(value.replace(/\D/g, "").slice(0, EMAIL_OTP_LENGTH))} keyboardType="number-pad" autoComplete="one-time-code" maxLength={EMAIL_OTP_LENGTH} />
+      <Button icon="checkmark-circle-outline" loading={emailBusy} disabled={emailCode.length !== EMAIL_OTP_LENGTH} title="Verify current email" onPress={() => void verifyEmailCode()} />
+      <Button secondary loading={emailBusy} disabled={emailResendSeconds > 0} title={emailResendSeconds > 0 ? `Resend code in ${emailResendSeconds}s` : "Send another code"} onPress={() => void resendEmailCode()} />
+    </>}
+    {emailStage === "new" && <>
+      <Text style={s.body}>Current email verified: {verifiedCurrentEmail}</Text>
+      <Field label="New email" required validationKind="email" placeholder="Enter your new email" value={newEmailInput} onChangeText={setNewEmailInput} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" maxLength={254} />
+      <Button icon="send-outline" loading={emailBusy} disabled={!!emailInputError(newEmailInput) || newEmailInput.trim().toLowerCase() === verifiedCurrentEmail.trim().toLowerCase()} title="Send confirmation code" onPress={() => void requestEmailChange()} />
+    </>}
+    {(emailStage === "verify-new" || emailStage === "verify-current-change") && <>
+      <View style={{ padding: 10, borderRadius: 13, backgroundColor: "#eff8f6", flexDirection: "row", gap: 8, alignItems: "flex-start" }}><Ionicons name="information-circle-outline" size={18} color={colors.brand} /><Text style={[s.small, { flex: 1 }]}>{emailStage === "verify-new" ? <>Enter the code sent to <Text style={{ fontWeight: "700" }}>{pendingEmail}</Text>. If secure email change is enabled, a second code is also required from your current email.</> : <>The new email is confirmed. Enter the remaining code sent to <Text style={{ fontWeight: "700" }}>{verifiedCurrentEmail}</Text>.</>}</Text></View>
+      <Field label={emailStage === "verify-new" ? "New email verification code" : "Current email confirmation code"} required placeholder={`${EMAIL_OTP_LENGTH}-digit code`} value={emailCode} onChangeText={(value) => setEmailCode(value.replace(/\D/g, "").slice(0, EMAIL_OTP_LENGTH))} keyboardType="number-pad" autoComplete="one-time-code" maxLength={EMAIL_OTP_LENGTH} />
+      <Button icon="checkmark-circle-outline" loading={emailBusy} disabled={emailCode.length !== EMAIL_OTP_LENGTH} title={emailStage === "verify-new" ? "Verify new email" : "Finish email change"} onPress={() => void verifyEmailCode()} />
+      <Button secondary loading={emailBusy} disabled={emailResendSeconds > 0} title={emailResendSeconds > 0 ? `Resend code in ${emailResendSeconds}s` : "Send confirmation codes again"} onPress={() => void resendEmailCode()} />
+    </>}
+  </View>;
   return (
     <>
       {profilePage === "profile" && <>
-        <View style={{ height: wideProfile ? 182 : compactProfile ? 126 : 148, borderRadius: 22, backgroundColor: colors.brandDark, overflow: "hidden" }}>
-          <Image source={require("../assets/iligan-community-profile-header.jpg")} accessible={false} resizeMode="cover" style={{ position: "absolute", width: "100%", height: "100%" }} />
-          <View pointerEvents="none" style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "#063d4380" }} />
-          <View style={{ flex: 1, justifyContent: "flex-end", padding: 15 }}><View style={{ alignSelf: "flex-start", gap: 2, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: "#073f47cc" }}><Text style={{ color: "#a8eee3", fontSize: 9, fontWeight: "800", letterSpacing: 1.25 }}>ILIGAN CONNECT</Text><Text style={{ color: "white", fontSize: 12, fontWeight: "600" }}>Your community profile</Text></View></View>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "flex-end", gap: compactProfile ? 10 : 14, marginTop: -avatarSize * 0.48, paddingHorizontal: compactProfile ? 8 : 16 }}>
-          <View style={{ alignSelf: "flex-start", position: "relative", flexShrink: 0 }}>
-            <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Change profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2, borderWidth: 4, borderColor: colors.paper, backgroundColor: "#e2f4ee", alignItems: "center", justifyContent: "center", overflow: "hidden", shadowColor: colors.brandDark, shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }, pressed && { opacity: 0.82 }]}>
-              {avatar.data ? <Image source={{ uri: avatar.data }} accessibilityLabel="Your profile photo" resizeMode="cover" style={{ width: "100%", height: "100%" }} /> : <Text accessibilityLabel={`Avatar initials ${initials}`} style={{ color: colors.brand, fontSize: compactProfile ? 25 : 30, fontWeight: "800" }}>{initials}</Text>}
-              {photoBusy && <View style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center", backgroundColor: "#071b2770" }}><Ionicons name="hourglass-outline" size={20} color="white" /></View>}
-            </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Edit profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ position: "absolute", right: 0, bottom: 1, width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: colors.paper, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center", opacity: photoBusy ? 0.6 : pressed ? 0.75 : 1 }]}><Ionicons name="camera-outline" size={17} color="white" /></Pressable>
+        <View style={{ overflow: "hidden", borderRadius: 22, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.paper, shadowColor: colors.brandDark, shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 }}>
+          <View style={{ height: wideProfile ? 150 : compactProfile ? 112 : 130, overflow: "hidden", backgroundColor: colors.brandDark }}>
+            <Image source={require("../assets/iligan-community-profile-header.jpg")} accessible={false} resizeMode="cover" style={{ position: "absolute", width: "100%", height: "100%" }} />
+            <View pointerEvents="none" style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "#063d4375" }} />
+            <View style={{ paddingHorizontal: 16, paddingTop: 14, gap: 2 }}><Text style={{ color: "#c7f4e9", fontSize: 9, fontWeight: "800", letterSpacing: 1.4 }}>ILIGAN CONNECT</Text><Text style={{ color: "white", fontSize: 13, fontWeight: "700" }}>Resident profile</Text></View>
           </View>
-          <View style={{ flex: 1, minWidth: 0, gap: 5, paddingBottom: 4 }}>
-            <Text accessibilityRole="header" adjustsFontSizeToFit numberOfLines={2} style={{ color: colors.brandDark, fontSize: compactProfile ? 20 : wideProfile ? 25 : 23, lineHeight: compactProfile ? 24 : 29, fontWeight: "800", letterSpacing: -0.45 }}>{p.display_name.trim() || "Resident"}</Text>
-            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 5 }}><Ionicons name="location-outline" size={15} color={colors.brand} style={{ marginTop: 1 }} /><Text numberOfLines={2} style={[s.small, { flex: 1, minWidth: 0, fontSize: 11 }]}>{homeBarangay} · Iligan City</Text></View>
-            <View style={{ alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: "#e8f5f1" }}><Text style={{ color: colors.brand, fontSize: 10, fontWeight: "800" }}>{label(p.role)}</Text></View>
+          <View style={{ paddingHorizontal: compactProfile ? 12 : 16, paddingBottom: 14 }}>
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: compactProfile ? 10 : 14, marginTop: -Math.min(avatarSize * 0.34, 36) }}>
+              <View style={{ position: "relative", flexShrink: 0 }}>
+                <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Change profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2, borderWidth: 4, borderColor: colors.paper, backgroundColor: "#e2f4ee", alignItems: "center", justifyContent: "center", overflow: "hidden", shadowColor: colors.brandDark, shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }, pressed && { opacity: 0.82 }]}>
+                  {avatar.data ? <Image source={{ uri: avatar.data }} accessibilityLabel="Your profile photo" resizeMode="cover" style={{ width: "100%", height: "100%" }} /> : <Text accessibilityLabel={`Avatar initials ${initials}`} style={{ color: colors.brand, fontSize: compactProfile ? 25 : 30, fontWeight: "800" }}>{initials}</Text>}
+                  {photoBusy && <View style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, alignItems: "center", justifyContent: "center", backgroundColor: "#071b2770" }}><Ionicons name="hourglass-outline" size={20} color="white" /></View>}
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={p.avatar_path ? "Edit profile photo" : "Add profile photo"} disabled={photoBusy} onPress={() => setPhotoMenu(true)} style={({ pressed }) => [{ position: "absolute", right: 0, bottom: 1, width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: colors.paper, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center", opacity: photoBusy ? 0.6 : pressed ? 0.75 : 1 }]}><Ionicons name="camera-outline" size={17} color="white" /></Pressable>
+              </View>
+              <View style={{ flex: 1, minWidth: 0, gap: 6, paddingTop: Math.min(avatarSize * 0.34, 36) }}>
+                <Text accessibilityRole="header" adjustsFontSizeToFit numberOfLines={2} style={{ color: colors.brandDark, fontSize: compactProfile ? 19 : wideProfile ? 25 : 22, lineHeight: compactProfile ? 23 : 28, fontWeight: "800", letterSpacing: -0.4 }}>{p.display_name.trim() || "Resident"}</Text>
+                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 5 }}><Ionicons name="location-outline" size={15} color={colors.brand} style={{ marginTop: 1 }} /><Text numberOfLines={2} style={[s.small, { flex: 1, minWidth: 0, fontSize: 11 }]}>{homeBarangay} · Iligan City</Text></View>
+                <View style={{ alignSelf: "flex-start", paddingHorizontal: 9, paddingVertical: 4, borderRadius: 12, backgroundColor: "#e8f5f1" }}><Text style={{ color: colors.brand, fontSize: 10, fontWeight: "800" }}>{label(p.role)}</Text></View>
+              </View>
+            </View>
+            <View style={{ marginTop: 14 }}><Button icon={editing ? "close-outline" : "create-outline"} secondary={editing} disabled={busy || emailBusy} title={editing ? "Cancel editing" : "Edit profile"} onPress={toggleProfileEditing} /></View>
           </View>
         </View>
-        <View style={{ marginTop: 12, paddingHorizontal: compactProfile ? 8 : 16 }}><Button icon="create-outline" title={editing ? "Editing profile details" : "Edit profile"} onPress={() => { setMessage(""); setEditing(true); }} /></View>
       </>}
 
       {profilePage !== "profile" && <>
-        <AppBackNavigation label="Back to profile" onBack={() => setProfilePage("profile")} />
+        <AppBackNavigation label="Back to profile" onBack={() => { onPageNavigate(); setProfilePage("profile"); }} />
         <View style={{ gap: 4, paddingHorizontal: 2 }}>
           <Text accessibilityRole="header" style={s.heading}>{profilePage === "settings" ? "Settings" : "Help & support"}</Text>
           <Text style={s.subtitle}>{profilePage === "settings" ? "Choose how your account and updates work." : "Simple answers in English and Binisaya."}</Text>
         </View>
       </>}
 
-      {message && <View accessibilityRole="alert" style={{ flexDirection: "row", gap: 7, alignItems: "flex-start", padding: 10, borderRadius: 13, backgroundColor: /updated|removed|up to date|are on|are off|allowed/i.test(message) ? "#eff9f5" : "#fff2f0" }}><Ionicons name={/updated|removed|up to date|are on|are off|allowed/i.test(message) ? "checkmark-circle-outline" : "alert-circle-outline"} size={18} color={/updated|removed|up to date|are on|are off|allowed/i.test(message) ? colors.brand : "#a43d35"} /><Text style={{ flex: 1, color: /updated|removed|up to date|are on|are off|allowed/i.test(message) ? colors.brand : "#a43d35", fontSize: 12, lineHeight: 17 }}>{message}</Text></View>}
+      {message && <View accessibilityRole="alert" style={{ flexDirection: "row", gap: 7, alignItems: "flex-start", padding: 10, borderRadius: 13, backgroundColor: /updated|removed|up to date|are on|are off|allowed|verified|code.*sent|codes sent|confirmed|editing canceled|still waiting/i.test(message) ? "#eff9f5" : "#fff2f0" }}><Ionicons name={/updated|removed|up to date|are on|are off|allowed|verified|code.*sent|codes sent|confirmed|editing canceled|still waiting/i.test(message) ? "checkmark-circle-outline" : "alert-circle-outline"} size={18} color={/updated|removed|up to date|are on|are off|allowed|verified|code.*sent|codes sent|confirmed|editing canceled|still waiting/i.test(message) ? colors.brand : "#a43d35"} /><Text style={{ flex: 1, color: /updated|removed|up to date|are on|are off|allowed|verified|code.*sent|codes sent|confirmed|editing canceled|still waiting/i.test(message) ? colors.brand : "#a43d35", fontSize: 12, lineHeight: 17 }}>{message}</Text></View>}
 
       {profilePage === "profile" && <>
       <View style={{ gap: 8 }}>
-        <View style={{ minHeight: 38, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="person-circle-outline" size={21} color={colors.brand} /><Text style={[s.title, { flex: 1, marginBottom: 0 }]}>Personal details</Text><Pressable accessibilityRole="button" accessibilityLabel={editing ? "Cancel profile editing" : "Edit personal details"} onPress={() => { setMessage(""); if (editing) { setFirstName(p.first_name || ""); setMiddleName(p.middle_name || ""); setLastName(p.last_name || ""); setAge(p.age == null ? "" : String(p.age)); setPhone(p.phone || ""); setBarangay(p.barangay_id || ""); } setEditing(!editing); }} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 12, borderRadius: 13, backgroundColor: "#e8f7f3" }, pressed && { opacity: 0.75 }]}><Ionicons name={editing ? "close-outline" : "create-outline"} size={17} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>{editing ? "Cancel" : "Edit"}</Text></Pressable></View>
+        <View style={{ minHeight: 38, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="person-circle-outline" size={21} color={colors.brand} /><Text style={[s.title, { flex: 1, marginBottom: 0 }]}>Personal details</Text></View>
         <View style={[s.card, { padding: 12, gap: 0, borderRadius: 18 }]}>
           {editing ? <>
             <Field label="First name" required minLength={1} validationKind="name" hint="Use the name on your official records." placeholder="First name" value={firstName} onChangeText={setFirstName} maxLength={60} autoCapitalize="words" autoComplete="given-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
@@ -1584,8 +1818,9 @@ function ProfileForm({
             <Field label="Last name" required minLength={1} validationKind="name" error={fullNameTooLong ? "Use no more than 100 characters across all name fields." : undefined} placeholder="Last name" value={lastName} onChangeText={setLastName} maxLength={60} autoCapitalize="words" autoComplete="family-name" leading={<Ionicons name="person-outline" size={19} color={colors.brand} />} />
             <Field label="Age" validationKind="age" hint="Leave blank to keep the saved age. Only you and authorized city administrators can view it." placeholder="Age" value={age} onChangeText={(value) => setAge(value.replace(/\D/g, "").slice(0, 3))} error={age ? residentAgeError(age) || undefined : undefined} maxLength={3} keyboardType="number-pad" autoComplete="off" leading={<Ionicons name="calendar-outline" size={19} color={colors.brand} />} />
             <Field label="Mobile number (optional)" validationKind="phone" hint="Philippine mobile number, e.g. 0917 123 4567." placeholder="0917 123 4567" value={phone} onChangeText={setPhone} maxLength={24} keyboardType="phone-pad" autoComplete="tel" error={phone ? mobileInputError(phone) || undefined : undefined} leading={<Ionicons name="call-outline" size={19} color={colors.brand} />} />
-            <View style={{ gap: 7, marginTop: 3 }}><Text style={s.fieldLabel}>Your barangay</Text><Choices compact title="Choose a barangay" subtitle="Choose your home barangay for relevant local updates." sheetKind="barangay" items={barangays} value={barangay} onChange={setBarangay} leadingIcon="location-outline" /></View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 }}><Button grow secondary title="Cancel" disabled={busy} onPress={() => { setFirstName(p.first_name || ""); setMiddleName(p.middle_name || ""); setLastName(p.last_name || ""); setAge(p.age == null ? "" : String(p.age)); setPhone(p.phone || ""); setBarangay(p.barangay_id || ""); setEditing(false); setMessage(""); }} /><Button grow title="Save changes" loading={busy} disabled={!!namePartsProblem || !!ageProblem || !!mobileInputError(phone)} onPress={() => void saveProfile()} /></View>
+            <View style={{ gap: 7, marginTop: 3 }}><Text style={s.fieldLabel}>Your barangay</Text><Choices compact title="Choose a barangay" subtitle="Choose your home barangay for relevant local updates." sheetKind="barangay" items={barangays} value={barangay} onChange={setBarangay} leadingIcon="location-outline" myBarangayId={p.barangay_id || undefined} /></View>
+            {emailChangeSection}
+            <View style={{ marginTop: 12 }}><Button title="Save changes" loading={busy} disabled={emailBusy || !!namePartsProblem || !!ageProblem || !!mobileInputError(phone)} onPress={() => void saveProfile()} /></View>
           </> : <>
             <ProfileInfoRow icon="person-outline" label="Full name" value={p.display_name.trim() || "Not set"} />
             <ProfileInfoRow icon="calendar-outline" label="Age" value={p.age == null ? "Not provided" : String(p.age)} />
@@ -1594,6 +1829,7 @@ function ProfileForm({
             <ProfileInfoRow icon="mail-outline" label="Email address" value={userEmail} last />
           </>}
         </View>
+        {!editing && emailStage !== "idle" && <View style={[s.card, { padding: 12, gap: 0, borderRadius: 18 }]}>{emailChangeSection}</View>}
       </View>
       </>}
 
@@ -1629,10 +1865,19 @@ function ProfileForm({
       </View>
 
       <View style={[s.card, { padding: 8, gap: 2, borderRadius: 18 }]}>
-        <ProfileMenuRow icon="settings-outline" title="Settings" detail="Notifications, privacy and account security" onPress={() => { setMessage(""); setProfilePage("settings"); }} />
+        <ProfileMenuRow icon="settings-outline" title="Settings" detail="Notifications, privacy and account security" onPress={() => { onPageNavigate(); setMessage(""); setProfilePage("settings"); }} />
         <View style={{ height: 1, backgroundColor: colors.line, marginLeft: 49 }} />
-        <ProfileMenuRow icon="help-circle-outline" title="Help & support" detail="Step-by-step help in English and Bisaya" onPress={() => { setMessage(""); setProfilePage("help"); }} />
+        <ProfileMenuRow icon="help-circle-outline" title="Help & support" detail="Step-by-step help in English and Bisaya" onPress={() => { onPageNavigate(); setMessage(""); setProfilePage("help"); }} />
       </View>
+      <View style={{ gap: 8 }}>
+        <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="phone-portrait-outline" size={19} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>App version</Text></View>
+        <View style={[s.card, { minHeight: 68, flexDirection: "row", alignItems: "center", gap: 11, padding: 12, borderRadius: 18 }]}>
+          <View style={{ width: 42, height: 42, borderRadius: 15, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name="layers-outline" size={20} color={colors.brand} /></View>
+          <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={{ color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>Iligan Connect</Text><Text style={s.small}>Installed app version</Text></View>
+          <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: "#e5f6f2" }}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "800" }}>v{version}</Text></View>
+        </View>
+      </View>
+      <Pressable accessibilityRole="button" onPress={() => setSignOutConfirm(true)} style={({ pressed }) => [{ minHeight: 52, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, borderRadius: 15, borderWidth: 1, borderColor: "#f1d9d7", backgroundColor: "white" }, pressed && { opacity: 0.78 }]}><Ionicons name="log-out-outline" size={20} color="#ad403d" /><Text style={{ flex: 1, color: "#ad403d", fontSize: 14, fontWeight: "800" }}>Sign out</Text><Ionicons name="chevron-forward" size={17} color={colors.muted} /></Pressable>
       </>}
 
       {profilePage === "settings" && <>
@@ -1664,12 +1909,6 @@ function ProfileForm({
         </View>
       </View>
 
-      <View style={{ gap: 8 }}>
-        <View style={{ minHeight: 32, flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="information-circle-outline" size={20} color={colors.brand} /><Text style={[s.title, { marginBottom: 0 }]}>About Iligan Connect</Text></View>
-        <View style={[s.card, { flexDirection: "row", alignItems: "center", gap: 11, padding: 13, borderRadius: 18 }]}><View style={{ width: 42, height: 42, borderRadius: 15, backgroundColor: "#e5f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name="leaf-outline" size={20} color={colors.brand} /></View><View style={{ flex: 1, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 14, fontWeight: "800" }}>Iligan Connect</Text><Text style={s.small}>A cleaner · safer · stronger Iligan</Text></View><Text style={[s.small, { fontWeight: "700" }]}>v{version}</Text></View>
-      </View>
-
-      <Pressable accessibilityRole="button" onPress={() => setSignOutConfirm(true)} style={({ pressed }) => [{ minHeight: 52, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, borderRadius: 15, borderWidth: 1, borderColor: "#f1d9d7", backgroundColor: "white" }, pressed && { opacity: 0.78 }]}><Ionicons name="log-out-outline" size={20} color="#ad403d" /><Text style={{ flex: 1, color: "#ad403d", fontSize: 14, fontWeight: "800" }}>Sign out</Text><Ionicons name="chevron-forward" size={17} color="#ad403d" /></Pressable>
       </>}
 
       {profilePage === "help" && <View style={{ gap: 10 }}>
@@ -1771,6 +2010,21 @@ function NotificationCenter({
   const [page, setPage] = useState(0);
   const [filterOpen, setFilterOpen] = useState(false);
   const qc = useQueryClient();
+  useEffect(() => {
+    let active = true;
+    void result(
+      db!.from("notifications")
+        .update({ read_at: new Date().toISOString() })
+        .eq("user_id", profileId)
+        .is("read_at", null),
+    ).then(() => Promise.all([
+      qc.invalidateQueries({ queryKey: ["home"] }),
+      qc.invalidateQueries({ queryKey: ["notifications", profileId] }),
+    ])).catch((error) => {
+      if (active) setMessage((error as Error).message);
+    });
+    return () => { active = false; };
+  }, [profileId, qc]);
   const q = useQuery({
     queryKey: ["notifications", profileId, filter, page],
     refetchInterval: 30_000,

@@ -2,7 +2,7 @@ export const ANDROID_APK_ASSET = "Iligan-Connect-Resident.apk";
 const LATEST_MANIFEST = "https://github.com/Licoresh/IliganConnect/releases/latest/download/android-update.json";
 const RELEASE_PATH = "/Licoresh/IliganConnect/releases/download/";
 
-export type AndroidUpdate = { version: string; downloadUrl: string };
+export type AndroidUpdate = { version: string; downloadUrl: string; releaseNotes?: string[] };
 
 function versionParts(value: string): number[] | null {
   const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(value);
@@ -20,12 +20,15 @@ export function isNewerVersion(candidate: string, installed: string): boolean {
 
 export function availableAndroidUpdate(release: unknown, installed: string): AndroidUpdate | null {
   if (!release || typeof release !== "object") return null;
-  const data = release as { version?: unknown; downloadUrl?: unknown };
+  const data = release as { version?: unknown; downloadUrl?: unknown; releaseNotes?: unknown };
   if (typeof data.version !== "string" || !isNewerVersion(data.version, installed) || typeof data.downloadUrl !== "string") return null;
   try {
     const url = new URL(data.downloadUrl);
     if (url.protocol !== "https:" || url.hostname !== "github.com" || url.pathname !== `${RELEASE_PATH}v${data.version}/${ANDROID_APK_ASSET}`) return null;
-    return { version: data.version, downloadUrl: url.toString() };
+    const releaseNotes = Array.isArray(data.releaseNotes)
+      ? data.releaseNotes.slice(0, 8).flatMap((note) => typeof note === "string" && note.trim() ? [note.trim().slice(0, 180)] : [])
+      : [];
+    return { version: data.version, downloadUrl: url.toString(), ...(releaseNotes.length ? { releaseNotes } : {}) };
   } catch { return null; }
 }
 

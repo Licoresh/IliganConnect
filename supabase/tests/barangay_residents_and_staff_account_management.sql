@@ -68,12 +68,16 @@ select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000032'
 do $$
 declare result jsonb;
 begin
-  result := public.barangay_residents('', 'name', 0);
+  result := public.barangay_residents('account-resident-one@example.invalid', 'name', 0);
   if (result->>'total')::int<>1 or jsonb_array_length(result->'items')<>1 then
     raise exception 'TEST FAILED: barangay directory contains only residents in the assigned barangay';
   end if;
   if result->'items'->0->>'id'<>'10000000-0000-4000-8000-000000000034' then
     raise exception 'TEST FAILED: another barangay resident was returned';
+  end if;
+  result := public.barangay_residents('account-resident-two@example.invalid', 'name', 0);
+  if (result->>'total')::int<>0 or jsonb_array_length(result->'items')<>0 then
+    raise exception 'TEST FAILED: resident from another barangay was returned';
   end if;
 end$$;
 

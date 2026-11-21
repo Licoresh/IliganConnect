@@ -195,6 +195,10 @@ export function ReportForm({
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const desktopReport = Platform.OS === "web" && windowWidth >= 1200;
   const insets = useSafeAreaInsets();
+  const manualPinDialogHeight = Math.min(740, windowHeight - 48);
+  const manualPinMapHeight = desktopReport
+    ? Math.max(240, Math.min(500, manualPinDialogHeight - 230))
+    : Math.max(240, windowHeight - insets.top - insets.bottom - 174);
   const {
     control,
     handleSubmit,
@@ -851,16 +855,16 @@ export function ReportForm({
           </View>
         </>
       )}
-      {pinModalOpen && <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeManualPin}>
-        <View style={{ flex: 1, backgroundColor: "#f4f8f7" }}>
-          <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+      {pinModalOpen && <Modal visible animationType={desktopReport ? "fade" : "slide"} presentationStyle="fullScreen" onRequestClose={closeManualPin}>
+        <View style={desktopReport ? { flex: 1, justifyContent: "center", alignItems: "center", padding: 24, backgroundColor: "rgba(18, 52, 61, 0.48)" } : { flex: 1, backgroundColor: "#f4f8f7" }}>
+          <SafeAreaView style={desktopReport ? { flex: 0, width: Math.min(1100, windowWidth - 48), height: manualPinDialogHeight, backgroundColor: "#f4f8f7", borderRadius: 20, overflow: "hidden" } : { flex: 1 }} edges={["top", "bottom"]}>
             <View style={{ minHeight: 64, paddingHorizontal: 14, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 10 }}>
               <Pressable accessibilityRole="button" accessibilityLabel="Close pin map" onPress={closeManualPin} style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: "white", alignItems: "center", justifyContent: "center" }}><Ionicons name="close" size={23} color={colors.brandDark} /></Pressable>
               <View style={{ flex: 1, gap: 2 }}><Text style={[s.fieldLabel, { fontSize: 16 }]}>Pin the issue location</Text><Text style={s.small}>Tap the map to place your pin.</Text></View>
             </View>
             <View style={{ flex: 1, minHeight: 260, marginHorizontal: 12, marginVertical: 6, borderRadius: 18, overflow: "hidden", backgroundColor: "#e8f1ee" }}>
               <LocationMap
-                height={Math.max(240, windowHeight - insets.top - insets.bottom - 174)}
+                height={manualPinMapHeight}
                 point={manualPin ? { ...manualPin, barangayName: manualPinResolution?.barangayName } : undefined}
                 pointLabel={manualPinResolution ? manualPinResolution.exact ? manualPinResolution.barangayName : `Near ${manualPinResolution.barangayName}` : undefined}
                 showPointCoordinates={false}

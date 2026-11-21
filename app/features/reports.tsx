@@ -602,26 +602,26 @@ export function ReportForm({
         </View>
       ) : (
         <>
-          <View onLayout={(event) => { sectionPositions.current.header = event.nativeEvent.layout.y; }} style={desktopReport ? { flexDirection: "row", alignItems: "flex-start", gap: 30, padding: 24, borderWidth: 1, borderColor: "#dfe9e6", borderRadius: 14, backgroundColor: "white" } : { gap: 0 }}>
-          <View style={desktopReport ? { width: 205, flexShrink: 0, gap: 5, paddingTop: 2 } : { position: "relative", flexDirection: "row", paddingVertical: 2, marginBottom: 0 }}>
-            <View pointerEvents="none" style={{ position: "absolute", top: 17, left: "16.67%", right: "16.67%", height: 4, borderRadius: 2, backgroundColor: "#e3ebf2", display: desktopReport ? "none" : "flex" }}>
-              <View style={{ width: `${step * 50}%`, height: "100%", borderRadius: 2, backgroundColor: colors.brand }} />
+          <View onLayout={(event) => { sectionPositions.current.header = event.nativeEvent.layout.y; }} style={desktopReport ? { flexDirection: "column", alignItems: "stretch", gap: 22, padding: 24, borderWidth: 1, borderColor: "#dfe9e6", borderRadius: 14, backgroundColor: "white" } : { gap: 0 }}>
+          <View style={desktopReport ? { position: "relative", flexDirection: "row", width: "100%", maxWidth: 900, alignSelf: "center", paddingVertical: 2 } : { position: "relative", flexDirection: "row", paddingVertical: 2, marginBottom: 0 }}>
+            <View pointerEvents="none" style={{ position: "absolute", top: 17, left: "16.67%", right: "16.67%", height: 4, borderRadius: 2, backgroundColor: "#e3ebf2" }}>
+              <View style={{ width: `${step * (desktopReport ? 100 / 3 : 50)}%`, height: "100%", borderRadius: 2, backgroundColor: colors.brand }} />
             </View>
             {["Details", "Location", "Review"].map((title, i) => <Pressable key={title} accessibilityRole="tab" accessibilityState={{ selected: step === i, disabled: busy }} disabled={busy} onPress={() => {
               if (i === 2) void reviewReport();
               else if (i === 1 && step === 0) void continueToLocation();
               else navigateToStep(i as 0 | 1, i === 0 ? "details" : "location");
-            }} style={desktopReport ? { minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 12, paddingHorizontal: 8, borderRadius: 9, backgroundColor: step === i ? "#eaf7f4" : "transparent" } : { flex: 1, minHeight: 66, alignItems: "center", gap: 5 }}>
+            }} style={desktopReport ? { flex: 1, minWidth: 0, minHeight: 66, alignItems: "center", gap: 5 } : { flex: 1, minHeight: 66, alignItems: "center", gap: 5 }}>
               <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: i <= step ? colors.brand : colors.warmSurface, borderWidth: i === step ? 2 : 0, borderColor: colors.mint }}>
                 {i < step ? <Ionicons name="checkmark" size={19} color="white" /> : <Text style={{ color: i <= step ? "white" : colors.muted, fontSize: 14, fontWeight: "800" }}>{i + 1}</Text>}
               </View>
-              <View style={{ flex: 1, gap: 2 }}><Text style={{ textAlign: desktopReport ? "left" : "center", color: i <= step ? colors.brandDark : colors.muted, fontSize: 12, fontWeight: i === step ? "800" : "600" }}>{title}</Text>{desktopReport && <Text style={{ color: "#71858a", fontSize: 10 }}>{i === 0 ? "Issue details" : i === 1 ? "Pin the location" : "Check before sending"}</Text>}</View>
+              <View style={{ gap: 2, alignItems: "center" }}><Text style={{ textAlign: "center", color: i <= step ? colors.brandDark : colors.muted, fontSize: 12, fontWeight: i === step ? "800" : "600" }}>{title}</Text>{desktopReport && <Text style={{ textAlign: "center", color: "#71858a", fontSize: 10 }}>{i === 0 ? "Issue details" : i === 1 ? "Pin the location" : "Check before sending"}</Text>}</View>
             </Pressable>)}
           </View>
-          <View style={desktopReport ? { flex: 1, minWidth: 0, maxWidth: 900, gap: 13 } : { gap: 0 }}>
-          <Text style={s.eyebrow}>
+          <View style={desktopReport ? { width: "100%", alignSelf: "center", maxWidth: 900, gap: 13 } : { gap: 0 }}>
+          {!desktopReport && <Text style={s.eyebrow}>
             STEP {step + 1} OF 3 · {["DETAILS", "LOCATION", "REVIEW"][step]}
-          </Text>
+          </Text>}
           {step === 0 && (
             <View style={{ gap: 14 }} onLayout={(event) => { sectionPositions.current.details = event.nativeEvent.layout.y; }}>
               <Text style={s.subtitle}>

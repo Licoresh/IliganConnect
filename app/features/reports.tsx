@@ -605,7 +605,7 @@ export function ReportForm({
           <View onLayout={(event) => { sectionPositions.current.header = event.nativeEvent.layout.y; }} style={desktopReport ? { flexDirection: "column", alignItems: "stretch", gap: 22, padding: 24, borderWidth: 1, borderColor: "#dfe9e6", borderRadius: 14, backgroundColor: "white" } : { gap: 0 }}>
           <View style={desktopReport ? { position: "relative", flexDirection: "row", width: "100%", maxWidth: 900, alignSelf: "center", paddingVertical: 2 } : { position: "relative", flexDirection: "row", paddingVertical: 2, marginBottom: 0 }}>
             <View pointerEvents="none" style={{ position: "absolute", top: 17, left: "16.67%", right: "16.67%", height: 4, borderRadius: 2, backgroundColor: "#e3ebf2" }}>
-              <View style={{ width: `${step * (desktopReport ? 100 / 3 : 50)}%`, height: "100%", borderRadius: 2, backgroundColor: colors.brand }} />
+              <View style={{ width: `${step * 50}%`, height: "100%", borderRadius: 2, backgroundColor: colors.brand }} />
             </View>
             {["Details", "Location", "Review"].map((title, i) => <Pressable key={title} accessibilityRole="tab" accessibilityState={{ selected: step === i, disabled: busy }} disabled={busy} onPress={() => {
               if (i === 2) void reviewReport();

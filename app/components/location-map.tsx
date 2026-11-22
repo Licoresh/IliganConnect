@@ -69,7 +69,7 @@ const ReportPin = memo(function ReportPin({ selected, onPointPress, reportPopupB
     const timer = setTimeout(() => setTracking(false), 350);
     return () => clearTimeout(timer);
   }, [p.color, p.categoryName, selected]);
-  return (<Marker tracksViewChanges={tracking} coordinate={p} anchor={{ x: 0.5, y: 0.9 }} zIndex={selected ? 1003 : 1002} accessibilityLabel={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community report"}: ${p.title || "Reported issue"}`} onPress={() => onPointPress?.(p)}>
+  return (<Marker tracksViewChanges={tracking} coordinate={p} anchor={{ x: 0.5, y: 0.85 }} zIndex={selected ? 1003 : 1002} accessibilityLabel={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community report"}: ${p.title || "Reported issue"}`} onPress={() => onPointPress?.(p)}>
             <View style={{ width: 42, height: 46, alignItems: "center" }}>
               <View style={{ position: "absolute", top: 26, width: 11, height: 11, backgroundColor: pinColor, borderWidth: 1.5, borderColor: "white", transform: [{ rotate: "45deg" }] }} />
               {selected && <View style={{ position: "absolute", top: -3, width: 40, height: 40, borderRadius: 20, backgroundColor: `${pinColor}24` }} />}
@@ -103,8 +103,6 @@ export default function LocationMap({
   onPointPress,
   onDensityCellPress,
   selectedCellCount,
-  onLocate,
-  locating = false,
   userPoint,
   density = false,
   showPoints = true,
@@ -238,9 +236,9 @@ export default function LocationMap({
   const densityLayer = useMemo(() => density && reportCells.map((cell) => <Polygon
           key={`${cell.center.latitude}:${cell.center.longitude}`}
           coordinates={cell.bounds}
-          strokeColor={`${cell.color}bb`}
+          strokeColor="#ffffff"
           strokeWidth={1}
-          fillColor={`${cell.color}58`}
+          fillColor={`${cell.color}9e`}
           tappable
           onPress={() => onDensityCellPress?.(cell.count)}
         />), [density, reportCells, onDensityCellPress]);
@@ -261,11 +259,6 @@ export default function LocationMap({
   const zoom = (direction: 1 | -1) => map.current?.getCamera().then((camera) => {
     map.current?.animateCamera({ ...camera, zoom: Math.max(ILIGAN_CITY_MIN_MAP_ZOOM, Math.min(ILIGAN_CITY_MAX_MAP_ZOOM, (camera.zoom ?? 12) + direction)) }, { duration: 180 });
   });
-  const center = () => {
-    if (point) map.current?.animateToRegion({ ...point, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 250);
-    else if (points.length === 1) map.current?.animateToRegion({ ...points[0], latitudeDelta: 0.035, longitudeDelta: 0.035 }, 250);
-    else if (points.length > 1) map.current?.fitToCoordinates(points, { edgePadding: { top: 72, right: 64, bottom: 72, left: 64 }, animated: true });
-  };
   const zoomInto = (latitude: number, longitude: number, factor: number) => {
     const current = currentRegion.current;
     map.current?.animateToRegion({ latitude, longitude,
@@ -384,12 +377,13 @@ export default function LocationMap({
         </>}
       </View>}
       <View style={{ position: "absolute", right: mapStyleSelector === "tabs" ? 9 : 12, top: compactControls && mapStyleSelector === "tabs" && styleSelectorExpanded ? 56 : mapStyleSelector === "tabs" ? 9 : 12, width: compactControls ? 92 : undefined, flexDirection: compactControls ? "row" : "column", flexWrap: compactControls ? "wrap" : "nowrap", justifyContent: compactControls ? "space-between" : "flex-start", gap: compactControls ? 4 : mapStyleSelector === "tabs" ? 4 : 8 }}>
-        {([["add", () => zoom(1), "Zoom in"], ["remove", () => zoom(-1), "Zoom out"], [userPoint ? "locate" : "locate-outline", userPoint ? () => map.current?.animateToRegion({ ...userPoint, latitudeDelta: 0.035, longitudeDelta: 0.035 }, 250) : onLocate ?? center, userPoint ? "Recenter on my location" : "Find my location"], ...(mapStyleSelector === "menu" ? [["layers-outline", () => { setLocalBase(nextBase); onMapStyleChange?.(nextBase); }, `Change map layer to ${nextBase}`] as const] : []), ...(onExpand ? [["expand-outline", onExpand, "Expand map"] as const] : [])] as const).map(([icon, action, label]) => (
-          <Pressable key={label} accessibilityRole="button" accessibilityLabel={label === "Find my location" && locating ? "Finding your location" : label} disabled={label === "Find my location" && locating} onPress={action} style={{ width: compactControls ? 44 : mapStyleSelector === "tabs" ? 38 : 48, height: compactControls ? 44 : mapStyleSelector === "tabs" ? 38 : 48, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: "white", elevation: 3 }}>
+        {([["add", () => zoom(1), "Zoom in"], ["remove", () => zoom(-1), "Zoom out"], ...(mapStyleSelector === "menu" ? [["layers-outline", () => { setLocalBase(nextBase); onMapStyleChange?.(nextBase); }, `Change map layer to ${nextBase}`] as const] : []), ...(!compactControls && onExpand ? [["expand-outline", onExpand, "Expand map"] as const] : [])] as const).map(([icon, action, label]) => (
+          <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} onPress={action} style={{ width: compactControls ? 44 : mapStyleSelector === "tabs" ? 38 : 48, height: compactControls ? 44 : mapStyleSelector === "tabs" ? 38 : 48, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: "white", elevation: 3 }}>
             <Ionicons name={icon} size={19} color="#173b3a" />
           </Pressable>
         ))}
       </View>
+      {compactControls && onExpand && <Pressable accessibilityRole="button" accessibilityLabel="Expand map" onPress={onExpand} style={{ position: "absolute", right: 10, bottom: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: "white", elevation: 3 }}><Ionicons name="expand-outline" size={19} color="#173b3a" /></Pressable>}
       {onChoose && <View pointerEvents="none" style={{ position: "absolute", left: 12, bottom: 12, backgroundColor: "white", borderRadius: 12, paddingHorizontal: 11, paddingVertical: 8 }}><Text style={{ color: "#173b3a", fontSize: 12, fontWeight: "600" }}>Tap map or drag pin to set location</Text></View>}
     </View>
   );

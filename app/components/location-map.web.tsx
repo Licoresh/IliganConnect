@@ -82,8 +82,6 @@ export default function LocationMap({
   onOpenPointDetails,
   onClearPointSelection,
   onDensityCellPress,
-  onLocate,
-  locating = false,
   userPoint,
   density = false,
   showPoints = true,
@@ -145,13 +143,18 @@ export default function LocationMap({
   const maxBarangayDensity = useMemo(() => Math.max(0, ...iliganBarangayBoundaries.map((item) => barangayDensity(barangayCounts[barangayMapKey(item.properties.adm4_en)] ?? 0, barangayAreaKm2(item)))), [barangayCounts]);
   const base = mapStyle ?? localBase;
   const baseName = base === "map" ? "Map" : base === "terrain" ? "Terrain" : "Satellite";
+  const attribution = base === "map"
+    ? "© OpenStreetMap contributors"
+    : base === "terrain"
+      ? "Map data: © OpenStreetMap contributors, SRTM · Map style: © OpenTopoMap (CC-BY-SA)"
+      : "Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community";
   const chooseMapPoint = (latitude: number, longitude: number) => choose.current?.({ latitude, longitude });
   useEffect(() => {
     if (!container.current) return;
     maplibre.setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
     const m = new maplibre.Map({
       container: container.current,
-      attributionControl: { compact: true },
+      attributionControl: false,
       center: initialRegion ? [initialRegion.longitude, initialRegion.latitude] : [124.2452, 8.228],
       zoom: initialRegion ? Math.max(ILIGAN_CITY_MIN_MAP_ZOOM, Math.min(ILIGAN_CITY_MAX_MAP_ZOOM, Math.log2(360 / initialRegion.longitudeDelta))) : 11.2,
       minZoom: ILIGAN_CITY_MIN_MAP_ZOOM,
@@ -192,7 +195,7 @@ export default function LocationMap({
           { id: "topo", type: "raster", source: "topo", layout: { visibility: base === "terrain" ? "visible" : "none" } },
           { id: "imagery", type: "raster", source: "imagery", layout: { visibility: base === "satellite" ? "visible" : "none" } },
           { id: "report-density", type: "fill", source: "density", layout: { visibility: "none" }, paint: {
-            "fill-color": ["get", "color"], "fill-opacity": 0.4, "fill-outline-color": ["get", "color"],
+            "fill-color": ["get", "color"], "fill-opacity": 0.62, "fill-outline-color": "#ffffff",
           } },
           { id: "barangay-fill", type: "fill", source: "barangays", paint: { "fill-color": ["get", "fill"], "fill-opacity": ["get", "opacity"], "fill-outline-color": "#ffffff" } },
           { id: "barangay-outline", type: "line", source: "barangays", paint: { "line-color": ["case", ["get", "selected"], "#083f75", "#ffffff"], "line-width": ["case", ["get", "selected"], 3, 1.25], "line-opacity": 0.92 } },
@@ -351,7 +354,7 @@ export default function LocationMap({
       const iconName = isUser ? "locate" : categoryIconFor(p.categoryName || "");
       core.textContent = String.fromCodePoint(Number(Ionicons.glyphMap[iconName]));
       pin.append(body, core);
-      if (!isUser) {
+      if (!isUser && reportPopupBehavior !== "hidden") {
         const hover = document.createElement("span");
         hover.className = "report-map-pin__hover";
         const heading = document.createElement("strong");
@@ -376,7 +379,7 @@ export default function LocationMap({
           const current = map.current;
           if (current) {
             centerOnReport(current, p);
-            if (reportPopupBehavior !== "hidden" && reportPopup) {
+            if (reportPopup) {
               if (activeReportPopup.current?.popup !== reportPopup) activeReportPopup.current?.popup.remove();
               reportPopup.setLngLat([p.longitude, p.latitude]).addTo(current);
               activeReportPopup.current = { key: markerKey, popup: reportPopup };
@@ -628,6 +631,7 @@ export default function LocationMap({
             {(["map", "terrain", "satellite"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} accessibilityLabel={`${value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}${base === value ? ", selected" : ""}`} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); setStylePickerOpen(false); }} style={{ minHeight: 48, paddingHorizontal: 10, borderRadius: 9, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: base === value ? colors.brandSoft : colors.surface }}><Text style={{ color: base === value ? colors.brand : colors.muted, fontSize: 14, fontWeight: "700" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text>{base === value && <Ionicons name="checkmark" size={18} color={colors.brand} />}</Pressable>)}
           </View>}
         </View>
+        <Text pointerEvents="none" accessibilityLabel={`Map attribution: ${attribution}`} style={{ position: "absolute", left: 9, top: stylePickerOpen ? 224 : 62, maxWidth: compactControls ? 194 : 230, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, backgroundColor: "#fffffff2", color: "#425957", fontSize: 9, lineHeight: 12 } as never}>{attribution}</Text>
         {density && <View pointerEvents="none" style={{ position: "absolute", left: 10, bottom: 10, width: 194, maxWidth: "calc(100% - 20px)", borderRadius: 12, paddingHorizontal: 9, paddingVertical: 7, backgroundColor: "#ffffffed", boxShadow: "0 3px 12px #173b3a30" } as never}>
           {!points.length ? <Text style={{ color: "#526461", fontSize: 10, fontWeight: "700" }}>No matching reports</Text> : <>
             <Text style={{ color: "#173b3a", fontSize: 10, fontWeight: "800", marginBottom: 4 }}>Reports / 250 m cell</Text>
@@ -637,12 +641,9 @@ export default function LocationMap({
         </View>}
         <div style={{ position: "absolute", right: compactControls ? 8 : 12, top: compactControls ? 8 : 12, width: compactControls ? 92 : undefined, display: "flex", flexDirection: compactControls ? "row" : "column", flexWrap: compactControls ? "wrap" : "nowrap", justifyContent: compactControls ? "space-between" : "flex-start", gap: compactControls ? 4 : 8 }}>
           {[["Zoom in", "+", () => map.current?.zoomIn({ duration: 180 })], ["Zoom out", "−", () => map.current?.zoomOut({ duration: 180 })]].map(([label, icon, action]) => <button key={label as string} type="button" aria-label={label as string} onClick={action as () => void} style={{ width: compactControls ? 44 : 48, height: compactControls ? 44 : 48, border: 0, borderRadius: 14, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>{icon as string}</button>)}
-          <button type="button" aria-label={userPoint ? "Recenter on my location" : locating ? "Finding your location" : "Find my location"} disabled={locating} onClick={() => {
-            if (userPoint) map.current?.easeTo({ center: [userPoint.longitude, userPoint.latitude], zoom: 13, duration: 250 });
-            else onLocate?.();
-          }} style={{ width: compactControls ? 44 : 48, height: compactControls ? 44 : 48, border: 0, borderRadius: 14, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>◎</button>
-          {onExpand && <button type="button" aria-label="Expand map" onClick={onExpand} style={{ width: compactControls ? 44 : 48, height: compactControls ? 44 : 48, border: 0, borderRadius: 12, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer" }}>⛶</button>}
+          {!compactControls && onExpand && <button type="button" aria-label="Expand map" onClick={onExpand} style={{ width: 48, height: 48, border: 0, borderRadius: 12, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer" }}><Ionicons name="expand-outline" size={19} color="#12343d" /></button>}
         </div>
+        {compactControls && onExpand && <button type="button" aria-label="Expand map" onClick={onExpand} style={{ position: "absolute", right: 8, bottom: 8, width: 44, height: 44, border: 0, borderRadius: 12, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer" }}><Ionicons name="expand-outline" size={19} color="#12343d" /></button>}
       </div>
       {error && <Text>{error}</Text>}
       </View>

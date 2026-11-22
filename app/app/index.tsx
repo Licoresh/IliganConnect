@@ -403,6 +403,12 @@ export default function Home() {
     }
   }
   const chooseNavigationTab = (name: string) => {
+    mainScrollY.current = 0;
+    exploreScrollY.current = 0;
+    communityScrollY.current = null;
+    setExploreMapGestureActive(false);
+    scrollToPageTop();
+
     if (tab === name && !selected && !(name === "Home" && showAllReports)) return;
     setSelected(null);
     setShowAllReports(false);

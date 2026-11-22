@@ -36,16 +36,19 @@ function markerKindFor(name: string) {
 }
 
 async function addReportMarkerImages(target: maplibregl.Map) {
-  await Promise.all(Object.entries(markerKinds).map(([kind, marker]) => new Promise<void>((resolve, reject) => {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="88" height="112" viewBox="0 0 44 56"><path d="M22 54C19 48 5 33 5 22a17 17 0 1 1 34 0c0 11-14 26-17 32Z" fill="${marker.foreground}" stroke="#fff" stroke-width="2.5"/><circle cx="22" cy="22" r="11.5" fill="${marker.foreground}"/><g transform="translate(10 10)" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${marker.glyph}</g></svg>`;
+  const path = "M22 54C19 48 5 33 5 22a17 17 0 1 1 34 0c0 11-14 26-17 32Z";
+  await Promise.all(Object.entries(markerKinds).flatMap(([kind, marker]) => [false, true].map((selected) => new Promise<void>((resolve, reject) => {
+    const name = `report-${kind}${selected ? "-selected" : ""}`;
+    const outline = selected ? `<path d="${path}" fill="#f5b840" stroke="#f5b840" stroke-width="8"/>` : "";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="88" height="112" viewBox="0 0 44 56">${outline}<path d="${path}" fill="${marker.foreground}" stroke="#fff" stroke-width="2.5"/><circle cx="22" cy="22" r="11.5" fill="${marker.foreground}"/><g transform="translate(10 10)" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${marker.glyph}</g></svg>`;
     const image = new Image();
     image.onload = () => {
-      if (target.getStyle() && !target.hasImage(`report-${kind}`)) target.addImage(`report-${kind}`, image, { pixelRatio: 2 });
+      if (target.getStyle() && !target.hasImage(name)) target.addImage(name, image, { pixelRatio: 2 });
       resolve();
     };
     image.onerror = () => reject(new Error(`Could not load ${kind} map marker`));
     image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-  })));
+  }))));
 }
 
 function boundsForBoundary(feature: { geometry: { coordinates: number[][][] } }): [[number, number], [number, number]] {
@@ -170,18 +173,25 @@ export default function IssueMap({
     barangayPopup = useRef<maplibregl.Popup | null>(null),
     mapPickedBarangay = useRef(false),
     preserveBarangaySelectionOnPopupClose = useRef(false),
+    selectedMapPinId = useRef(""),
     reportListHeading = useRef<HTMLHeadingElement>(null),
     hoveredFeatureId = useRef<string | number | undefined>(undefined);
-  const openMapPopup = (targetMap: maplibregl.Map, location: maplibregl.LngLatLike, card: HTMLElement, handle: HTMLButtonElement) => {
+  const setSelectedMapPin = (targetMap: maplibregl.Map, id: string | null) => {
+    selectedMapPinId.current = id || "";
+    if (targetMap.getLayer("points-selected")) targetMap.setFilter("points-selected", ["==", ["get", "id"], id || ""]);
+  };
+  const openMapPopup = (targetMap: maplibregl.Map, location: maplibregl.LngLatLike, card: HTMLElement, handle: HTMLButtonElement, reportId?: string) => {
     const previous = activeMapPopup.current;
     if (previous) {
       if (previous === barangayPopup.current) preserveBarangaySelectionOnPopupClose.current = true;
       previous.remove();
     }
+    setSelectedMapPin(targetMap, reportId || null);
     const popup = createDraggableMapPopup(targetMap, location, card, handle);
     activeMapPopup.current = popup;
     popup.on("close", () => {
       if (activeMapPopup.current === popup) activeMapPopup.current = null;
+      if (reportId && selectedMapPinId.current === reportId) setSelectedMapPin(targetMap, null);
     });
     return popup;
   };
@@ -878,6 +888,31 @@ export default function IssueMap({
           "circle-stroke-color": "#fff",
         },
       });
+      m.addLayer(markersReady ? {
+        id: "points-selected",
+        type: "symbol",
+        source: "reports",
+        filter: ["==", ["get", "id"], ""],
+        layout: {
+          "icon-image": ["get", "selected_marker_icon"],
+          "icon-anchor": "bottom",
+          "icon-size": 0.9,
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+        paint: { "icon-opacity": 1 },
+      } : {
+        id: "points-selected",
+        type: "circle",
+        source: "reports",
+        filter: ["==", ["get", "id"], ""],
+        paint: {
+          "circle-color": ["get", "category_color"],
+          "circle-radius": 10,
+          "circle-stroke-width": 4,
+          "circle-stroke-color": "#f5b840",
+        },
+      });
       m.on("click", "points", (e) => {
         const f = e.features?.[0];
         if (!f || f.geometry.type !== "Point") return;
@@ -910,7 +945,7 @@ export default function IssueMap({
           setSelectedId(String(f.properties.id)),
         );
         node.append(header, categoryLabel, title, status, button);
-        openMapPopup(m, f.geometry.coordinates as [number, number], node, handle);
+        openMapPopup(m, f.geometry.coordinates as [number, number], node, handle, String(f.properties.id));
       });
       m.on("mouseenter", "points", () => { m.getCanvas().style.cursor = "pointer"; });
       m.on("mousemove", "points", (e) => {
@@ -954,7 +989,7 @@ export default function IssueMap({
           type: "Feature" as const,
           id: r.id,
           geometry: { type: "Point" as const, coordinates: [r.longitude, r.latitude] },
-          properties: { id: r.id, title: r.title, status: r.status, is_demo: r.is_demo, category: r.category_id, category_key: categoryKey, category_name: refs.categories.find((item) => item.id === r.category_id)?.name || "Other", marker_icon: `report-${categoryKey}`, category_color: markerKinds[categoryKey].foreground },
+          properties: { id: r.id, title: r.title, status: r.status, is_demo: r.is_demo, category: r.category_id, category_key: categoryKey, category_name: refs.categories.find((item) => item.id === r.category_id)?.name || "Other", marker_icon: `report-${categoryKey}`, selected_marker_icon: `report-${categoryKey}-selected`, category_color: markerKinds[categoryKey].foreground },
         };
       }),
     };
@@ -972,6 +1007,7 @@ export default function IssueMap({
     if (!ready || !map.current) return;
     const showReportLayers = mode === "map" || showIndividualBarangayPins;
     map.current.setLayoutProperty("points", "visibility", showReportLayers && showMarkers ? "visible" : "none");
+    map.current.setLayoutProperty("points-selected", "visibility", showReportLayers && showMarkers ? "visible" : "none");
     map.current.setLayoutProperty("heat", "visibility", mode === "map" && showHeat ? "visible" : "none");
     map.current.setLayoutProperty("barangay-fill", "visibility", mode === "barangays" && !!gis.data && (!selectedBarangayGis || showHeat) ? "visible" : "none");
     map.current.setFilter("barangay-fill", selectedBarangayGis ? ["==", ["get", "selected"], true] : null);

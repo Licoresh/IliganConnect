@@ -1538,7 +1538,7 @@ export function Explore({
         <>
           {mapQuery.error && <View style={s.card}><Text style={s.error}>Could not refresh map reports.</Text><Button secondary title="Retry map" loading={mapQuery.isFetching} onPress={() => void mapQuery.refetch()} /></View>}
           {!showBarangayMap && !desktopExplore && <>
-            <View style={{ gap: 10, marginTop: windowWidth < 768 ? 2 : 8, marginBottom: 10 }}>
+            <View style={{ gap: 10, marginTop: windowWidth < 768 ? 2 : 8, marginBottom: 2 }}>
               {mapReports.length > mapPoints.length && <Text style={s.small}>{mapReports.length - mapPoints.length} reports use manual addresses. Open List to view them.</Text>}
               {renderMapLayersControl()}
             </View>

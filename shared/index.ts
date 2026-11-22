@@ -1,3 +1,4 @@
+import polygonClipping, { type Polygon } from "polygon-clipping";
 import { z } from "zod";
 import { parseDecimal, textInputError } from "./validation";
 export { BARANGAY_GIS_CATEGORY_ZOOM, BARANGAY_TOTAL_ZOOM, INDIVIDUAL_REPORT_PIN_ZOOM, clusterReportsByCategory, clusterReportPinGroups, mapZoomFromLongitudeDelta, offsetMapCoordinate, separateNearbyMapPoints } from "./map-clusters";
@@ -171,7 +172,7 @@ export function reportScheduleLabel(value: string | null | undefined) {
   }).format(date);
 }
 
-export function reportScheduleDayReached(value: string | null | undefined, now = new Date()) {
+export function scheduledManilaDayReached(value: string | null | undefined, now = new Date()) {
   if (!value) return false;
   const scheduled = new Date(value);
   if (!Number.isFinite(scheduled.getTime()) || !Number.isFinite(now.getTime())) return false;
@@ -183,6 +184,10 @@ export function reportScheduleDayReached(value: string | null | undefined, now =
     return `${part("year")}-${part("month")}-${part("day")}`;
   };
   return dayKey(scheduled) <= dayKey(now);
+}
+
+export function reportScheduleDayReached(value: string | null | undefined, now = new Date()) {
+  return scheduledManilaDayReached(value, now);
 }
 
 export function consultationPhase(row: { status: string; opens_at: string; closes_at: string }, now = Date.now()) {
@@ -255,3 +260,113 @@ export const aggregateReportCells = <T extends ReportMapPoint>(points: T[]) => {
     };
   });
 };
+
+export type ReportHeatBoundary = { coordinates: number[][][] };
+type ReportHeatCell = {
+  count: number;
+  color: string;
+  center: ReportMapPoint;
+  bounds: ReportMapPoint[];
+  geometry: { type: "MultiPolygon"; coordinates: number[][][][] };
+};
+function heatPointInBoundary(point: [number, number], boundary: ReportHeatBoundary) {
+  const inRing = (ring: number[][]) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [x1, y1] = ring[j], [x2, y2] = ring[i];
+      const cross = (point[1] - y1) * (x2 - x1) - (point[0] - x1) * (y2 - y1);
+      if (Math.abs(cross) <= 1e-10 && point[0] >= Math.min(x1, x2) - 1e-10 && point[0] <= Math.max(x1, x2) + 1e-10 && point[1] >= Math.min(y1, y2) - 1e-10 && point[1] <= Math.max(y1, y2) + 1e-10) return true;
+      if ((y2 > point[1]) !== (y1 > point[1]) && point[0] < ((x1 - x2) * (point[1] - y2)) / (y1 - y2) + x2) inside = !inside;
+    }
+    return inside;
+  };
+  const [outer, ...holes] = boundary.coordinates;
+  return !!outer && inRing(outer) && !holes.some(inRing);
+}
+function nearestInteriorHeatPoint(point: ReportMapPoint, boundary: ReportHeatBoundary) {
+  const latMeters = 111_320;
+  const lonMeters = latMeters * Math.cos(point.latitude * Math.PI / 180);
+  const x = point.longitude * lonMeters, y = point.latitude * latMeters;
+  let nearestDistance = Infinity;
+  const candidates: { x: number; y: number; dx: number; dy: number; interiorSide: number }[] = [];
+  boundary.coordinates.forEach((ring, ringIndex) => {
+    let area = 0;
+    for (let index = 0; index < ring.length; index++) {
+      const [lonA, latA] = ring[index], [lonB, latB] = ring[(index + 1) % ring.length];
+      area += lonA * latB - lonB * latA;
+    }
+    const interiorSide = (area >= 0 ? 1 : -1) * (ringIndex === 0 ? 1 : -1);
+    for (let index = 0; index < ring.length; index++) {
+      const [lonA, latA] = ring[index], [lonB, latB] = ring[(index + 1) % ring.length];
+      const startX = lonA * lonMeters, startY = latA * latMeters;
+      const dx = (lonB - lonA) * lonMeters, dy = (latB - latA) * latMeters;
+      const lengthSquared = dx * dx + dy * dy;
+      if (!lengthSquared) continue;
+      const ratio = Math.max(0, Math.min(1, ((x - startX) * dx + (y - startY) * dy) / lengthSquared));
+      const edgeX = startX + ratio * dx, edgeY = startY + ratio * dy;
+      const distance = Math.hypot(x - edgeX, y - edgeY);
+      if (distance > nearestDistance + 1e-6) continue;
+      if (distance < nearestDistance - 1e-6) {
+        nearestDistance = distance;
+        candidates.length = 0;
+      }
+      candidates.push({ x: edgeX, y: edgeY, dx, dy, interiorSide });
+    }
+  });
+  for (const edge of candidates) {
+    const length = Math.hypot(edge.dx, edge.dy);
+    for (const offset of [1, 3, 10, 30]) {
+      const longitude = (edge.x - edge.dy / length * edge.interiorSide * offset) / lonMeters;
+      const latitude = (edge.y + edge.dx / length * edge.interiorSide * offset) / latMeters;
+      if (heatPointInBoundary([longitude, latitude], boundary)) return { point: { longitude, latitude }, distance: nearestDistance };
+    }
+  }
+  const edge = candidates[0];
+  return edge ? { point: { longitude: edge.x / lonMeters, latitude: edge.y / latMeters }, distance: nearestDistance } : null;
+}
+export function reportHeatCellsWithinBoundary<T extends ReportMapPoint>(points: T[], boundary?: ReportHeatBoundary | null): ReportHeatCell[] {
+  const edges = boundary?.coordinates.flatMap((ring) => ring.map((start, index) => {
+    const end = ring[(index + 1) % ring.length];
+    return [Math.min(start[0], end[0]), Math.min(start[1], end[1]), Math.max(start[0], end[0]), Math.max(start[1], end[1])];
+  }));
+  return aggregateReportCells(points).map((cell) => {
+    const ring = cell.bounds.map(({ longitude, latitude }) => [longitude, latitude] as [number, number]);
+    ring.push(ring[0]);
+    const [[west, south], , [east, north]] = ring;
+    const touchesBoundary = edges?.some(([w, s, e, n]) => w <= east && e >= west && s <= north && n >= south);
+    const coordinates = !boundary ? [[ring]] : touchesBoundary
+      ? polygonClipping.intersection([ring], boundary.coordinates as Polygon) as number[][][][]
+      : heatPointInBoundary([cell.center.longitude, cell.center.latitude], boundary) ? [[ring]] : [];
+    return { ...cell, geometry: { type: "MultiPolygon" as const, coordinates } };
+  }).filter((cell) => cell.geometry.coordinates.length > 0).sort((a, b) => b.count - a.count);
+}
+export function reportHeatCellsByBarangay<T extends ReportMapPoint>(points: T[], boundaries: ReportHeatBoundary[]): ReportHeatCell[] {
+  const regions = boundaries.map((boundary) => {
+    const ring = boundary.coordinates[0] ?? [];
+    return {
+      boundary,
+      west: Math.min(...ring.map(([longitude]) => longitude)),
+      east: Math.max(...ring.map(([longitude]) => longitude)),
+      south: Math.min(...ring.map(([, latitude]) => latitude)),
+      north: Math.max(...ring.map(([, latitude]) => latitude)),
+    };
+  });
+  const grouped = regions.map(() => [] as T[]);
+  for (const point of points) {
+    const index = regions.findIndex(({ boundary, west, east, south, north }) => point.longitude >= west && point.longitude <= east && point.latitude >= south && point.latitude <= north && heatPointInBoundary([point.longitude, point.latitude], boundary));
+    if (index >= 0) {
+      grouped[index].push(point);
+      continue;
+    }
+    let nearest = -1, nearestPoint: ReturnType<typeof nearestInteriorHeatPoint> = null;
+    for (let regionIndex = 0; regionIndex < regions.length; regionIndex++) {
+      const candidate = nearestInteriorHeatPoint(point, regions[regionIndex].boundary);
+      if (candidate && (!nearestPoint || candidate.distance < nearestPoint.distance)) {
+        nearest = regionIndex;
+        nearestPoint = candidate;
+      }
+    }
+    if (nearest >= 0 && nearestPoint) grouped[nearest].push({ ...point, ...nearestPoint.point });
+  }
+  return regions.flatMap(({ boundary }, index) => reportHeatCellsWithinBoundary(grouped[index], boundary));
+}

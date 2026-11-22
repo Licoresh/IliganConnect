@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "
 import MapView, { Callout, Marker, Polygon, type Region } from "react-native-maps";
 import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { aggregateReportCells, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, ILIGAN_CITY_MAX_MAP_ZOOM, ILIGAN_CITY_MIN_MAP_ZOOM, ILIGAN_MAP_BOUNDS, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
+import { reportHeatCellsByBarangay, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, ILIGAN_CITY_MAX_MAP_ZOOM, ILIGAN_CITY_MIN_MAP_ZOOM, ILIGAN_MAP_BOUNDS, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
 import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
 import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, PhotoViewer, colors } from "./ui";
 export { ILIGAN_MAP_BOUNDS };
@@ -69,7 +69,7 @@ const ReportPin = memo(function ReportPin({ selected, onPointPress, reportPopupB
     const timer = setTimeout(() => setTracking(false), 350);
     return () => clearTimeout(timer);
   }, [p.color, p.categoryName, selected]);
-  return (<Marker tracksViewChanges={tracking} coordinate={p} anchor={{ x: 0.5, y: 0.85 }} zIndex={selected ? 1003 : 1002} accessibilityLabel={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community report"}: ${p.title || "Reported issue"}`} onPress={() => onPointPress?.(p)}>
+  return (<Marker tracksViewChanges={tracking} coordinate={p} anchor={{ x: 0.5, y: 0.85 }} zIndex={selected ? 100000 : 1002} accessibilityLabel={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community report"}: ${p.title || "Reported issue"}`} onPress={() => onPointPress?.(p)}>
             <View style={{ width: 42, height: 46, alignItems: "center" }}>
               <View style={{ position: "absolute", top: 26, width: 11, height: 11, backgroundColor: pinColor, borderWidth: 1.5, borderColor: "white", transform: [{ rotate: "45deg" }] }} />
               {selected && <View style={{ position: "absolute", top: -3, width: 40, height: 40, borderRadius: 20, borderWidth: 3, borderColor: "#f5b840", backgroundColor: `${pinColor}18` }} />}
@@ -231,17 +231,18 @@ export default function LocationMap({
     const center = count ? barangayCenter(feature) : null;
     return center ? [{ ...center, name: feature.properties.adm4_en, count }] : [];
   }) : [], [showBarangayTotals, barangayCounts]);
-  const reportCells = useMemo(() => aggregateReportCells(reportPoints), [reportPoints]);
+  const reportCells = useMemo(() => reportHeatCellsByBarangay(reportPoints, iliganBarangayBoundaries.map((feature) => ({ coordinates: feature.geometry.coordinates }))), [reportPoints]);
   const maxBarangayDensity = useMemo(() => Math.max(0, ...iliganBarangayBoundaries.map((item) => barangayDensity(barangayCounts[barangayMapKey(item.properties.adm4_en)] ?? 0, barangayAreaKm2(item)))), [barangayCounts]);
-  const densityLayer = useMemo(() => density && reportCells.map((cell) => <Polygon
-          key={`${cell.center.latitude}:${cell.center.longitude}`}
-          coordinates={cell.bounds}
-          strokeColor="#ffffff"
-          strokeWidth={1}
-          fillColor={`${cell.color}9e`}
-          tappable
-          onPress={() => onDensityCellPress?.(cell.count)}
-        />), [density, reportCells, onDensityCellPress]);
+  const densityLayer = useMemo(() => density ? reportCells.flatMap((cell) => cell.geometry.coordinates.map((polygon, index) => <Polygon
+    key={`${cell.center.latitude}:${cell.center.longitude}:${index}`}
+    coordinates={polygon[0].map(([longitude, latitude]) => ({ latitude, longitude }))}
+    holes={polygon.slice(1).map((ring) => ring.map(([longitude, latitude]) => ({ latitude, longitude })))}
+    strokeColor="#ffffff"
+    strokeWidth={1}
+    fillColor={`${cell.color}9e`}
+    tappable
+    onPress={() => onDensityCellPress?.(cell.count)}
+  />)) : [], [density, reportCells, onDensityCellPress]);
   const barangayLayer = useMemo(() => showBarangayBoundaries && iliganBarangayBoundaries.map((feature) => {
     const name = feature.properties.adm4_en;
     const count = barangayCounts[barangayMapKey(name)] ?? 0;

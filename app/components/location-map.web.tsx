@@ -3,7 +3,7 @@ import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { MapProps, MapStyle, Point } from "./location-map";
 import * as maplibre from "maplibre-gl";
-import { aggregateReportCells, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, ILIGAN_CITY_MAX_MAP_ZOOM, ILIGAN_CITY_MIN_MAP_ZOOM, ILIGAN_MAP_BOUNDS, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
+import { reportHeatCellsByBarangay, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, ILIGAN_CITY_MAX_MAP_ZOOM, ILIGAN_CITY_MIN_MAP_ZOOM, ILIGAN_MAP_BOUNDS, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
 import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
 import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, colors } from "./ui";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -138,7 +138,7 @@ export default function LocationMap({
   const reportPoints = useMemo(() => points.filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180), [points]);
   const categoryClusters = useMemo(() => zoomBehavior === "barangay-gis" ? clusterReportsByCategory(reportPoints, zoomLevel) : [], [reportPoints, zoomLevel, zoomBehavior]);
   const showBarangayTotals = zoomBehavior === "barangay-gis" && showPoints && !showBarangayBoundaries && zoomLevel <= BARANGAY_TOTAL_ZOOM;
-  const reportCells = useMemo(() => aggregateReportCells(reportPoints), [reportPoints]);
+  const reportCells = useMemo(() => reportHeatCellsByBarangay(reportPoints, iliganBarangayBoundaries.map((feature) => ({ coordinates: feature.geometry.coordinates }))), [reportPoints]);
   const barangayCountsKey = useMemo(() => JSON.stringify([barangayCounts, selectedBarangayName, barangayMetric]), [barangayCounts, selectedBarangayName, barangayMetric]);
   const maxBarangayDensity = useMemo(() => Math.max(0, ...iliganBarangayBoundaries.map((item) => barangayDensity(barangayCounts[barangayMapKey(item.properties.adm4_en)] ?? 0, barangayAreaKm2(item)))), [barangayCounts]);
   const base = mapStyle ?? localBase;
@@ -260,10 +260,8 @@ export default function LocationMap({
   }, [base, density, ready, points.length, showBarangayBoundaries, zoomBehavior]);
   useEffect(() => {
     if (!ready || !map.current) return;
-    const cells: GeoJSON.FeatureCollection<GeoJSON.Polygon> = { type: "FeatureCollection", features: reportCells.map((cell) => ({
-      type: "Feature", geometry: { type: "Polygon", coordinates: [
-        [...cell.bounds.map(({ latitude, longitude }) => [longitude, latitude] as [number, number]), [cell.bounds[0].longitude, cell.bounds[0].latitude]],
-      ] }, properties: { count: cell.count, color: cell.color },
+    const cells: GeoJSON.FeatureCollection<GeoJSON.MultiPolygon> = { type: "FeatureCollection", features: reportCells.map((cell) => ({
+      type: "Feature", geometry: { type: "MultiPolygon", coordinates: cell.geometry.coordinates }, properties: { count: cell.count, color: cell.color },
     })) };
     (map.current.getSource("density") as maplibre.GeoJSONSource).setData(cells);
   }, [ready, reportCells]);
@@ -320,7 +318,7 @@ export default function LocationMap({
       pin.className = `report-map-pin${isUser ? " report-map-pin--you" : p.id === selectedPointId ? " report-map-pin--selected" : ""}`;
       if (p.id) pin.dataset.reportId = p.id;
       pin.setAttribute("aria-label", isUser ? "Your current location" : onChoose ? "Issue location. Drag to move the pin." : `Open report: ${p.title || "Community report"}${p.categoryName ? `, ${categoryDisplayName(p.categoryName)}` : ""}`);
-      pin.setAttribute("aria-haspopup", "dialog");
+      if (!isUser && reportPopupBehavior !== "hidden") pin.setAttribute("aria-haspopup", "dialog");
       const core = document.createElement("span");
       core.className = "report-map-pin__core";
       core.setAttribute("aria-hidden", "true");
@@ -343,6 +341,23 @@ export default function LocationMap({
       const iconName = isUser ? "locate" : categoryIconFor(p.categoryName || "");
       core.textContent = String.fromCodePoint(Number(Ionicons.glyphMap[iconName]));
       pin.append(body, core);
+      if (!isUser) {
+        pin.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          const current = map.current;
+          if (current) {
+            centerOnReport(current, p);
+            if (reportPopup) {
+              if (activeReportPopup.current?.popup !== reportPopup) activeReportPopup.current?.popup.remove();
+              reportPopup.setLngLat([p.longitude, p.latitude]).addTo(current);
+              activeReportPopup.current = { key: markerKey, popup: reportPopup };
+            }
+          }
+          pointPress.current?.(p);
+        });
+      }
       if (!isUser && reportPopupBehavior !== "hidden") {
         const hover = document.createElement("span");
         hover.className = "report-map-pin__hover";
@@ -361,21 +376,6 @@ export default function LocationMap({
           hover.append(sub);
         }
         pin.append(hover);
-        pin.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          event.stopImmediatePropagation();
-          const current = map.current;
-          if (current) {
-            centerOnReport(current, p);
-            if (reportPopup) {
-              if (activeReportPopup.current?.popup !== reportPopup) activeReportPopup.current?.popup.remove();
-              reportPopup.setLngLat([p.longitude, p.latitude]).addTo(current);
-              activeReportPopup.current = { key: markerKey, popup: reportPopup };
-            }
-          }
-          pointPress.current?.(p);
-        });
       }
       const marker = new maplibre.Marker({ element: pin, anchor: "bottom", draggable: p === point && !!onChoose })
         .setLngLat([p.longitude, p.latitude])
@@ -582,7 +582,7 @@ export default function LocationMap({
   return (
     <>
       <style>{`
-        .report-map-pin{position:relative;display:block;width:44px;height:47px;padding:0;border:0;border-radius:0;background:transparent;cursor:pointer;overflow:visible}
+        .report-map-pin{position:absolute;display:block;width:44px;height:47px;padding:0;border:0;border-radius:0;background:transparent;cursor:pointer;overflow:visible}
         .report-map-pin__body{position:absolute;left:4px;top:0;width:36px;height:48px;filter:drop-shadow(0 2px 3px #10263f99)}
         .report-map-cluster{position:relative;display:flex;align-items:center;justify-content:center;width:62px;height:46px;padding:0;border:0;background:transparent;cursor:pointer}
         .report-map-cluster__icons{display:flex;align-items:center;justify-content:center}
@@ -593,6 +593,7 @@ export default function LocationMap({
         .report-map-pin__label{position:absolute;left:50%;bottom:calc(100% + 4px);z-index:2;max-width:220px;overflow:hidden;padding:6px 9px;transform:translateX(-50%);border:1px solid #dce8e4;border-radius:12px;background:#fff;color:#173b3a;box-shadow:0 3px 10px #173b3a30;font:700 11px system-ui,sans-serif;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
         .report-map-pin__core{position:absolute;left:12px;top:8px;display:flex;width:20px;height:20px;align-items:center;justify-content:center;color:#fff;font:15px Ionicons,ionicons,sans-serif;box-sizing:border-box;pointer-events:none}
         .report-map-pin--you .report-map-pin__core{border-radius:50%;transform:none}
+        .report-map-pin--selected{z-index:10000!important}
         .report-map-pin--selected .report-map-pin__body{filter:drop-shadow(0 0 3px #f5b840) drop-shadow(0 2px 3px #10263f99)}
         .report-map-pin:focus-visible{outline:3px solid #f5b840;outline-offset:3px}
         .report-map-pin__hover{display:none;position:absolute;bottom:47px;left:50%;transform:translateX(-50%);width:180px;padding:10px;border-radius:12px;background:#fff;color:#12343d;box-shadow:0 3px 14px #173b3a33;text-align:left;font:12px/1.4 system-ui,sans-serif;pointer-events:none}

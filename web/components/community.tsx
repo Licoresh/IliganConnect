@@ -133,6 +133,15 @@ function MultiChoiceField({
 const localDate = (value?: string) => {
   return meetingDateTimeInput(value);
 };
+function manilaDateKey(value = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(value).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+function formatManilaDate(value: string) {
+  return new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
+}
 type MeetingInputErrorMode = "save" | "calendar";
 function getMeetingInputError(form: HTMLFormElement, mode: MeetingInputErrorMode) {
   const fields = new FormData(form);
@@ -163,6 +172,8 @@ function useSave() {
     message,
     failed,
     busy,
+    setMessage,
+    setFailed,
     run: async (
       p: PromiseLike<{ data: unknown; error: { message: string } | null }>,
       onError?: (message: string) => boolean | void,
@@ -1464,7 +1475,7 @@ function Meeting({
   officeIds: string[];
   onStatusChange: (status: { requestId: string; label: string; className: string }) => void;
 }) {
-  const { run, message, failed, busy } = useSave();
+  const { run, message, failed, busy, setMessage, setFailed } = useSave();
   const [meetingFormError, setMeetingFormError] = useState("");
   const [meetingDecisionError, setMeetingDecisionError] = useState("");
   const [meetingInputError, setMeetingInputError] = useState("");
@@ -1472,6 +1483,7 @@ function Meeting({
   const [activeSection, setActiveSection] = useState<MeetingSection>("overview");
   const [venueType, setVenueType] = useState<"venue" | "online">("venue");
   const [meetingCompleted, setMeetingCompleted] = useState(false);
+  const [actionNow, setActionNow] = useState(() => Date.now());
   const [barangayInvite, setBarangayInvite] = useState("");
   const [barangayInviteOpen, setBarangayInviteOpen] = useState(false);
   const q = useQuery({
@@ -1549,6 +1561,14 @@ function Meeting({
   });
   const meeting = q.data?.meeting;
   const isMeetingCompleted = !!meeting?.completed;
+  useEffect(() => {
+    const timer = window.setInterval(() => setActionNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const actionCompletionBlockedReason = (action: { completed: boolean; due_at: string | null }) =>
+    !action.completed && action.due_at && action.due_at > manilaDateKey(new Date(actionNow))
+      ? `This action can be marked complete on or after ${formatManilaDate(action.due_at)}.`
+      : "";
   useEffect(() => {
     setVenueType(meeting?.venue_type || (meeting?.meet_url ? "online" : "venue"));
   }, [meeting?.id, meeting?.venue_type, meeting?.meet_url]);
@@ -1647,7 +1667,7 @@ function Meeting({
 
       {q.isPending ? <p className="meeting-feedback">Loading meeting details…</p> : null}
       {q.error && <p role="alert" className="meeting-feedback error">{q.error.message}</p>}
-      {message && <p role={failed ? "alert" : "status"} className={`meeting-feedback ${failed ? "error" : "success"}`}>{message}</p>}
+      {message && failed && <p role="alert" className="meeting-feedback error">{message}</p>}
       {isMeetingCompleted && <p className="meeting-read-only-note"><Eye size={15} aria-hidden="true" />This meeting is complete. Overview, schedule, invitations, and follow-up are available to view only.</p>}
       {!isMeetingCompleted && (isOffice || manage && !manageSchedule) && <p className="meeting-office-view-note"><Eye size={15} aria-hidden="true" />{isOffice ? "Meeting details are managed by the barangay. You can respond to your invitation and update action items assigned to an office you have accepted for." : "The assigned barangay manages the venue and schedule. You can review the request, invitations, and agreed actions."}</p>}
 
@@ -1935,12 +1955,18 @@ function Meeting({
               <span className="meeting-section-icon"><CheckCircle2 size={20} /></span>
               <div><h3>Agreed actions and follow-up</h3><p>{isOffice ? canEditOfficeActions ? "View all agreed actions and update items assigned to your accepted office." : "View the recorded actions. Editing is available after your office accepts an invitation and receives an assigned action." : "Track decisions, owners, and follow-up dates."}</p></div>
             </div>
-            {q.data?.actions.length ? <div className="meeting-action-list">{q.data.actions.map((a) => (
-              <article className="meeting-action-item" key={a.id}>
+            {q.data?.actions.length ? <div className="meeting-action-list">{q.data.actions.map((a) => {
+              const completionBlockedReason = actionCompletionBlockedReason(a);
+              const availabilityId = meetingSectionId(`action-${a.id}-availability`);
+              return <article className="meeting-action-item" key={a.id}>
                 <span className={`meeting-action-state ${a.completed ? "is-complete" : ""}`} aria-hidden="true"><Check size={16} /></span>
-                <div className="meeting-action-copy"><strong>{a.description}</strong><span>{refs.organizations.find((o) => o.id === a.organization_id)?.name || "Unassigned"}<i>·</i>{a.due_at ? new Date(`${a.due_at}T00:00:00`).toLocaleDateString() : "No target date"}</span></div>
+                <div className="meeting-action-copy"><strong>{a.description}</strong><span>{refs.organizations.find((o) => o.id === a.organization_id)?.name || "Unassigned"}<i>·</i>{a.due_at ? formatManilaDate(a.due_at) : "No target date"}</span>{completionBlockedReason && <small id={availabilityId} className="meeting-action-availability">{completionBlockedReason}</small>}</div>
                 <span className={`meeting-action-badge ${a.completed ? "is-complete" : ""}`}>{a.completed ? "Completed" : "Open"}</span>
-                {canEditActionItem(a) && <button type="button" className="meeting-action-toggle" disabled={busy} onClick={() => void run(db!.from("meeting_action_items").update({ completed: !a.completed }).eq("id", a.id))}>{a.completed ? "Reopen" : "Mark complete"}</button>}
+                {canEditActionItem(a) && <button type="button" className="meeting-action-toggle" disabled={busy || !!completionBlockedReason} title={completionBlockedReason || undefined} aria-describedby={completionBlockedReason ? availabilityId : undefined} onClick={() => {
+                  const blockedReason = actionCompletionBlockedReason({ ...a, due_at: a.due_at });
+                  if (blockedReason) { setMessage(blockedReason); setFailed(true); return; }
+                  void run(db!.from("meeting_action_items").update({ completed: !a.completed }).eq("id", a.id));
+                }}>{a.completed ? "Reopen" : "Mark complete"}</button>}
                 {canEditActionItem(a) && <details className="meeting-action-edit"><summary>Edit action</summary><form className="meeting-form" onSubmit={async (event) => {
                   event.preventDefault();
                   const fields = new FormData(event.currentTarget);
@@ -1952,8 +1978,8 @@ function Meeting({
                   <label className="meeting-field"><span>Target date</span><input name="due" type="date" defaultValue={a.due_at || ""} /></label>
                   <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Save action"}</button></div>
                 </form></details>}
-              </article>
-            ))}</div> : <p className="meeting-empty">No agreed actions recorded yet.</p>}
+              </article>;
+            })}</div> : <p className="meeting-empty">No agreed actions recorded yet.</p>}
             {manage && !isMeetingCompleted && <form className="meeting-form meeting-action-form" onSubmit={async (e) => {
               e.preventDefault();
               const form = e.currentTarget;

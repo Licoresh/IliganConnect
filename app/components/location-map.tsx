@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapView, { Callout, Marker, Polygon, type Region } from "react-native-maps";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { aggregateReportCells, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, ILIGAN_MAP_BOUNDS, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
 import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
@@ -129,6 +129,7 @@ export default function LocationMap({
   barangayMetric = "density",
   summaryColor = colors.brand,
 }: MapProps) {
+  const compactControls = useWindowDimensions().width <= 600;
   const map = useRef<MapView>(null);
   const lastBarangayTap = useRef(0);
   const gestureStart = useRef({ x: 0, y: 0 });
@@ -267,12 +268,9 @@ export default function LocationMap({
     }, 320);
   };
   const focusPoint = useCallback((selected: Point) => {
-    map.current?.animateToRegion({ ...selected, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 250);
+    map.current?.animateToRegion({ ...selected, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 380);
     onPointPress?.(selected);
   }, [onPointPress]);
-  useEffect(() => {
-    if (bounds) map.current?.setMapBoundaries(bounds.northEast, bounds.southWest);
-  }, [bounds]);
   useEffect(() => {
     if (!showBarangayBoundaries) return;
     const area = bounds ?? ILIGAN_MAP_BOUNDS;
@@ -292,7 +290,7 @@ export default function LocationMap({
   }, [userPoint?.latitude, userPoint?.longitude]);
   useEffect(() => {
     const selected = points.find((item) => item.id === selectedPointId);
-    if (selected) map.current?.animateToRegion({ ...selected, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 250);
+    if (selected) map.current?.animateToRegion({ ...selected, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 380);
   }, [selectedPointId, pointsKey]);
   return (
     <View style={{ height, borderRadius: 18, overflow: "hidden", backgroundColor: "#e8f1ee", position: "relative" }}>
@@ -351,10 +349,8 @@ export default function LocationMap({
           <Pressable accessibilityRole="button" accessibilityLabel="Collapse map styles" accessibilityState={{ expanded: true }} onPress={() => setStyleSelectorExpanded(false)} style={{ width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 19, backgroundColor: "white" }}><Ionicons name="chevron-back" size={18} color={colors.brandDark} /></Pressable>
         </> : <Pressable accessibilityRole="button" accessibilityLabel="Show map styles" accessibilityState={{ expanded: false }} onPress={() => setStyleSelectorExpanded(true)} style={{ width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "white" }}><Ionicons name="chevron-forward" size={19} color={colors.brandDark} /></Pressable>}
       </View> : <View style={{ position: "absolute", left: 10, top: 10, flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 14, padding: 4, backgroundColor: "#ffffffed", elevation: 3 }}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Map style" accessibilityState={{ expanded: stylePickerOpen }} onPress={() => setStylePickerOpen(!stylePickerOpen)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, borderRadius: 11, backgroundColor: colors.brandSoft }}>
-          <Ionicons name="layers-outline" size={16} color={colors.brand} />
-          <Text style={{ color: "#08756b", fontSize: 12, fontWeight: "800" }}>{baseName}</Text>
-          <Ionicons name={stylePickerOpen ? "chevron-up" : "chevron-down"} size={13} color={colors.brand} />
+        <Pressable accessibilityRole="button" accessibilityLabel={compactControls ? `${stylePickerOpen ? "Hide" : "Show"} map styles, current style ${baseName}` : "Map style"} accessibilityState={{ expanded: stylePickerOpen }} onPress={() => setStylePickerOpen(!stylePickerOpen)} style={compactControls ? { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 11, backgroundColor: colors.brandSoft } : { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, borderRadius: 11, backgroundColor: colors.brandSoft }}>
+          {compactControls ? <Ionicons name={stylePickerOpen ? "chevron-back" : "chevron-forward"} size={19} color={colors.brand} /> : <><Ionicons name="layers-outline" size={16} color={colors.brand} /><Text style={{ color: "#08756b", fontSize: 12, fontWeight: "800" }}>{baseName}</Text><Ionicons name={stylePickerOpen ? "chevron-up" : "chevron-down"} size={13} color={colors.brand} /></>}
         </Pressable>
         {stylePickerOpen && (["map", "terrain", "satellite"] as const).map((value) => (
           <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); setStylePickerOpen(false); map.current?.animateCamera({ pitch: value === "terrain" ? 40 : 0 }, { duration: 300 }); }} style={{ minHeight: 48, paddingHorizontal: 9, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: base === value ? colors.brandSoft : "transparent" }}>
@@ -369,9 +365,9 @@ export default function LocationMap({
         {selectedCellCount != null && <Text style={{ color: "#526461", fontSize: 9, marginTop: 3 }}>{selectedCellCount} reports here</Text>}
         </>}
       </View>}
-      <View style={{ position: "absolute", right: mapStyleSelector === "tabs" ? 9 : 12, top: mapStyleSelector === "tabs" ? 9 : 12, gap: mapStyleSelector === "tabs" ? 4 : 8 }}>
+      <View style={{ position: "absolute", right: mapStyleSelector === "tabs" ? 9 : 12, top: compactControls && mapStyleSelector === "tabs" && styleSelectorExpanded ? 56 : mapStyleSelector === "tabs" ? 9 : 12, width: compactControls ? 92 : undefined, flexDirection: compactControls ? "row" : "column", flexWrap: compactControls ? "wrap" : "nowrap", justifyContent: compactControls ? "space-between" : "flex-start", gap: compactControls ? 4 : mapStyleSelector === "tabs" ? 4 : 8 }}>
         {([["add", () => zoom(1), "Zoom in"], ["remove", () => zoom(-1), "Zoom out"], [userPoint ? "locate" : "locate-outline", userPoint ? () => map.current?.animateToRegion({ ...userPoint, latitudeDelta: 0.035, longitudeDelta: 0.035 }, 250) : onLocate ?? center, userPoint ? "Recenter on my location" : "Find my location"], ...(mapStyleSelector === "menu" ? [["layers-outline", () => { setLocalBase(nextBase); onMapStyleChange?.(nextBase); }, `Change map layer to ${nextBase}`] as const] : []), ...(onExpand ? [["expand-outline", onExpand, "Expand map"] as const] : [])] as const).map(([icon, action, label]) => (
-          <Pressable key={label} accessibilityRole="button" accessibilityLabel={label === "Find my location" && locating ? "Finding your location" : label} disabled={label === "Find my location" && locating} onPress={action} style={{ width: mapStyleSelector === "tabs" ? 38 : 48, height: mapStyleSelector === "tabs" ? 38 : 48, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: "white", elevation: 3 }}>
+          <Pressable key={label} accessibilityRole="button" accessibilityLabel={label === "Find my location" && locating ? "Finding your location" : label} disabled={label === "Find my location" && locating} onPress={action} style={{ width: compactControls ? 44 : mapStyleSelector === "tabs" ? 38 : 48, height: compactControls ? 44 : mapStyleSelector === "tabs" ? 38 : 48, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: "white", elevation: 3 }}>
             <Ionicons name={icon} size={19} color="#173b3a" />
           </Pressable>
         ))}

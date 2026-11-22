@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import type { MapProps, MapStyle } from "./location-map";
+import type { MapProps, MapStyle, Point } from "./location-map";
 import * as maplibre from "maplibre-gl";
 import { aggregateReportCells, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
 import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
 import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, colors } from "./ui";
 import "maplibre-gl/dist/maplibre-gl.css";
 const EMPTY_POINTS: NonNullable<MapProps["points"]> = [];
+function centerOnReport(map: maplibre.Map, point: Point) {
+  map.stop();
+  map.easeTo({
+    center: [point.longitude, point.latitude],
+    zoom: Math.max(map.getZoom(), INDIVIDUAL_REPORT_PIN_ZOOM),
+    duration: 380,
+  });
+}
 function enablePopupDragging(map: maplibre.Map, popup: maplibre.Popup, handle: HTMLButtonElement) {
   let drag: { pointerId: number; x: number; y: number; origin: { x: number; y: number } } | null = null;
   let restoreMapPan = false;
@@ -97,6 +105,7 @@ export default function LocationMap({
   barangayMetric = "density",
   summaryColor = colors.brand,
 }: MapProps) {
+  const compactControls = useWindowDimensions().width <= 600;
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibre.Map | null>(null),
     choose = useRef(onChoose),
@@ -142,7 +151,6 @@ export default function LocationMap({
       attributionControl: { compact: true },
       center: initialRegion ? [initialRegion.longitude, initialRegion.latitude] : [124.2452, 8.228],
       zoom: initialRegion ? Math.max(2, Math.min(18, Math.log2(360 / initialRegion.longitudeDelta))) : 11.2,
-      maxBounds: bounds ? [[bounds.southWest.longitude, bounds.southWest.latitude], [bounds.northEast.longitude, bounds.northEast.latitude]] : undefined,
       style: {
         version: 8,
         glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
@@ -331,16 +339,22 @@ export default function LocationMap({
           hover.append(sub);
         }
         pin.append(hover);
-        pin.addEventListener("click", () => {
+        pin.addEventListener("click", (event) => {
+          event.stopPropagation();
           const current = map.current;
-          if (current) {
-            current.stop();
-            current.jumpTo({ center: [p.longitude, p.latitude], zoom: Math.max(current.getZoom(), INDIVIDUAL_REPORT_PIN_ZOOM) });
-          }
+          if (current) centerOnReport(current, p);
           pointPress.current?.(p);
+          if (reportPopupBehavior === "draggable") {
+            requestAnimationFrame(() => {
+              const activeMap = map.current;
+              const markerKey = p === point ? "chosen" : p.id ?? "chosen";
+              const popup = markers.current.find((item) => item.getElement().dataset.markerKey === markerKey)?.getPopup();
+              if (activeMap && popup && !popup.isOpen()) popup.setLngLat([p.longitude, p.latitude]).addTo(activeMap);
+            });
+          }
         });
       }
-      const marker = new maplibre.Marker({ element: pin, anchor: "bottom", draggable: p === point && !!onChoose })
+      const marker = new maplibre.Marker({ element: pin, anchor: "center", draggable: p === point && !!onChoose })
         .setLngLat([p.longitude, p.latitude])
         .addTo(map.current!);
       if ((p.title || p === userPoint) && (isUser || reportPopupBehavior !== "hidden")) {
@@ -526,8 +540,7 @@ export default function LocationMap({
     else if (selectedPointId) {
       const selected = points.find((p) => p.id === selectedPointId);
       if (selected) {
-        map.current.stop();
-        map.current.jumpTo({ center: [selected.longitude, selected.latitude], zoom: Math.max(map.current.getZoom(), INDIVIDUAL_REPORT_PIN_ZOOM) });
+        centerOnReport(map.current, selected);
         if (reportPopupBehavior === "draggable") {
           const marker = markers.current.find((item) => item.getElement().dataset.reportId === selectedPointId);
           const popup = marker?.getPopup();
@@ -563,7 +576,9 @@ export default function LocationMap({
       <div style={{ position: "relative" }}>
         <div ref={container} style={{ height, borderRadius: 16, overflow: "hidden" }} aria-label="Community location map" />
         <View style={{ position: "absolute", left: 10, top: 10, flexDirection: "row", alignItems: "center", gap: 2, borderRadius: 13, padding: 4, backgroundColor: "white", elevation: 3, zIndex: 4 }}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Map style" accessibilityState={{ expanded: stylePickerOpen }} onPress={() => setStylePickerOpen(!stylePickerOpen)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, borderRadius: 10, backgroundColor: colors.brandSoft }}><Ionicons name="layers-outline" size={15} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 11, fontWeight: "800" }}>{baseName}</Text><Ionicons name={stylePickerOpen ? "chevron-up" : "chevron-down"} size={12} color={colors.brand} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={compactControls ? `${stylePickerOpen ? "Hide" : "Show"} map styles, current style ${baseName}` : "Map style"} accessibilityState={{ expanded: stylePickerOpen }} onPress={() => setStylePickerOpen(!stylePickerOpen)} style={compactControls ? { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: colors.brandSoft } : { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, borderRadius: 10, backgroundColor: colors.brandSoft }}>
+            {compactControls ? <Ionicons name={stylePickerOpen ? "chevron-back" : "chevron-forward"} size={19} color={colors.brand} /> : <><Ionicons name="layers-outline" size={15} color={colors.brand} /><Text style={{ color: colors.brand, fontSize: 11, fontWeight: "800" }}>{baseName}</Text><Ionicons name={stylePickerOpen ? "chevron-up" : "chevron-down"} size={12} color={colors.brand} /></>}
+          </Pressable>
           {stylePickerOpen && <View style={{ position: "absolute", top: 60, left: 0, width: 150, gap: 4, padding: 4, borderWidth: 1, borderColor: "#e0e9e6", borderRadius: 12, backgroundColor: "white", elevation: 3 }}>
             {(["map", "terrain", "satellite"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} accessibilityLabel={`${value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}${base === value ? ", selected" : ""}`} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); setStylePickerOpen(false); }} style={{ minHeight: 48, paddingHorizontal: 10, borderRadius: 9, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: base === value ? colors.brandSoft : colors.surface }}><Text style={{ color: base === value ? colors.brand : colors.muted, fontSize: 14, fontWeight: "700" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text>{base === value && <Ionicons name="checkmark" size={18} color={colors.brand} />}</Pressable>)}
           </View>}
@@ -575,13 +590,13 @@ export default function LocationMap({
             <Text style={{ color: "#647571", fontSize: 8, marginTop: 3 }}>Tap a square to view its count</Text>
           </>}
         </View>}
-        <div style={{ position: "absolute", right: 12, top: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-          {[["Zoom in", "+", () => map.current?.zoomIn({ duration: 180 })], ["Zoom out", "−", () => map.current?.zoomOut({ duration: 180 })]].map(([label, icon, action]) => <button key={label as string} type="button" aria-label={label as string} onClick={action as () => void} style={{ width: 48, height: 48, border: 0, borderRadius: 14, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>{icon as string}</button>)}
+        <div style={{ position: "absolute", right: compactControls ? 8 : 12, top: compactControls ? 8 : 12, width: compactControls ? 92 : undefined, display: "flex", flexDirection: compactControls ? "row" : "column", flexWrap: compactControls ? "wrap" : "nowrap", justifyContent: compactControls ? "space-between" : "flex-start", gap: compactControls ? 4 : 8 }}>
+          {[["Zoom in", "+", () => map.current?.zoomIn({ duration: 180 })], ["Zoom out", "−", () => map.current?.zoomOut({ duration: 180 })]].map(([label, icon, action]) => <button key={label as string} type="button" aria-label={label as string} onClick={action as () => void} style={{ width: compactControls ? 44 : 48, height: compactControls ? 44 : 48, border: 0, borderRadius: 14, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>{icon as string}</button>)}
           <button type="button" aria-label={userPoint ? "Recenter on my location" : locating ? "Finding your location" : "Find my location"} disabled={locating} onClick={() => {
             if (userPoint) map.current?.easeTo({ center: [userPoint.longitude, userPoint.latitude], zoom: 13, duration: 250 });
             else onLocate?.();
-          }} style={{ width: 48, height: 48, border: 0, borderRadius: 14, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>◎</button>
-          {onExpand && <button type="button" aria-label="Expand map" onClick={onExpand} style={{ width: 48, height: 48, border: 0, borderRadius: 12, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer" }}>⛶</button>}
+          }} style={{ width: compactControls ? 44 : 48, height: compactControls ? 44 : 48, border: 0, borderRadius: 14, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>◎</button>
+          {onExpand && <button type="button" aria-label="Expand map" onClick={onExpand} style={{ width: compactControls ? 44 : 48, height: compactControls ? 44 : 48, border: 0, borderRadius: 12, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer" }}>⛶</button>}
         </div>
       </div>
       {error && <Text>{error}</Text>}

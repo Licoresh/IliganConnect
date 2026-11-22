@@ -273,6 +273,24 @@ export function Community({
   const officeConsultationIds = access.organizations
     .filter((organization) => organization.active && organization.can_consult)
     .map((organization) => organization.id);
+  const consultationReportAccessPairs = profile.role === "office"
+    ? [...new Map(access.rules.flatMap((rule) => {
+        if (!rule.enabled || !officeConsultationIds.includes(rule.organization_id) || !draftConsultOrganizations.includes(rule.organization_id)) return [];
+        return draftConsultBarangays
+          .filter((barangayId) => !rule.barangay_id || rule.barangay_id === barangayId)
+          .map((barangayId) => {
+            const assignment = rule.assignment_only ? rule.organization_id : "*";
+            return [`${rule.category_id}:${barangayId}:${assignment}`, {
+              categoryId: rule.category_id,
+              barangayId,
+              organizationId: rule.assignment_only ? rule.organization_id : null,
+            }] as const;
+          });
+      })).values()]
+    : [];
+  const consultationReportBarangayIds = profile.role === "barangay"
+    ? profile.barangay_id ? [profile.barangay_id] : []
+    : draftConsultBarangays;
   const consultationOrganizationOptions = refs.organizations.filter((organization) => {
     const details = organization as typeof organization & { active?: boolean; can_consult?: boolean };
     if (details.active !== true || details.can_consult !== true) return false;
@@ -360,7 +378,7 @@ export function Community({
     const next = retained.length ? retained : allowed[0] ? [allowed[0]] : [];
     setDraftConsultBarangays(next);
     setDraftBarangay(next[0] ?? "");
-    if (!next.includes(draftBarangay)) {
+    if (profile.role === "office" || !next.includes(draftBarangay)) {
       setRelatedReport("");
       setRelatedReportSearch("");
       setShowRelatedReportOptions(false);
@@ -433,20 +451,28 @@ export function Community({
     },
   });
   const relatedReports = useQuery({
-    queryKey: ["consultation-related-reports", profile.id, draftConsultBarangays, relatedReportSearchTerm, relatedReport],
-    enabled: table === "consultations" && !!editing && !!draftConsultBarangays.length && (showRelatedReportOptions || !!relatedReport),
+    queryKey: ["consultation-related-reports", profile.id, consultationReportBarangayIds, draftConsultOrganizations, consultationReportAccessPairs, relatedReportSearchTerm, relatedReport],
+    enabled: table === "consultations" && !!editing && !!consultationReportBarangayIds.length &&
+      (profile.role !== "office" || !!consultationReportAccessPairs.length) &&
+      (showRelatedReportOptions || !!relatedReport),
     queryFn: async () => {
       const columns = "id,title,status,barangay_id,category_id,created_at";
-      const reportsQuery = db!.from("reports").select(columns)
-        .in("barangay_id", draftConsultBarangays).order("created_at", { ascending: false }).limit(8);
+      let reportsQuery = db!.from("reports").select(columns)
+        .in("barangay_id", consultationReportBarangayIds).order("created_at", { ascending: false }).limit(8);
+      if (profile.role === "office") reportsQuery = reportsQuery.or(consultationReportAccessPairs
+        .map(({ categoryId, barangayId, organizationId }) => `and(category_id.eq.${categoryId},barangay_id.eq.${barangayId}${organizationId ? `,organization_id.eq.${organizationId}` : ""})`).join(","));
       const isReportId = new RegExp(`^${UUID_PATTERN}$`, "i").test(relatedReportSearchTerm);
       const filteredReportsQuery = relatedReportSearchTerm
         ? isReportId ? reportsQuery.eq("id", relatedReportSearchTerm) : reportsQuery.ilike("title", `%${relatedReportSearchTerm}%`)
         : reportsQuery;
+      let selectedReportQuery = db!.from("reports").select(columns).eq("id", relatedReport)
+        .in("barangay_id", consultationReportBarangayIds);
+      if (profile.role === "office") selectedReportQuery = selectedReportQuery.or(consultationReportAccessPairs
+        .map(({ categoryId, barangayId, organizationId }) => `and(category_id.eq.${categoryId},barangay_id.eq.${barangayId}${organizationId ? `,organization_id.eq.${organizationId}` : ""})`).join(","));
       const [options, selectedReport] = await Promise.all([
         result<RelatedReport[]>(filteredReportsQuery),
         relatedReport
-          ? result<RelatedReport | null>(db!.from("reports").select(columns).eq("id", relatedReport).in("barangay_id", draftConsultBarangays).maybeSingle<RelatedReport>())
+          ? result<RelatedReport | null>(selectedReportQuery.maybeSingle<RelatedReport>())
           : Promise.resolve(null),
       ]);
       return selectedReport && !options.some((report) => report.id === selectedReport.id)
@@ -572,8 +598,10 @@ export function Community({
                     </div>
                     <h3>{r.title}</h3>
                     <p className="consultation-description">{r.body}</p>
-                    <p className="consultation-location"><MapPin size={15} /> {place}</p>
-                    <p className="consultation-issuers"><strong>Participating:</strong> {[...(r.include_barangay_admins ? ["Barangay administration"] : []), ...issuingOffices].join(" · ") || "No additional offices"}</p>
+                    <div className="consultation-card-meta">
+                      <p className="consultation-location"><MapPin size={15} /> {place}</p>
+                      <p className="consultation-issuers"><strong>Participating</strong><span>{[...(r.include_barangay_admins ? ["Barangay administration"] : []), ...issuingOffices].join(" · ") || "No additional offices"}</span></p>
+                    </div>
                     <div className="consultation-card-actions">
                       <button className="consultation-discussion" onClick={() => setSelected(r.id)}><MessageSquare size={15} /> Open discussion</button>
                       {manage && <>
@@ -741,6 +769,7 @@ export function Community({
               }
               const fileEntry = f.get("announcement_image");
               const image = fileEntry instanceof File && fileEntry.name ? fileEntry : null;
+              const removeAnnouncementImage = f.get("announcement_remove_image") === "true";
               const consultationBarangayIds = table === "consultations"
                 ? f.getAll("target_barangay_ids").filter((value): value is string => typeof value === "string")
                 : [];
@@ -812,12 +841,17 @@ export function Community({
                         await result(db!.storage.from("announcement-media").upload(path, image, { contentType: image.type, upsert: false }));
                       }
                       try {
-                        await result(db!.from("announcements").update({ ...payload, ...(path ? { attachment_path: path } : {}) }).eq("id", editing.id).select("id").single());
+                        await result(db!.from("announcements").update({
+                          ...payload,
+                          ...(path ? { attachment_path: path } : removeAnnouncementImage ? { attachment_path: null } : {}),
+                        }).eq("id", editing.id).select("id").single());
                       } catch (cause) {
                         if (path) await db!.storage.from("announcement-media").remove([path]);
                         throw cause;
                       }
-                      if (path && editing.attachment_path) await db!.storage.from("announcement-media").remove([editing.attachment_path]);
+                      if ((path || removeAnnouncementImage) && editing.attachment_path) {
+                        await result(db!.storage.from("announcement-media").remove([editing.attachment_path]));
+                      }
                     }
                     return { data: null, error: null };
                   })())
@@ -913,12 +947,12 @@ export function Community({
                       </div>
                     ) : (
                       <>
-                        <div className="consultation-edit-related-search"><Search size={17} aria-hidden="true" /><input maxLength={160} placeholder="Search report title or paste report ID" value={relatedReportSearch} onFocus={() => setShowRelatedReportOptions(true)} onChange={(event) => { setRelatedReport(""); setRelatedReportSearch(event.target.value); setShowRelatedReportOptions(true); }} aria-label="Search reports in the selected barangays" aria-expanded={showRelatedReportOptions} aria-controls="consultation-related-report-options" autoComplete="off" />{relatedReportSearch && <button type="button" className="consultation-edit-clear" aria-label="Clear report search" onClick={() => { setRelatedReportSearch(""); setShowRelatedReportOptions(true); }}><X size={17} /></button>}</div>
+                        <div className="consultation-edit-related-search"><Search size={17} aria-hidden="true" /><input maxLength={160} placeholder="Search report title or paste report ID" value={relatedReportSearch} onFocus={() => setShowRelatedReportOptions(true)} onChange={(event) => { setRelatedReport(""); setRelatedReportSearch(event.target.value); setShowRelatedReportOptions(true); }} aria-label={profile.role === "office" ? "Search reports in your assigned categories and barangays" : profile.role === "barangay" ? "Search reports in your assigned barangay" : "Search reports in the selected barangays"} aria-expanded={showRelatedReportOptions} aria-controls="consultation-related-report-options" autoComplete="off" />{relatedReportSearch && <button type="button" className="consultation-edit-clear" aria-label="Clear report search" onClick={() => { setRelatedReportSearch(""); setShowRelatedReportOptions(true); }}><X size={17} /></button>}</div>
                         {showRelatedReportOptions && <div className="consultation-related-report-options" id="consultation-related-report-options" role="listbox" aria-label="Available reports">
                           {!draftConsultBarangays.length ? <p>Choose a barangay first to find related reports.</p>
                             : relatedReports.isPending ? <p role="status">Loading reports…</p>
                               : relatedReports.isError ? <p role="alert">Reports could not load. <button type="button" className="text-button" onClick={() => void relatedReports.refetch()}>Try again</button></p>
-                                : !relatedReports.data?.length ? <p>{relatedReportSearchTerm ? "No matching reports found." : "No accessible reports in the selected barangays."}</p>
+                                : !relatedReports.data?.length ? <p>{relatedReportSearchTerm ? "No matching reports found in your available scope." : profile.role === "office" ? "No reports match your assigned categories in the selected barangays." : profile.role === "barangay" ? "No reports are available in your assigned barangay." : "No reports are available in the selected barangays."}</p>
                                   : relatedReports.data.map((report) => <button type="button" role="option" aria-selected={relatedReport === report.id} key={report.id} onClick={() => { setRelatedReport(report.id); setRelatedReportSearch(report.title); setShowRelatedReportOptions(false); }}><span><strong>{report.title}</strong><small>{refs.categories.find((category) => category.id === report.category_id)?.name || "Report"} · {label(report.status)} · {new Date(report.created_at).toLocaleDateString("en-PH", { timeZone: "Asia/Manila" })}</small></span><code>{report.id.slice(0, 8).toUpperCase()}</code></button>)}
                         </div>}
                       </>
@@ -946,7 +980,7 @@ export function Community({
                       <label className="announcement-edit-field is-wide"><span>Title <b>*</b></span><input name="title" required minLength={8} maxLength={160} defaultValue={editing === "new" ? "" : editing.title} /></label>
                       <label className="announcement-edit-field is-wide"><span>Content <b>*</b></span><textarea name="body" required minLength={20} maxLength={10000} defaultValue={editing === "new" ? "" : editing.body} /></label>
                       <label className="announcement-edit-field"><span>Type <b>*</b></span><input maxLength={80} required list="announcement-kinds" name="kind" defaultValue={editing === "new" ? "General announcement" : editing.kind} /><datalist id="announcement-kinds">{["General announcement", "Maintenance notice", "Community cleanup", "Office advisory", "Consultation invitation", "Meeting schedule", "Repair update"].map((kind) => <option key={kind}>{kind}</option>)}</datalist></label>
-                      <label className="announcement-edit-image"><span><ImagePlus size={16} /> Image <small>Optional</small></span><input type="file" name="announcement_image" accept="image/jpeg,image/png,image/webp" /><small>{editing !== "new" && editing.attachment_path ? "Choose a new image to replace the attached one." : "JPG, PNG, or WebP · up to 5 MB"}</small></label>
+                      <AnnouncementImagePicker attachmentPath={editing === "new" ? null : editing.attachment_path ?? null} />
                     </div>
                   </section>
                   <section className="announcement-edit-section">
@@ -1227,21 +1261,25 @@ function MeetingRequestsView({
                 const meetingLink = normalizeGoogleMeetUrl(schedule?.meet_url || "");
                 return (
                   <article className="meeting-card" key={row.id}>
-                    <div className="meeting-card-top"><span className={`meeting-status ${status.key}`}>{statusIcon(status.key)}{status.label}</span><time dateTime={row.created_at}>{formatDate(row.created_at)}</time></div>
-                    <h3>{row.title}</h3>
-                    <p className="meeting-card-body">{row.body}</p>
-                    <div className="meeting-card-meta"><span><MapPin size={15} />{barangayName}</span><span><CalendarDays size={15} />Requested {formatDate(row.created_at)}</span></div>
-                    {officeIds.length > 0 && (invitationsQuery.isPending || invitationsQuery.error || officeInvitations.length > 0) && <div className="meeting-office-invitations" aria-live="polite">
-                      {invitationsQuery.isPending ? <span className="muted">Checking your office invitation…</span> : invitationsQuery.error ? <span className="meeting-invitation-error">Invitation status unavailable</span> : officeInvitations.map((invitation) => (
-                        <span className={`meeting-invitation-status ${invitation.status}`} key={invitation.organization_id}>
-                          <strong>{refs.organizations.find((item) => item.id === invitation.organization_id)?.name ?? "Your office"}</strong>
-                          <span>{invitation.status === "pending" ? "Reply needed" : label(invitation.status)}</span>
-                        </span>
-                      ))}
-                    </div>}
-                    {schedule && <div className="meeting-schedule"><CalendarDays size={16} /><div><strong>{formatMeetingTimeRange(schedule.starts_at, schedule.ends_at)}</strong><span>{schedule.venue}</span></div>{meetingLink && <a className="meeting-join-link" href={meetingLink} target="_blank" rel="noreferrer"><Link2 size={14} aria-hidden="true" />Join Google Meet</a>}</div>}
-                    {row.decision_reason && <p className="meeting-decision">{row.decision_reason}</p>}
-                    <button className="meeting-review" onClick={() => onOpen(row.id)}><FileText size={16} /> {isOffice ? pendingOfficeInvitation ? "Respond to invitation" : "View meeting" : "Review & follow up"} <ChevronRight size={17} /></button>
+                    <div className="meeting-card-main">
+                      <div className="meeting-card-top"><span className={`meeting-status ${status.key}`}>{statusIcon(status.key)}{status.label}</span><time dateTime={row.created_at}>{formatDate(row.created_at)}</time></div>
+                      <h3>{row.title}</h3>
+                      <p className="meeting-card-body">{row.body}</p>
+                      <div className="meeting-card-meta"><span><MapPin size={15} />{barangayName}</span><span><CalendarDays size={15} />Requested {formatDate(row.created_at)}</span></div>
+                    </div>
+                    <div className="meeting-card-details">
+                      {officeIds.length > 0 && (invitationsQuery.isPending || invitationsQuery.error || officeInvitations.length > 0) && <div className="meeting-office-invitations" aria-live="polite">
+                        {invitationsQuery.isPending ? <span className="muted">Checking your office invitation…</span> : invitationsQuery.error ? <span className="meeting-invitation-error">Invitation status unavailable</span> : officeInvitations.map((invitation) => (
+                          <span className={`meeting-invitation-status ${invitation.status}`} key={invitation.organization_id}>
+                            <strong>{refs.organizations.find((item) => item.id === invitation.organization_id)?.name ?? "Your office"}</strong>
+                            <span>{invitation.status === "pending" ? "Reply needed" : label(invitation.status)}</span>
+                          </span>
+                        ))}
+                      </div>}
+                      {schedule && <div className="meeting-schedule"><CalendarDays size={16} /><div><strong>{formatMeetingTimeRange(schedule.starts_at, schedule.ends_at)}</strong><span>{schedule.venue}</span></div>{meetingLink && <a className="meeting-join-link" href={meetingLink} target="_blank" rel="noreferrer"><Link2 size={14} aria-hidden="true" />Join Google Meet</a>}</div>}
+                      {row.decision_reason && <p className="meeting-decision">{row.decision_reason}</p>}
+                      <button className="meeting-review" onClick={() => onOpen(row.id)}><FileText size={16} /> {isOffice ? pendingOfficeInvitation ? "Respond to invitation" : "View meeting" : "Review & follow up"} <ChevronRight size={17} /></button>
+                    </div>
                   </article>
                 );
               })}
@@ -1272,6 +1310,16 @@ function Discussion({ row, manage }: { row: Row; manage: boolean }) {
   const [reply, setReply] = useState(""),
     [page, setPage] = useState(0),
     [bodyLength, setBodyLength] = useState(0);
+  const [moderatingComments, setModeratingComments] = useState<Set<string>>(() => new Set());
+  const setCommentModerationOpen = (commentId: string, open: boolean) => {
+    setModeratingComments((current) => {
+      if (current.has(commentId) === open) return current;
+      const next = new Set(current);
+      if (open) next.add(commentId);
+      else next.delete(commentId);
+      return next;
+    });
+  };
   const q = useQuery({
     queryKey: ["discussion", row.id, page],
     queryFn: async () => ({
@@ -1311,8 +1359,9 @@ function Discussion({ row, manage }: { row: Row; manage: boolean }) {
         <div className="discussion-section-heading"><div><h3 className="discussion-eyebrow">Community input</h3><p id="discussion-thread-title">Discussion</p></div>{q.data && <span className="discussion-count"><MessageSquare size={16} />{q.data.comments.length} {q.data.comments.length === 1 ? "comment" : "comments"} on this page</span>}</div>
         {q.isPending ? <div className="discussion-loading" aria-busy="true"><span /><span /><span /></div> : q.error ? (
           <div role="alert" className="discussion-error"><p>{q.error.message}</p><button type="button" className="secondary" onClick={() => void q.refetch()}>Retry loading discussion</button></div>
-        ) : q.data?.comments.length ? q.data.comments.map((c) => (
-          <article className={`comment discussion-comment${c.parent_id ? " reply" : ""}${c.official ? " official" : ""}`} key={c.id}>
+        ) : q.data?.comments.length ? q.data.comments.map((c) => {
+          const moderationOpen = moderatingComments.has(c.id);
+          return <article className={`comment discussion-comment${c.parent_id ? " reply" : ""}${c.official ? " official" : ""}`} key={c.id}>
             <span className={`discussion-author-icon${c.official ? " official" : ""}`} aria-hidden="true">{c.official ? <ShieldCheck size={20} /> : <UserRound size={20} />}</span>
             <div className="discussion-comment-content">
               <div className="discussion-comment-meta"><div><span className={c.official ? "badge verified" : "badge"}>{c.official ? "Verified official response" : "Resident contribution"}</span>{c.hidden && <span className="badge">Hidden</span>}</div><time dateTime={c.created_at}>{new Date(c.created_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}</time></div>
@@ -1321,15 +1370,22 @@ function Discussion({ row, manage }: { row: Row; manage: boolean }) {
               {q.data.flags.filter((f) => f.comment_id === c.id).map((f) => <p className="discussion-flag" key={`${f.comment_id}-${f.user_id}`}><Flag size={16} /><span><strong>Flag:</strong> {f.reason}</span></p>)}
               <div className="discussion-comment-actions">
                 <button type="button" className="text-button" onClick={() => setReply(c.id)}><MessageSquare size={15} /> Reply</button>
-                {manage && <form className="inline-form discussion-moderation-form" onSubmit={(e) => { e.preventDefault(); void run(db!.from("consultation_comments").update({ hidden: !c.hidden, moderation_reason: new FormData(e.currentTarget).get("reason") }).eq("id", c.id)); }}>
-                  <label>Moderation reason<textarea rows={2} maxLength={SHORT_REASON_LIMIT} required minLength={5} name="reason" placeholder="Briefly explain the moderation decision" aria-describedby={`moderation-reason-hint-${c.id}`} /><small id={`moderation-reason-hint-${c.id}`}>Use 5–500 characters.</small></label>
-                  <button type="submit" className="secondary" disabled={busy}>{c.hidden ? "Restore" : "Hide"}</button>
-                </form>}
+                {manage && <button type="button" className="text-button discussion-moderate-toggle" aria-expanded={moderationOpen} aria-controls={moderationOpen ? `discussion-moderation-${c.id}` : undefined} onClick={() => setCommentModerationOpen(c.id, !moderationOpen)}><Flag size={15} />{moderationOpen ? "Close moderation" : c.hidden ? "Edit moderation" : "Moderate comment"}</button>}
                 {manage && q.data.flags.some((f) => f.comment_id === c.id) && <button type="button" className="text-button discussion-resolve-flags" disabled={busy} onClick={() => void run(db!.from("comment_flags").delete().eq("comment_id", c.id))}>Resolve reviewed flags</button>}
               </div>
+              {manage && moderationOpen && <form id={`discussion-moderation-${c.id}`} className="inline-form discussion-moderation-form" onSubmit={async (e) => {
+                e.preventDefault();
+                const form = e.currentTarget;
+                const saved = await run(db!.from("consultation_comments").update({ hidden: !c.hidden, moderation_reason: new FormData(form).get("reason") }).eq("id", c.id));
+                if (saved) setCommentModerationOpen(c.id, false);
+              }}>
+                <label>Moderation reason<textarea rows={2} maxLength={SHORT_REASON_LIMIT} required minLength={5} name="reason" placeholder="Briefly explain the moderation decision" aria-describedby={`moderation-reason-hint-${c.id}`} /><small id={`moderation-reason-hint-${c.id}`}>Use 5–500 characters.</small></label>
+                <button type="button" className="secondary" disabled={busy} onClick={() => setCommentModerationOpen(c.id, false)}>Cancel</button>
+                <button type="submit" className="secondary" disabled={busy}>{c.hidden ? "Restore comment" : "Hide comment"}</button>
+              </form>}
             </div>
-          </article>
-        )) : q.data ? <div className="discussion-empty"><MessageSquare size={21} /><strong>No comments yet</strong><span>Start the conversation with a clear, respectful comment.</span></div> : null}
+          </article>;
+        }) : q.data ? <div className="discussion-empty"><MessageSquare size={21} /><strong>No comments yet</strong><span>Start the conversation with a clear, respectful comment.</span></div> : null}
         {q.data && <nav className="pagination discussion-pagination" aria-label="Discussion pages"><button type="button" className="secondary" aria-label="Previous page" disabled={!page || q.isFetching} onClick={() => setPage(page - 1)}><ChevronLeft size={16} /><span>Previous</span></button><span className="discussion-page-number" aria-current="page">{page + 1}</span><button type="button" className="secondary" disabled={q.data.comments.length < 50 || q.isFetching} onClick={() => setPage(page + 1)}><span>Next</span><ChevronRight size={16} /></button></nav>}
       </section>
       {row.status === "open" && (
@@ -1541,6 +1597,7 @@ function Meeting({
   const meetingSectionId = (section: string) => `meeting-${row.id}-${section}`;
   const sectionTabs: { key: MeetingSection; label: string }[] = isMeetingCompleted && canViewSchedule
     ? [
+        { key: "overview", label: "Overview" },
         ...(canViewSchedule ? [{ key: "schedule" as const, label: "Schedule" }] : []),
         ...(hasInvitationSections ? [{ key: "invitations" as const, label: "Invitations" }] : []),
         ...(meeting ? [{ key: "follow-up" as const, label: "Follow-up" }] : []),
@@ -1553,7 +1610,7 @@ function Meeting({
         ...(hasFinalDecision ? [{ key: "decision" as const, label: "Decision" }] : []),
       ];
   useEffect(() => {
-    if (isMeetingCompleted && canViewSchedule) setActiveSection("schedule");
+    if (isMeetingCompleted && canViewSchedule) setActiveSection("overview");
   }, [isMeetingCompleted, canViewSchedule, meeting?.id]);
   const selectSection = (section: MeetingSection) => {
     setActiveSection(section);
@@ -1590,7 +1647,7 @@ function Meeting({
       {q.isPending ? <p className="meeting-feedback">Loading meeting details…</p> : null}
       {q.error && <p role="alert" className="meeting-feedback error">{q.error.message}</p>}
       {message && <p role={failed ? "alert" : "status"} className={`meeting-feedback ${failed ? "error" : "success"}`}>{message}</p>}
-      {isMeetingCompleted && <p className="meeting-read-only-note"><Eye size={15} aria-hidden="true" />This meeting is complete. Schedule, invitations, and follow-up are available to view only.</p>}
+      {isMeetingCompleted && <p className="meeting-read-only-note"><Eye size={15} aria-hidden="true" />This meeting is complete. Overview, schedule, invitations, and follow-up are available to view only.</p>}
       {!isMeetingCompleted && (isOffice || manage && !manageSchedule) && <p className="meeting-office-view-note"><Eye size={15} aria-hidden="true" />{isOffice ? "Meeting details are managed by the barangay. You can respond to your invitation and update action items assigned to an office you have accepted for." : "The assigned barangay manages the venue and schedule. You can review the request, invitations, and agreed actions."}</p>}
 
       <div id={meetingSectionId("panel-overview")} className="meeting-section-panel" role="tabpanel" aria-labelledby={meetingSectionId("tab-overview")} tabIndex={0} hidden={activeSection !== "overview"}>
@@ -1954,6 +2011,93 @@ function Meeting({
     </div>
   );
 }
+function AnnouncementImagePicker({ attachmentPath }: { attachmentPath: string | null }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [storedPreviewUrl, setStoredPreviewUrl] = useState("");
+  const [removeStoredImage, setRemoveStoredImage] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setStoredPreviewUrl("");
+    if (attachmentPath) {
+      void db!.storage.from("announcement-media").createSignedUrl(attachmentPath, 3600)
+        .then(({ data }) => { if (active) setStoredPreviewUrl(data?.signedUrl ?? ""); })
+        .catch(() => { if (active) setStoredPreviewUrl(""); });
+    }
+    return () => { active = false; };
+  }, [attachmentPath]);
+
+  useEffect(() => {
+    if (!selectedFile) {
+      setPreviewUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(selectedFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [selectedFile]);
+
+  const preview = selectedFile ? previewUrl : !removeStoredImage ? storedPreviewUrl : "";
+  const hasCurrentImage = !!attachmentPath && !removeStoredImage && !selectedFile;
+  const removeImage = () => {
+    if (selectedFile) {
+      setSelectedFile(null);
+      if (input.current) input.current.value = "";
+    } else if (attachmentPath) {
+      setRemoveStoredImage(true);
+    }
+  };
+
+  return (
+    <div className="announcement-edit-image">
+      <div className="announcement-edit-image-heading"><span><ImagePlus size={16} />Image</span><small>Optional</small></div>
+      <label className="announcement-image-picker">
+        <input
+          ref={input}
+          type="file"
+          name="announcement_image"
+          accept="image/jpeg,image/png,image/webp"
+          aria-label="Choose an announcement image"
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            try {
+              await validateImageFile(file);
+              setSelectedFile(file);
+              setRemoveStoredImage(false);
+              setError("");
+            } catch (cause) {
+              event.target.value = "";
+              setSelectedFile(null);
+              setRemoveStoredImage(false);
+              setError((cause as Error).message);
+            }
+          }}
+        />
+        <span className="announcement-image-picker-icon"><ImagePlus size={17} aria-hidden="true" /></span>
+        <span className="announcement-image-picker-copy">
+          <strong>{selectedFile ? "Replace selected image" : attachmentPath && !removeStoredImage ? "Replace attached image" : "Add an image"}</strong>
+          <small>{selectedFile?.name || "JPG, PNG, or WebP · up to 5 MB"}</small>
+        </span>
+        <span className="announcement-image-picker-action">Choose file</span>
+      </label>
+      {error && <p className="announcement-image-error" role="alert">{error}</p>}
+      {(selectedFile || hasCurrentImage) && (
+        <div className="announcement-image-preview">
+          {preview ? <img src={preview} alt={selectedFile ? "Selected announcement image preview" : "Current announcement image"} /> : <span className="announcement-image-preview-placeholder"><ImagePlus size={18} aria-hidden="true" /></span>}
+          <span className="announcement-image-preview-copy"><strong>{selectedFile?.name || "Current image"}</strong><small>{selectedFile ? "Preview before publishing" : "Attached from announcement media"}</small></span>
+          <button type="button" className="announcement-image-remove" onClick={removeImage}><X size={14} aria-hidden="true" /><span>Remove</span></button>
+        </div>
+      )}
+      {removeStoredImage && <div className="announcement-image-removed"><span>The attached image will be removed when you save.</span><button type="button" onClick={() => setRemoveStoredImage(false)}>Undo</button></div>}
+      <input type="hidden" name="announcement_remove_image" value={removeStoredImage ? "true" : "false"} />
+    </div>
+  );
+}
+
 function Announcement({
   row,
   manage,

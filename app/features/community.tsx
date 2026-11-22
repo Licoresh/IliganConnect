@@ -753,9 +753,7 @@ export function Community({
             ? db!.from("meeting_supporters").delete().eq("request_id", activeMeeting.id)
             : db!.from("meeting_supporters").insert({ request_id: activeMeeting.id }),
         )}
-        onOpenReport={(reportId) => {
-          void onOpenReport(reportId, { meetingRequestId: activeMeeting.id }).catch(() => Alert.alert("Linked report unavailable", "This report is unavailable to your account right now. Please try again later."));
-        }}
+        onOpenReport={(reportId) => onOpenReport(reportId, { meetingRequestId: activeMeeting.id })}
       />}
     </>
   );
@@ -883,7 +881,7 @@ function Conversation({
     } finally { setBusyAction(null); }
   }
   return (
-    <>
+    <View style={{ gap: width < 1024 ? 14 : 12 }}>
       <AppBackNavigation label="Back to community" onBack={close} />
       {detail.error && <View style={s.card}><Text style={s.error}>Could not refresh this conversation. Showing the available details.</Text><Button secondary title="Retry conversation" loading={detail.isFetching} onPress={() => void detail.refetch()} /></View>}
       {!row ? detail.isPending ? <ListSkeleton variant="discussion" count={1} label="Loading conversation details" /> : <View style={s.card}><Text style={s.body}>This conversation is no longer available to your account.</Text></View> : <>
@@ -900,7 +898,7 @@ function Conversation({
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           <ConversationInfo width={width} icon="location-outline" label="Barangay" value={locationName} />
           {!!topicName && <ConversationInfo width={width} icon="pricetag-outline" label="Topic" value={topicName} />}
-          {!!organization.data?.name && <ConversationInfo width={width} icon="business-outline" label="Issuing organization" value={organization.data.name} />}
+          {!!organization.data?.name && <ConversationInfo width={width} icon="business-outline" label="Issuing organization" value={organization.data.name} fullWidth={width < 1024} />}
         </View>
         {!!row.report_id && <Pressable
           accessibilityRole="button"
@@ -958,12 +956,12 @@ function Conversation({
       </>}
       {!!message && <View accessibilityRole="alert" style={{ paddingHorizontal: 11, paddingVertical: 9, borderRadius: 12, backgroundColor: "#eaf7f2" }}><Text style={{ color: colors.brand, fontSize: 12, fontWeight: "700" }}>{message}</Text></View>}
       {!!errorMessage && <View accessibilityRole="alert" style={{ paddingHorizontal: 11, paddingVertical: 9, borderRadius: 12, backgroundColor: "#fff1ef" }}><Text style={{ color: "#a43d35", fontSize: 12, fontWeight: "700" }}>{errorMessage}</Text></View>}
-    </>
+    </View>
   );
 }
 
-function ConversationInfo({ width, icon, label: title, value }: { width: number; icon: "location-outline" | "pricetag-outline" | "business-outline"; label: string; value: string }) {
-  return <View style={[s.card, { width: width < 360 ? "100%" : "48%", minHeight: 66, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 9, paddingVertical: 8, borderRadius: 15 }]}><View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: "#e7f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name={icon} size={17} color={colors.brand} /></View><View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={{ color: colors.brandDark, fontSize: 11, fontWeight: "800" }}>{title}</Text><Text numberOfLines={2} style={{ color: colors.muted, fontSize: 11, lineHeight: 14 }}>{value}</Text></View></View>;
+function ConversationInfo({ width, icon, label: title, value, fullWidth = false }: { width: number; icon: "location-outline" | "pricetag-outline" | "business-outline"; label: string; value: string; fullWidth?: boolean }) {
+  return <View style={[s.card, { width: width < 360 || fullWidth ? "100%" : "48%", minHeight: 66, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 9, paddingVertical: 8, borderRadius: 15 }]}><View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: "#e7f6f2", alignItems: "center", justifyContent: "center" }}><Ionicons name={icon} size={17} color={colors.brand} /></View><View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={{ color: colors.brandDark, fontSize: 11, lineHeight: 15, fontWeight: "800" }}>{title}</Text><Text numberOfLines={2} style={{ color: colors.muted, fontSize: 11, lineHeight: 14 }}>{value}</Text></View></View>;
 }
 function meetingStatus(status: string, schedule: MeetingSchedule | null, coordinationStatus: string) {
   if (schedule?.completed) return { label: "Completed", detail: "This meeting has taken place.", background: "#eaf2f1", foreground: "#536b70" };
@@ -1016,7 +1014,7 @@ function MeetingDetailsModal({
   onJoin: () => void;
   onFollow: () => void;
   onSupport: () => void;
-  onOpenReport: (reportId: string) => void;
+  onOpenReport: (reportId: string) => Promise<void>;
 }) {
   const { width } = useWindowDimensions();
   const detailsScroll = useRef<ScrollView>(null);
@@ -1065,7 +1063,14 @@ function MeetingDetailsModal({
             {sectionHeading("Schedule and follow-through", "calendar-outline")}
             <MeetingDetails requestId={meeting.id} requestStatus={meeting.status} schedule={meeting.schedule} emptyDetail={state.detail} />
           </View>
-          {!!meeting.report_id && <MeetingLinkedReport reportId={meeting.report_id} categories={categories} onPress={() => onOpenReport(meeting.report_id!)} />}
+          {meeting.report_id
+            ? <MeetingLinkedReport reportId={meeting.report_id} categories={categories} onPress={() => onOpenReport(meeting.report_id!)} />
+            : <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: "#e4eeec" }}>
+                {sectionHeading("Related report", "document-text-outline")}
+                <View style={{ minHeight: 58, justifyContent: "center", paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: "#f6faf9" }}>
+                  <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18 }}>No report is linked to this meeting.</Text>
+                </View>
+              </View>}
           <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: "#e4eeec" }}>
             {sectionHeading("Resident participation", "people-outline")}
             <View style={{ gap: 5, padding: 12, borderRadius: 14, backgroundColor: "#f6faf9" }}>
@@ -1113,7 +1118,9 @@ function InvitationSummary({ title, accepted, waiting, declined, names }: { titl
   </View>;
 }
 
-function MeetingLinkedReport({ reportId, categories, onPress }: { reportId: string; categories: Lookup[]; onPress: () => void }) {
+function MeetingLinkedReport({ reportId, categories, onPress }: { reportId: string; categories: Lookup[]; onPress: () => Promise<void> }) {
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState("");
   const report = useQuery({
     queryKey: ["meeting-linked-report", reportId],
     queryFn: async () => {
@@ -1124,17 +1131,30 @@ function MeetingLinkedReport({ reportId, categories, onPress }: { reportId: stri
     },
   });
   const reportCategory = categories.find((item) => item.id === report.data?.category_id)?.name;
+  const openLinkedReport = async () => {
+    if (opening) return;
+    setOpening(true);
+    setOpenError("");
+    try {
+      await onPress();
+    } catch {
+      setOpenError("This linked report could not be opened. Please try again.");
+    } finally {
+      setOpening(false);
+    }
+  };
   return <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: "#e4eeec" }}>
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}><View style={{ width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: "#e4f6f1" }}><Ionicons name="document-text-outline" size={18} color={colors.brand} /></View><Text style={{ color: colors.brandDark, fontSize: 15, fontWeight: "800" }}>Related report</Text></View>
-    <Pressable accessibilityRole="button" accessibilityLabel={`View linked report${report.data?.title ? `: ${report.data.title}` : ""}`} onPress={onPress} style={({ pressed }) => [{ minHeight: 76, flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderRadius: 14, borderWidth: 1, borderColor: "#cce8e0", backgroundColor: "#f2faf7" }, pressed && { backgroundColor: "#e8f7f2" }]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`View linked report${report.data?.title ? `: ${report.data.title}` : ""}`} accessibilityState={{ disabled: opening, busy: opening }} disabled={opening} onPress={() => void openLinkedReport()} style={({ pressed }) => [{ minHeight: 76, flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderRadius: 14, borderWidth: 1, borderColor: "#cce8e0", backgroundColor: "#f2faf7", opacity: opening ? 0.75 : 1 }, pressed && !opening && { backgroundColor: "#e8f7f2" }]}>
       <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#ddf3ed" }}><Ionicons name="document-text-outline" size={19} color={colors.brand} /></View>
       <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-        <Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 13, lineHeight: 18, fontWeight: "800" }}>{report.data?.title || (report.isPending ? "Loading linked report…" : "View linked report details")}</Text>
+        <Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 13, lineHeight: 18, fontWeight: "800" }}>{report.data?.title || (report.isPending ? "Loading linked report…" : "Open linked report details")}</Text>
         {!!reportCategory && <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 11 }}>{reportCategory}{report.data?.status ? ` · ${label(report.data.status)}` : ""}</Text>}
       </View>
-      {report.isPending ? <ActivityIndicator size="small" color={colors.brand} /> : <Ionicons name="chevron-forward" size={18} color={colors.brand} />}
+      {opening ? <ActivityIndicator size="small" color={colors.brand} /> : <Ionicons name="chevron-forward" size={18} color={colors.brand} />}
     </Pressable>
-    {!!report.error && <Text style={{ marginTop: 5, color: colors.muted, fontSize: 11 }}>Report summary could not be loaded. You can still open the linked report.</Text>}
+    {(!!report.error || (!report.isPending && !report.data)) && <Text style={{ marginTop: 5, color: colors.muted, fontSize: 11, lineHeight: 16 }}>Linked report details are unavailable, but you can still try opening the report.</Text>}
+    {!!openError && <Text accessibilityRole="alert" style={{ marginTop: 5, color: "#a53636", fontSize: 11, lineHeight: 16 }}>{openError}</Text>}
   </View>;
 }
 

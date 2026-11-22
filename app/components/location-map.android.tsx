@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import WebView, { type WebViewMessageEvent } from "react-native-webview";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { aggregateReportCells, ILIGAN_MAP_BOUNDS } from "@community/shared";
@@ -54,6 +54,7 @@ send('ready');}
 }
 
 export default function LocationMap({ point, pointLabel, showPointCoordinates = true, points = [], onChoose, onPointPress, selectedPointId, onDensityCellPress, onLocate, locating, userPoint, density, showPoints = true, height = 300, onExpand, mapStyle, onMapStyleChange, initialRegion, onViewportChange, zoomBehavior = "issue-map", showBarangayBoundaries, barangayCounts = {}, onBarangayPress, onMapBackgroundPress, selectedBarangayName, barangayMetric = "density", summaryColor = colors.brand }: MapProps) {
+  const compactControls = useWindowDimensions().width <= 600;
   const web = useRef<WebView>(null);
   const initialViewport = useRef(initialRegion || { latitude: 8.228, longitude: 124.2452, latitudeDelta: 0.12, longitudeDelta: 0.12 });
   const latestViewport = useRef(initialViewport.current);
@@ -101,12 +102,12 @@ export default function LocationMap({ point, pointLabel, showPointCoordinates = 
         <Pressable accessibilityRole="button" accessibilityLabel="Collapse map styles" accessibilityState={{ expanded: true }} onPress={() => setStyleSelectorExpanded(false)} style={{ width: 40, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 9, backgroundColor: "white" }}><Ionicons name="chevron-back" size={19} color={colors.brandDark} /></Pressable>
       </> : <Pressable accessibilityRole="button" accessibilityLabel="Show map styles" accessibilityState={{ expanded: false }} onPress={() => setStyleSelectorExpanded(true)} style={{ width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: "white" }}><Ionicons name="chevron-forward" size={19} color={colors.brandDark} /></Pressable>}
     </View>
-    <View style={{ position: "absolute", top: 52, right: 10, gap: 5 }}>{([
+    <View style={{ position: "absolute", top: compactControls ? styleSelectorExpanded ? 60 : 12 : 52, right: 10, width: compactControls ? 92 : undefined, flexDirection: compactControls ? "row" : "column", flexWrap: compactControls ? "wrap" : "nowrap", justifyContent: compactControls ? "space-between" : "flex-start", gap: compactControls ? 4 : 5 }}>{([
       { icon: "add", action: () => send("zoom", 1), label: "Zoom in" },
       { icon: "remove", action: () => send("zoom", -1), label: "Zoom out" },
       { icon: "locate-outline", action: userPoint ? () => send("center", { ...userPoint, zoom: 15 }) : onLocate || (() => send("center", { ...region, zoom: 13 })), label: "Find my location" },
       ...(onExpand ? [{ icon: "expand-outline", action: onExpand, label: "Expand map" }] : []),
-    ]).map(({ icon, action, label }) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} disabled={label === "Find my location" && locating} onPress={action} style={{ width: 40, height: 40, backgroundColor: "white", borderRadius: 12, alignItems: "center", justifyContent: "center" }}><Ionicons name={icon as keyof typeof Ionicons.glyphMap} size={19} color={colors.brandDark} /></Pressable>)}</View>
+    ]).map(({ icon, action, label }) => <Pressable key={label} accessibilityRole="button" accessibilityLabel={label} disabled={label === "Find my location" && locating} onPress={action} style={{ width: compactControls ? 44 : 40, height: compactControls ? 44 : 40, backgroundColor: "white", borderRadius: 12, alignItems: "center", justifyContent: "center" }}><Ionicons name={icon as keyof typeof Ionicons.glyphMap} size={19} color={colors.brandDark} /></Pressable>)}</View>
     {point && showPointCoordinates && <View pointerEvents="none" style={{ position: "absolute", bottom: 12, left: 12, right: 12, alignItems: "center" }}><Text style={{ backgroundColor: "white", color: colors.brandDark, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, fontSize: 11 }}>Pinned location · {point.latitude.toFixed(5)}, {point.longitude.toFixed(5)}</Text></View>}
   </View>;
 }

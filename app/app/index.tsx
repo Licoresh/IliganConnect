@@ -176,7 +176,11 @@ export default function Home() {
       return;
     }
     if (reportReturnTab === "Community" && tab === "Community") {
-      if (selected) return;
+      if (selected) {
+        mainScrollY.current = 0;
+        scroll.current?.scrollTo({ y: 0, animated: false });
+        return;
+      }
       if (communityScrollY.current !== null) {
         const nextY = communityScrollY.current;
         communityScrollY.current = null;

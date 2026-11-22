@@ -439,9 +439,16 @@ export default function Home() {
   const openConsultationReport = async (reportId: string, origin: { consultationId?: string; meetingRequestId?: string }) => {
     communityScrollY.current = mainScrollY.current;
     let report: Report | null = null;
-    try { report = await result<Report | null>(db!.from("reports").select("*").eq("id", reportId).maybeSingle()); } catch { /* Fall back to the resident-safe report view below. */ }
-    if (!report) {
-      try { report = (await result<Report[]>(db!.rpc("public_report_by_id", { p_id: reportId })))[0] ?? null; } catch { /* ReportTracking will show an unavailable message if neither view can be opened. */ }
+    if (origin.meetingRequestId) {
+      try {
+        report = (await result<Report[]>(db!.rpc("meeting_linked_report_by_request", { p_request: origin.meetingRequestId })))[0] ?? null;
+        if (report?.id !== reportId) report = null;
+      } catch { /* Show the unavailable state if the meeting-scoped lookup fails. */ }
+    } else {
+      try { report = await result<Report | null>(db!.from("reports").select("*").eq("id", reportId).maybeSingle()); } catch { /* Fall back to the resident-safe report view below. */ }
+      if (!report) {
+        try { report = (await result<Report[]>(db!.rpc("public_report_by_id", { p_id: reportId })))[0] ?? null; } catch { /* ReportTracking will show an unavailable message if neither view can be opened. */ }
+      }
     }
     if (!report) {
       communityScrollY.current = null;
@@ -678,6 +685,7 @@ export default function Home() {
                   <ReportTracking
                     key={selected.id}
                     report={selected}
+                    meetingRequestId={reportReturnTab === "Community" ? communityTarget.meetingRequestId || undefined : undefined}
                     residentId={q.data.profile.id}
                     categoryName={q.data.categories.find((item) => item.id === selected.category_id)?.name ?? "Community report"}
                     barangayName={q.data.barangays.find((item) => item.id === selected.barangay_id)?.name ?? "Iligan City"}

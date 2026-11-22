@@ -33,7 +33,7 @@ import { barangayAreaKm2, barangayDensity, barangayDensityColor, barangayHeatCol
 import LocationMap from "../components/deferred-location-map";
 import type { MapStyle, Point } from "../components/location-map";
 import { ListSkeleton } from "../components/loading";
-import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryToneFor, categoryIconFor, categoryDescriptionFor, categoryDisplayName, statusToneFor } from "../components/ui";
+import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryToneFor, categoryIconFor, categoryDescriptionFor, categoryDisplayName, statusToneFor, contentGaps } from "../components/ui";
 
 type NoticeTone = "info" | "warning" | "success" | "error";
 type ManualPinResolution = {
@@ -889,6 +889,7 @@ export function ReportForm({
 }
 export function ReportTracking({
   report: initialReport,
+  meetingRequestId,
   residentId,
   close,
   backLabel = "Back to reports",
@@ -897,6 +898,7 @@ export function ReportTracking({
   onMapPageScroll,
 }: {
   report: Report;
+  meetingRequestId?: string;
   residentId: string;
   close: () => void;
   backLabel?: string;
@@ -911,18 +913,23 @@ export function ReportTracking({
   const desktopTracking = Platform.OS === "web" && windowWidth >= 1200;
   const qc = useQueryClient();
   const currentReport = useQuery({
-    queryKey: ["resident-report", initialReport.id],
+    queryKey: ["resident-report", initialReport.id, meetingRequestId ?? null],
     initialData: initialReport,
     initialDataUpdatedAt: 0,
     refetchInterval: 30_000,
     queryFn: async () => {
       const ownReport = await result<Report | null>(db!.from("reports").select("*").eq("id", initialReport.id).maybeSingle());
       if (ownReport) return ownReport;
+      if (meetingRequestId) {
+        const linked = await result<Report[]>(db!.rpc("meeting_linked_report_by_request", { p_request: meetingRequestId }));
+        return linked.find((item) => item.id === initialReport.id) ?? null;
+      }
       const published = await result<Report[]>(db!.rpc("public_report_by_id", { p_id: initialReport.id }));
       return published[0] ?? null;
     },
   });
   const r = currentReport.data ?? initialReport;
+  const sharedMeetingReport = !!meetingRequestId && !r.resident_id;
   const duplicateProgress = useQuery({
     queryKey: ["duplicate-progress", r.id],
     enabled: r.status === "duplicate" && currentReport.data !== null,
@@ -936,7 +943,7 @@ export function ReportTracking({
   });
   const q = useQuery({
     queryKey: ["timeline", r.id, r.organization_id, r.problem_type],
-    enabled: currentReport.data !== null,
+    enabled: currentReport.data !== null && !sharedMeetingReport,
     refetchInterval: 30_000,
     queryFn: async ({ signal }) => {
       const [problem, engagement, history, following, office] = await Promise.all([
@@ -953,7 +960,7 @@ export function ReportTracking({
   });
   const attachments = useQuery({
     queryKey: ["report-detail-attachments", r.id],
-    enabled: currentReport.data !== null,
+    enabled: currentReport.data !== null && !sharedMeetingReport,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const rows = await result<{ path: string }[]>(db!.from("report_attachments").select("path").eq("report_id", r.id).order("path"));
@@ -965,7 +972,7 @@ export function ReportTracking({
   });
   const goBack = () => { setMoreOpen(false); close(); };
   const following = !!q.data?.following.length;
-  const tone = reportStatusTone(r.status);
+  const tone = statusToneFor(r.status);
   const flowStep = reportFlowStep(r.status);
   const categoryTone = categoryToneFor(categoryName);
   const toggleFollow = async () => {
@@ -988,7 +995,7 @@ export function ReportTracking({
   </>;
   return (
     <>
-      <AppBackNavigation label={backLabel} onBack={goBack} actions={<>
+      <AppBackNavigation label={backLabel} onBack={goBack} actions={sharedMeetingReport ? undefined : <>
         {actionButton("share-social-outline", "Share public report summary", shareSummary)}
         {actionButton("ellipsis-horizontal", "More report options", () => setMoreOpen(true))}
       </>} />
@@ -998,6 +1005,7 @@ export function ReportTracking({
         {!!r.description && <>
           <Text style={[s.body, { color: colors.muted }]}>{r.description}</Text>
         </>}
+        {sharedMeetingReport && <Text style={s.small}>This shared view protects reporter identity, precise location, and private photos.</Text>}
         <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
           <View style={{ maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 13, backgroundColor: categoryTone.background }}><Ionicons name={categoryIconFor(categoryName)} size={16} color={categoryTone.foreground} /><Text style={{ color: categoryTone.foreground, fontSize: 12, fontWeight: "800", flexShrink: 1 }}>{categoryDisplayName(categoryName)}{q.data?.problem ? ` · ${q.data.problem.label}` : ""}</Text></View>
           <View style={{ maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, backgroundColor: tone.background }}><Ionicons name={r.status === "resolved" ? "checkmark-circle" : r.status === "rejected" ? "close-circle" : "time-outline"} size={16} color={tone.foreground} /><Text style={{ color: tone.foreground, fontSize: 12, fontWeight: "800", flexShrink: 1 }}>{r.status === "duplicate" ? "Linked duplicate" : reportStatusLabel(r.status)}</Text></View>
@@ -1031,7 +1039,7 @@ export function ReportTracking({
           : duplicateProgress.isPending ? <Text accessibilityLiveRegion="polite" style={s.small}>Loading main report progress…</Text>
           : !duplicateProgress.data ? <View style={{ gap: 8 }}><Text style={s.small}>The main report link is unavailable. Your submission is still recorded.</Text><Button secondary title="Check main report link" loading={duplicateProgress.isFetching} onPress={() => void duplicateProgress.refetch()} /></View>
           : <>
-            <View style={{ alignSelf: "flex-start", paddingHorizontal: 11, paddingVertical: 7, borderRadius: 18, backgroundColor: reportStatusTone(duplicateProgress.data.status).background }}><Text accessibilityLabel={`Main report status: ${reportStatusLabel(duplicateProgress.data.status)}`} style={{ color: reportStatusTone(duplicateProgress.data.status).foreground, fontSize: 14, fontWeight: "800" }}>{reportStatusLabel(duplicateProgress.data.status)}</Text></View>
+            <View style={{ alignSelf: "flex-start", paddingHorizontal: 11, paddingVertical: 7, borderRadius: 18, backgroundColor: statusToneFor(duplicateProgress.data.status).background }}><Text accessibilityLabel={`Main report status: ${reportStatusLabel(duplicateProgress.data.status)}`} style={{ color: statusToneFor(duplicateProgress.data.status).foreground, fontSize: 14, fontWeight: "800" }}>{reportStatusLabel(duplicateProgress.data.status)}</Text></View>
             {duplicateProgress.data.main_title && <Text style={s.fieldLabel}>{duplicateProgress.data.main_title}</Text>}
             <Text style={s.small}>Main report · {duplicateProgress.data.main_report_id.slice(0, 8).toUpperCase()}</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Main report updates" accessibilityState={{ expanded: mainTimelineOpen }} aria-expanded={mainTimelineOpen} onPress={() => setMainTimelineOpen(!mainTimelineOpen)} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}><Text style={[s.fieldLabel, { flex: 1 }]}>Main report updates ({duplicateProgress.data.history.length})</Text><Ionicons name={mainTimelineOpen ? "chevron-up" : "chevron-down"} size={19} color={colors.brand} /></Pressable>
@@ -1046,17 +1054,17 @@ export function ReportTracking({
         </View>
         <View style={[s.card, { width: windowWidth < 360 ? "100%" : "48.5%", minHeight: 106, justifyContent: "center", gap: 9, padding: 12, borderColor: "#e0efec", backgroundColor: "#fff" }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}><View style={{ width: 30, height: 30, borderRadius: 11, backgroundColor: "#eaf2ff", alignItems: "center", justifyContent: "center" }}><Ionicons name="business-outline" size={17} color="#3972b8" /></View><Text style={{ color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.6 }}>{r.status === "duplicate" ? "MAIN REPORT OFFICE" : "HANDLING TEAM"}</Text></View>
-          <Text style={{ color: colors.brandDark, fontSize: 14, lineHeight: 18, fontWeight: "800" }}>{r.status === "duplicate" ? duplicateProgress.isPending ? "Loading main report office…" : duplicateProgress.error ? "Main report office unavailable" : duplicateProgress.data ? duplicateProgress.data.organization_name || "Awaiting assignment" : "Main report link unavailable" : q.isPending ? "Loading office…" : q.data?.office?.name || (r.organization_id ? "Office details unavailable" : r.resident_id ? `${barangayName || "Local"} barangay` : "Office details are private")}</Text>
+          <Text style={{ color: colors.brandDark, fontSize: 14, lineHeight: 18, fontWeight: "800" }}>{r.status === "duplicate" ? duplicateProgress.isPending ? "Loading main report office…" : duplicateProgress.error ? "Main report office unavailable" : duplicateProgress.data ? duplicateProgress.data.organization_name || "Awaiting assignment" : "Main report link unavailable" : sharedMeetingReport ? "Office details are private" : q.isPending ? "Loading office…" : q.data?.office?.name || (r.organization_id ? "Office details unavailable" : r.resident_id ? `${barangayName || "Local"} barangay` : "Office details are private")}</Text>
         </View>
       </View>
 
-      <View style={[s.card, { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 8, gap: 6, backgroundColor: "#eff9f6", borderColor: "#eff9f6" }]}>
+      {!sharedMeetingReport && <View style={[s.card, { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 8, gap: 6, backgroundColor: "#eff9f6", borderColor: "#eff9f6" }]}>
         <EngagementMetric icon="people-outline" value={q.data?.engagement.followers} label="Followers" />
         <View style={{ width: 1, height: 38, backgroundColor: "#cfe7e1" }} />
         <EngagementMetric icon="share-social-outline" value={q.data?.engagement.endorsements} label="Shared experience" />
         <View style={{ width: 1, height: 38, backgroundColor: "#cfe7e1" }} />
         <EngagementMetric icon="time-outline" value={r.status === "duplicate" ? duplicateProgress.error ? undefined : duplicateProgress.data?.history.length : q.data?.history.length} label={r.status === "duplicate" ? "Main updates" : "Updates"} />
-      </View>
+      </View>}
 
       <View style={{ borderRadius: 20, overflow: "hidden", borderWidth: 1, borderColor: colors.line, backgroundColor: "white" }}>
         <View style={{ padding: 14, gap: 8 }}>
@@ -1074,10 +1082,10 @@ export function ReportTracking({
 
       <View style={s.card}>
         <View style={{ gap: 3 }}><Text style={s.title}>{r.status === "duplicate" ? "Your report history" : "Report timeline"}</Text><Text style={s.small}>{r.status === "duplicate" ? "Your original submission and the decision to link it are retained below. Current progress is shown with the main report above." : "Track the progress of this report from submission to resolution."}</Text></View>
-        {q.error ? <View style={{ gap: 8 }}><Text accessibilityRole="alert" style={s.error}>Could not load report updates.</Text><Button secondary title="Retry report updates" onPress={() => void q.refetch()} /></View> : q.isPending ? <ReportTimelineSkeleton /> : q.data?.history.length ? <ReportTimeline history={q.data.history} currentStatus={r.status} /> : <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 }}><Ionicons name="time-outline" size={18} color={colors.muted} /><Text style={s.small}>No progress updates have been recorded yet.</Text></View>}
+        {sharedMeetingReport ? <Text style={s.small}>Progress history is not included in this shared report view.</Text> : q.error ? <View style={{ gap: 8 }}><Text accessibilityRole="alert" style={s.error}>Could not load report updates.</Text><Button secondary title="Retry report updates" onPress={() => void q.refetch()} /></View> : q.isPending ? <ReportTimelineSkeleton /> : q.data?.history.length ? <ReportTimeline history={q.data.history} currentStatus={r.status} /> : <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 }}><Ionicons name="time-outline" size={18} color={colors.muted} /><Text style={s.small}>No progress updates have been recorded yet.</Text></View>}
       </View>
 
-      <ReportAttachments items={attachments.data ?? []} loading={attachments.isPending} error={attachments.error ? "Could not load report photos." : ""} onRetry={() => void attachments.refetch()} />
+      {sharedMeetingReport ? <View style={s.card}><Text style={s.small}>Report photos are not available in this shared view.</Text></View> : <ReportAttachments items={attachments.data ?? []} loading={attachments.isPending} error={attachments.error ? "Could not load report photos." : ""} onRetry={() => void attachments.refetch()} />}
       {!!message && <Text accessibilityRole="alert" style={s.error}>{message}</Text>}
 
       <Modal visible={moreOpen} transparent animationType="fade" onRequestClose={() => setMoreOpen(false)}>
@@ -1094,18 +1102,6 @@ export function ReportTracking({
       </Modal>
     </>
   );
-}
-
-function reportStatusTone(status: string) {
-  const value = status.toLowerCase().replace(/[_-]/g, " ");
-  if (value.includes("resolved")) return { background: "#e5f3e9", foreground: "#286b3b" };
-  if (value.includes("rejected") || value.includes("cancelled")) return { background: "#ffefed", foreground: "#a43d35" };
-  if (value.includes("progress")) return { background: "#fff3dc", foreground: "#865a0b" };
-  if (value.includes("scheduled")) return { background: "#eaf2ff", foreground: "#315b92" };
-  if (value.includes("review")) return { background: "#eaf2ff", foreground: "#315b92" };
-  if (value.includes("assigned")) return { background: "#f0eaff", foreground: "#6844a3" };
-  if (value.includes("verified")) return { background: "#e8f1ff", foreground: "#3264a0" };
-  return statusToneFor(status);
 }
 
 function reportFlowStep(status: string): number | null {
@@ -1132,7 +1128,7 @@ function ReportTimeline({ history, currentStatus }: { history: { id: number; new
   return <View>
     {history.map((event, index) => {
       const isCurrent = index === history.length - 1 && event.new_status === currentStatus;
-      const tone = reportStatusTone(event.new_status);
+      const tone = statusToneFor(event.new_status);
       const exceptional = /rejected|cancelled/i.test(event.new_status);
       return <View key={event.id} style={{ minHeight: 66, flexDirection: "row", gap: 12 }}>
         <View style={{ width: 22, alignItems: "center" }}><View style={{ width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: tone.foreground }}><Ionicons name={exceptional ? "close" : "checkmark"} size={14} color="white" /></View>{index < history.length - 1 && <View style={{ width: 2, flex: 1, backgroundColor: "#b9dfd5" }} />}</View>
@@ -1219,6 +1215,8 @@ export function Explore({
     [filtersOpen, setFiltersOpen] = useState(false),
     [showMap, setShowMap] = useState(true),
     [showBarangayMap, setShowBarangayMap] = useState(false),
+    [showBarangayBoundaries, setShowBarangayBoundaries] = useState(true),
+    [mapLayersOpen, setMapLayersOpen] = useState(false),
     [barangayMetric, setBarangayMetric] = useState<"density" | "count">("density"),
     [selectedChoroplethName, setSelectedChoroplethName] = useState(""),
     [density, setDensity] = useState(false),
@@ -1240,7 +1238,12 @@ export function Explore({
     [busy, setBusy] = useState(false);
   const qc = useQueryClient();
   const photoRetryIds = useRef(new Set<string>());
-  const mapViewport = useRef<Region>({ latitude: 8.228, longitude: 124.2452, latitudeDelta: 0.05, longitudeDelta: 0.05 });
+  const mapViewport = useRef<Region>({
+    latitude: (ILIGAN_MAP_BOUNDS.northEast.latitude + ILIGAN_MAP_BOUNDS.southWest.latitude) / 2,
+    longitude: (ILIGAN_MAP_BOUNDS.northEast.longitude + ILIGAN_MAP_BOUNDS.southWest.longitude) / 2,
+    latitudeDelta: (ILIGAN_MAP_BOUNDS.northEast.latitude - ILIGAN_MAP_BOUNDS.southWest.latitude) * 1.2,
+    longitudeDelta: (ILIGAN_MAP_BOUNDS.northEast.longitude - ILIGAN_MAP_BOUNDS.southWest.longitude) * 1.2,
+  });
   const setMapViewport = useCallback((region: Region) => { mapViewport.current = region; }, []);
   const selectMapPoint = useCallback((point: Point) => setSelectedReportId(point.id ?? null), []);
   const expandMap = useCallback(() => setExpandedMap(true), []);
@@ -1374,6 +1377,25 @@ export function Explore({
   const pinCategories = [...new Map(mapPoints.map((point) => [point.categoryName, point.color])).entries()];
   const selectedMapReport = showPins ? mapPoints.find((point) => point.id === selectedReportId) : undefined;
   const selectedListReport = reports.find((item) => item.id === selectedListReportId);
+  const mapLayerOptions = [
+    { label: "Pins", accessibilityLabel: "Show report pins", enabled: showPins, icon: "location-outline" as const, onPress: () => setShowPins((value) => !value) },
+    { label: "Heatmap", accessibilityLabel: "Show report heatmap", enabled: density, icon: "layers-outline" as const, onPress: () => { setDensity((value) => !value); setDensityCellCount(null); } },
+    { label: "Barangay boundary", accessibilityLabel: "Show barangay boundaries", enabled: showBarangayBoundaries, icon: "map-outline" as const, onPress: () => setShowBarangayBoundaries((value) => !value) },
+  ];
+  const renderMapLayersControl = () => <View style={{ borderWidth: 1, borderColor: "#d8e4e0", borderRadius: 13, backgroundColor: "#fbfcfb", overflow: "hidden" }}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Map layers" accessibilityState={{ expanded: mapLayersOpen }} onPress={() => setMapLayersOpen((open) => !open)} style={({ pressed }) => [{ minHeight: 42, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 8, opacity: pressed ? 0.78 : 1 }]}>
+      <View style={{ width: 28, height: 28, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: "#e5f6f2" }}><Ionicons name="layers-outline" size={15} color={colors.brand} /></View>
+      <Text style={{ flex: 1, color: colors.brandDark, fontSize: 12, fontWeight: "800" }}>Map layers</Text>
+      <Text style={{ color: colors.muted, fontSize: 10 }}>{showBarangayBoundaries ? "Boundary on" : "Boundary off"}</Text>
+      <Ionicons name={mapLayersOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.muted} />
+    </Pressable>
+    {mapLayersOpen && <View style={{ flexDirection: "row", flexWrap: "nowrap", gap: 4, paddingHorizontal: 5, paddingBottom: 4, borderTopWidth: 1, borderTopColor: "#e4ece9" }}>
+      {mapLayerOptions.map((option) => <Pressable key={option.label} accessibilityRole="switch" accessibilityLabel={option.accessibilityLabel} accessibilityState={{ checked: option.enabled }} aria-checked={option.enabled} {...(Platform.OS === "web" ? { onKeyDown: (event: KeyboardEvent<HTMLElement>) => { if (event.key === " ") { event.preventDefault(); if (!event.repeat) option.onPress(); } } } : {})} onPress={option.onPress} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: 40, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 2, opacity: pressed ? 0.72 : 1 }]}>
+        <View style={{ width: 31, height: 18, borderRadius: 10, padding: 2, backgroundColor: option.enabled ? colors.brand : "#cbd7df", justifyContent: "center" }}><View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: "white", alignSelf: option.enabled ? "flex-end" : "flex-start" }} /></View>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.84} style={{ flexShrink: 1, color: option.enabled ? colors.brandDark : colors.muted, fontSize: 10, fontWeight: "700" }}>{option.label}</Text>
+      </Pressable>)}
+    </View>}
+  </View>;
   const hasActiveFilters = !!(category || barangay || search || mapStatus !== "active" || recentOnly);
   const renderBarangayReportRows = (items: Report[]) => items.map((report) => {
     const name = categoryNames.get(report.category_id) || "Other reports";
@@ -1486,9 +1508,7 @@ export function Explore({
         </>}
       </View>
       {desktopExplore && showMap && <>
-        <View style={{ flexDirection: "row", gap: 7 }}>
-          {([[showPins, setShowPins, "Pins", "location"], [density, setDensity, "Heatmap", "layers"]] as const).map(([enabled, setEnabled, title, icon]) => <Pressable key={title} accessibilityRole="checkbox" accessibilityLabel={`${title === "Pins" ? "Report pins" : title} layer`} accessibilityState={{ checked: enabled }} onPress={() => { setEnabled(!enabled); if (title === "Heatmap") setDensityCellCount(null); }} style={({ pressed }) => [{ flex: 1, minHeight: 39, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 8, borderWidth: 1, borderColor: enabled ? "#c8e9e5" : colors.line, paddingHorizontal: 7, backgroundColor: enabled ? "#e7f7f3" : "white", opacity: pressed ? 0.78 : 1 }]}><Ionicons name={icon} size={16} color={enabled ? colors.brand : colors.muted} /><Text style={{ color: enabled ? colors.brandDark : colors.muted, fontSize: 11, fontWeight: "700" }}>{title}</Text></Pressable>)}
-        </View>
+        {!showBarangayMap && renderMapLayersControl()}
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}><Text style={{ color: "#173b45", fontSize: 13, fontWeight: "700" }}>{showBarangayMap ? selectedChoroplethName || "Top barangays" : "Mapped reports"}</Text><Text style={{ color: "#71858a", fontSize: 11 }}>{showBarangayMap ? `${barangayHeatStats.top.length} shown` : `${mapReports.length.toLocaleString()} results`}</Text></View>
         <Text style={{ color: "#71858a", fontSize: 11, lineHeight: 16 }}>{showBarangayMap ? "Select a boundary to explore reports by barangay." : "Select a report to locate it on the map."}</Text>
         <ScrollView style={{ maxHeight: 410, minHeight: 170, borderTopWidth: 1, borderTopColor: "#e0e9e7" }} contentContainerStyle={{ gap: 0 }} showsVerticalScrollIndicator>
@@ -1520,9 +1540,7 @@ export function Explore({
           {!showBarangayMap && !desktopExplore && <>
             <View style={{ gap: 10, marginTop: 8, marginBottom: 10 }}>
               {mapReports.length > mapPoints.length && <Text style={s.small}>{mapReports.length - mapPoints.length} reports use manual addresses. Open List to view them.</Text>}
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                {([[showPins, setShowPins, "Pins", "location"], [density, setDensity, "Heatmap", "layers"]] as const).map(([enabled, setEnabled, title, icon]) => <Pressable key={title} accessibilityRole="checkbox" accessibilityLabel={`${title === "Pins" ? "Report pins" : title} layer`} accessibilityState={{ checked: enabled }} aria-checked={enabled} {...(Platform.OS === "web" ? { onKeyDown: (event: KeyboardEvent<HTMLElement>) => { if (event.key === " ") { event.preventDefault(); if (!event.repeat) { setEnabled(!enabled); if (title === "Heatmap") setDensityCellCount(null); } } } } : {})} onPress={() => { setEnabled(!enabled); if (title === "Heatmap") setDensityCellCount(null); }} style={({ pressed }) => [{ flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 24, borderWidth: 1, borderColor: enabled ? "#c8e9e5" : colors.line, paddingHorizontal: 10, backgroundColor: enabled ? "#ddf7f3" : "white", shadowColor: colors.brandDark, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 }, pressed && { opacity: 0.78 }]}><Ionicons name={icon} size={19} color={enabled ? colors.brand : colors.muted} /><Text style={{ color: enabled ? colors.brandDark : colors.muted, fontSize: 12, fontWeight: "700" }}>{title}</Text><View style={{ width: 38, height: 23, borderRadius: 12, padding: 3, backgroundColor: enabled ? colors.brand : "#cbd7df", justifyContent: "center" }}><View style={{ width: 17, height: 17, borderRadius: 9, backgroundColor: "white", alignSelf: enabled ? "flex-end" : "flex-start", shadowColor: "#123", shadowOpacity: 0.14, shadowRadius: 3, elevation: 1 }} /></View></Pressable>)}
-              </View>
+              {renderMapLayersControl()}
             </View>
           </>}
           {expandedMap ? <View style={{ height: mapHeight }} /> : <View style={{ position: "relative" }}>
@@ -1545,11 +1563,11 @@ export function Explore({
             onOpenPointDetails={(point) => { const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }}
             onClearPointSelection={() => setSelectedReportId(null)}
             onExpand={expandMap}
-            showBarangayBoundaries={showBarangayMap}
+            showBarangayBoundaries={showBarangayMap || showBarangayBoundaries}
             barangayCounts={barangayCounts}
             barangayMetric={barangayMetric}
-            onBarangayPress={selectBarangayOnMap}
-            onMapBackgroundPress={() => setSelectedChoroplethName("")}
+            onBarangayPress={showBarangayMap ? selectBarangayOnMap : undefined}
+            onMapBackgroundPress={showBarangayMap ? () => setSelectedChoroplethName("") : undefined}
             selectedBarangayName={selectedChoroplethName}
             summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand}
             mapStyle={mapStyle}
@@ -1601,12 +1619,13 @@ export function Explore({
                 <View><Text style={s.title}>{showBarangayMap ? "Barangay heatmap" : "Explore Iligan"}</Text><Text style={s.small}>{showBarangayMap ? `${mappedBarangayReportCount} mapped reports · tap a barangay` : `${mapPoints.length} map pins · ${mapReports.length - mapPoints.length} manual addresses`}</Text></View>
                 <Pressable accessibilityRole="button" accessibilityLabel="Close expanded map" onPress={() => setExpandedMap(false)} style={{ width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "white" }}><Ionicons name="close" size={23} color={colors.brandDark} /></Pressable>
               </View>
+              {!showBarangayMap && renderMapLayersControl()}
               <View style={{ flex: 1, minHeight: 0 }}>
-                <LocationMap points={mapPoints} height={Math.max(180, windowHeight - safeArea.top - safeArea.bottom - 92)} zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"} density={!showBarangayMap && density} showPoints={!showBarangayMap && showPins} onDensityCellPress={setDensityCellCount} selectedCellCount={densityCellCount} userPoint={currentLocation} locating={locating} onLocate={locateOnMap} selectedPointId={selectedReportId ?? undefined} onPointPress={(point) => { selectMapPoint(point); const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }} mapStyle={mapStyle} onMapStyleChange={setMapStyle} mapStyleSelector="tabs" initialRegion={mapViewport.current} onViewportChange={setMapViewport} bounds={ILIGAN_MAP_BOUNDS} showBarangayBoundaries={showBarangayMap} barangayCounts={barangayCounts} barangayMetric={barangayMetric} onBarangayPress={selectBarangayOnMap} onMapBackgroundPress={() => setSelectedChoroplethName("")} selectedBarangayName={selectedChoroplethName} summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand} />
+                <LocationMap points={mapPoints} height={Math.max(180, windowHeight - safeArea.top - safeArea.bottom - 142)} zoomBehavior={showBarangayMap ? "barangay-gis" : "issue-map"} density={!showBarangayMap && density} showPoints={!showBarangayMap && showPins} onDensityCellPress={setDensityCellCount} selectedCellCount={densityCellCount} userPoint={currentLocation} locating={locating} onLocate={locateOnMap} selectedPointId={selectedReportId ?? undefined} onPointPress={(point) => { selectMapPoint(point); const report = mapReports.find((item) => item.id === point.id); if (report) onOpenReport(report); }} mapStyle={mapStyle} onMapStyleChange={setMapStyle} mapStyleSelector="tabs" initialRegion={mapViewport.current} onViewportChange={setMapViewport} bounds={ILIGAN_MAP_BOUNDS} showBarangayBoundaries={showBarangayMap || showBarangayBoundaries} barangayCounts={barangayCounts} barangayMetric={barangayMetric} onBarangayPress={showBarangayMap ? selectBarangayOnMap : undefined} onMapBackgroundPress={showBarangayMap ? () => setSelectedChoroplethName("") : undefined} selectedBarangayName={selectedChoroplethName} summaryColor={category ? categoryToneFor(categoryNames.get(category) || "Other reports").foreground : colors.brand} />
               </View>
             </SafeAreaView>
           </Modal>}
-          {!showBarangayMap && !density && !showPins && <Text style={s.small}>Both layers are off. Turn on Pins or Heat to see reports.</Text>}
+          {!showBarangayMap && !density && !showPins && !showBarangayBoundaries && <Text style={s.small}>All map layers are off. Turn on a layer to see map information.</Text>}
           {!showBarangayMap && !mapQuery.isPending && !mapQuery.error && !mapPoints.length && <View style={s.card}><Text style={s.title}>{mapReports.length ? "These reports use manual addresses" : "No reports match these map filters"}</Text><Text style={s.small}>{mapReports.length ? "Their barangay and address details are available in List. No map pins were provided." : "Try Any distance, All statuses, another barangay, or a wider date range."}</Text>{!!mapReports.length && <Button secondary title="View report list" onPress={() => setShowMap(false)} />}</View>}
           {!desktopExplore && selectedMapReport && (() => {
             const tone = categoryToneFor(selectedMapReport.categoryName);
@@ -1635,7 +1654,7 @@ export function Explore({
               </View>)}
             </ScrollView>
           </View>}
-          {!showBarangayMap && showPins && pinCategories.length > 0 && <Text style={[s.small, { fontSize: 10 }]}>Report pins stay visible at every zoom; pin colors show the report category.</Text>}
+          {!showBarangayMap && showPins && pinCategories.length > 0 && <Text style={[s.small, { fontSize: 10 }]}>Nearby reports group at city scale; individual pins appear as you zoom in.</Text>}
           {mapQuery.data?.length === 500 && <Text style={s.small}>Showing the latest 500 published locations. Use the barangay or category filters to narrow the map.</Text>}
           <View style={[s.card, { gap: 10 }]}>
             <View style={[s.row, { flexWrap: "nowrap", alignItems: "center" }]}>
@@ -1658,6 +1677,7 @@ export function Explore({
       {!q.isPending && !q.error && !reports.length && (
         <View style={[s.card, { alignItems: "center", gap: 8, paddingVertical: 22 }]}><Ionicons name="search-outline" size={27} color={colors.muted} /><Text style={s.title}>No reports found</Text><Text style={[s.subtitle, { textAlign: "center" }]}>Try adjusting your search or filters.</Text><Button secondary title="Reset filters" onPress={() => { setCategory(""); setBarangay(""); setSearch(""); setAppliedSearch(""); setMapStatus("active"); setRecentOnly(false); setNearbyRadius("0"); setDensityCellCount(null); setSelectedReportId(null); setPage(0); }} /></View>
       )}
+      <View style={{ gap: desktopExplore ? contentGaps.grid : contentGaps.stack }}>
       {reports.map((r) => {
         const categoryName = categories.find((c) => c.id === r.category_id)?.name ?? "Community report";
         const photoUrl = reportPhotos.data?.urls[r.id];
@@ -1688,6 +1708,7 @@ export function Explore({
           </View>
         );
       })}
+      </View>
       {(page > 0 || matchingReports.length > (page + 1) * 30) && (
         <>
           <Text style={[s.small, { textAlign: "center" }]}>Page {page + 1}</Text>

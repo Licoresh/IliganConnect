@@ -47,6 +47,24 @@
   --warm-surface: #f8fbfa;
   --surface-hover: #f1f8f6;
   --brand-soft: #e4f5f1;
+  --status-neutral-bg: #edf2f5;
+  --status-neutral-fg: #526978;
+  --status-review-bg: #fff3dc;
+  --status-review-fg: #865a0b;
+  --status-verified-bg: #e5f6f2;
+  --status-verified-fg: #08756b;
+  --status-assigned-bg: #f0eaff;
+  --status-assigned-fg: #6844a3;
+  --status-scheduled-bg: #e8f2ff;
+  --status-scheduled-fg: #1764bb;
+  --status-progress-bg: #fff0df;
+  --status-progress-fg: #a65712;
+  --status-resolved-bg: #e5f3e9;
+  --status-resolved-fg: #286b3b;
+  --status-rejected-bg: #ffefed;
+  --status-rejected-fg: #a43d35;
+  --status-duplicate-bg: #eeeefa;
+  --status-duplicate-fg: #53577f;
   --shadow: 0 10px 30px rgb(16 47 68 / 7%);
   --white: #fff;
   color-scheme: light;
@@ -535,22 +553,15 @@ main#main {
   background: #edf1f0;
   color: #54686b;
 }
-.submitted,
-.under_review {
-  background: #fff1d6;
-  color: #7f5511;
-}
-.verified,
-.resolved {
-  background: #e0f2e7;
-  color: #276947;
-}
-.in_progress,
-.assigned,
-.scheduled {
-  background: #e6eff8;
-  color: #365f8b;
-}
+.badge.submitted { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
+.badge.under_review { background: var(--status-review-bg); color: var(--status-review-fg); }
+.badge.verified { background: var(--status-verified-bg); color: var(--status-verified-fg); }
+.badge.assigned { background: var(--status-assigned-bg); color: var(--status-assigned-fg); }
+.badge.scheduled { background: var(--status-scheduled-bg); color: var(--status-scheduled-fg); }
+.badge.in_progress { background: var(--status-progress-bg); color: var(--status-progress-fg); }
+.badge.resolved { background: var(--status-resolved-bg); color: var(--status-resolved-fg); }
+.badge.rejected { background: var(--status-rejected-bg); color: var(--status-rejected-fg); }
+.badge.duplicate { background: var(--status-duplicate-bg); color: var(--status-duplicate-fg); }
 .bar-row {
   margin: 23px 0;
 }
@@ -1911,9 +1922,10 @@ footer span { color: var(--muted); }
 .overview-community-copy strong { display: block; overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .overview-community-copy small { display: block; overflow: hidden; margin-top: 4px; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .overview-community-status { padding: 5px 8px; font-size: 9px; }
-.overview-community-status.pending { background: #fff3df; color: #996416; }
-.overview-community-status.approved { background: #e3f5ed; color: #137a57; }
-.overview-community-status.declined { background: #fff0ee; color: #ab4d45; }
+.overview-community-status.pending { background: var(--status-review-bg); color: var(--status-review-fg); }
+.overview-community-status.approved { background: var(--status-verified-bg); color: var(--status-verified-fg); }
+.overview-community-status.completed { background: var(--status-resolved-bg); color: var(--status-resolved-fg); }
+.overview-community-status.declined { background: var(--status-rejected-bg); color: var(--status-rejected-fg); }
 .overview-empty { display: grid; justify-items: center; gap: 6px; min-height: 150px; align-content: center; color: #738992; text-align: center; }
 .overview-empty > svg { color: var(--brand); }
 .overview-empty strong { color: #294957; font-size: 11px; }
@@ -2318,15 +2330,6 @@ button:is(.report-button,.attention-item,.overview-step,.overview-community-row,
 .overview-category .report-category-label-icon { width: 18px; height: 18px; flex-basis: 18px; border-radius: 6px; }
 .report-detail-category { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .reports-table .badge { border: 1px solid transparent; border-radius: 999px; padding: 4px 9px; font-weight: 650; }
-.reports-table .badge.submitted, .reports-table .badge.under_review { background: #fff3dc; color: #865a0b; }
-.reports-table .badge.verified, .reports-table .badge.assigned, .reports-table .badge.scheduled, .reports-table .badge.in_progress { background: #e9f0fa; color: #3c5f93; }
-.reports-table .badge.resolved { background: #e5f3e9; color: #286b3b; }
-.reports-table .badge.rejected { background: #ffefed; color: #a43d35; }
-.reports-table .badge.duplicate { background: #e9f0fa; color: #3c5f93; }
-.overview .badge.submitted, .overview .badge.under_review { background: #fff3dc; color: #865a0b; }
-.overview .badge.verified, .overview .badge.assigned, .overview .badge.scheduled, .overview .badge.in_progress, .overview .badge.duplicate { background: #e9f0fa; color: #3c5f93; }
-.overview .badge.resolved { background: #e5f3e9; color: #286b3b; }
-.overview .badge.rejected { background: #ffefed; color: #a43d35; }
 .map-popup-action:hover { transform: none; box-shadow: none; }
 @media (max-width: 760px) {
   .reports-table td.report-received { align-items: center; }
@@ -2474,10 +2477,15 @@ main#main:has(.analytics-detail-page) > .page-heading { display: none; }
 .analytics-active-table .analytics-report-open:hover:not(:disabled) { transform: none; background: transparent; box-shadow: none; color: var(--brand); text-decoration: underline; }
 .analytics-active-table tbody th small { display: block; margin-top: 3px; color: #8494a4; font-size: 9px; font-weight: 450; }
 .analytics-status { display: inline-flex; min-height: 22px; align-items: center; padding: 3px 8px; border-radius: 999px; background: #edf3f7; color: #536d82; font-size: 9px; font-weight: 650; white-space: nowrap; }
-.analytics-status.status-resolved { background: #e3f5ed; color: #087d5d; }
-.analytics-status.status-verified, .analytics-status.status-assigned, .analytics-status.status-scheduled, .analytics-status.status-in_progress { background: #e8f2ff; color: #286bb5; }
-.analytics-status.status-submitted, .analytics-status.status-under_review { background: #fff4df; color: #986400; }
-.analytics-status.status-rejected, .analytics-status.status-duplicate { background: #fff0ef; color: #b3433e; }
+.analytics-status.status-resolved { background: var(--status-resolved-bg); color: var(--status-resolved-fg); }
+.analytics-status.status-verified { background: var(--status-verified-bg); color: var(--status-verified-fg); }
+.analytics-status.status-assigned { background: var(--status-assigned-bg); color: var(--status-assigned-fg); }
+.analytics-status.status-scheduled { background: var(--status-scheduled-bg); color: var(--status-scheduled-fg); }
+.analytics-status.status-in_progress { background: var(--status-progress-bg); color: var(--status-progress-fg); }
+.analytics-status.status-submitted { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
+.analytics-status.status-under_review { background: var(--status-review-bg); color: var(--status-review-fg); }
+.analytics-status.status-rejected { background: var(--status-rejected-bg); color: var(--status-rejected-fg); }
+.analytics-status.status-duplicate { background: var(--status-duplicate-bg); color: var(--status-duplicate-fg); }
 .analytics-assessment > .overview-panel-subtitle { margin-bottom: 13px; }
 .analytics-assessment-form { display: grid; gap: 8px; }
 .analytics-assessment-form > label { color: #405d72; font-size: 10px; font-weight: 650; }
@@ -2585,8 +2593,8 @@ main#main:has(.analytics-detail-page) > .page-heading { display: none; }
 .consultation-card:hover { border-color: #c7e0dc; box-shadow: 0 6px 18px #12343d0d; }
 .consultation-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .consultation-status { display: inline-flex; align-items: center; min-height: 26px; padding: 5px 10px; border-radius: 999px; background: #e4f7ef; color: #087a52; font-size: 10px; font-weight: 700; white-space: nowrap; }
-.consultation-status.closed { background: #e8f2ff; color: #2868b5; }
-.consultation-status.archived, .consultation-status.draft { background: #edf1f4; color: #5c6d7b; }
+.consultation-status.open { background: var(--status-verified-bg); color: var(--status-verified-fg); }
+.consultation-status.closed, .consultation-status.archived, .consultation-status.draft { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
 .consultation-dates { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; white-space: nowrap; }
 .consultation-dates svg, .consultation-location svg { flex: 0 0 auto; color: #49698f; }
 .consultation-card h3 { display: -webkit-box; overflow: hidden; margin: 0 0 7px; color: var(--ink); font-size: 14px; font-weight: 700; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -2653,8 +2661,9 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .announcement-card:hover { border-color: #c7e0dc; box-shadow: 0 6px 18px #12343d0d; }
 .announcement-card-top { display: flex; min-width: 0; align-items: center; gap: 8px; margin-bottom: 13px; }
 .announcement-status { display: inline-flex; flex: 0 0 auto; min-height: 26px; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 999px; background: #e3f6ed; color: #087a52; font-size: 10px; font-weight: 700; white-space: nowrap; }
-.announcement-status.pending_review { background: #fff3df; color: #98600a; }
-.announcement-status.draft, .announcement-status.archived { background: #edf1f4; color: #596c7b; }
+.announcement-status.pending_review { background: var(--status-review-bg); color: var(--status-review-fg); }
+.announcement-status.is-scheduled { background: var(--status-scheduled-bg); color: var(--status-scheduled-fg); }
+.announcement-status.draft, .announcement-status.archived { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
 .announcement-card-top time { display: inline-flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; margin-left: auto; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .announcement-card-top time svg { flex: 0 0 auto; color: #49698f; }
 .announcement-card h3 { display: -webkit-box; overflow: hidden; margin: 0 0 7px; color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -2740,10 +2749,11 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 11px; }
 .meeting-card-top time { color: #7b8ca0; font-size: 10px; white-space: nowrap; }
 .meeting-status { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 9px; border-radius: 999px; font-size: 10px; font-weight: 650; white-space: nowrap; }
-.meeting-status.pending { background: #fff3df; color: #9a5d08; }
-.meeting-status.approved, .meeting-status.completed { background: #e3f6ed; color: #11794d; }
-.meeting-status.scheduled { background: #e8f2ff; color: #2868b5; }
-.meeting-status.declined { background: #fff0ee; color: #a83d37; }
+.meeting-status.pending { background: var(--status-review-bg); color: var(--status-review-fg); }
+.meeting-status.approved { background: var(--status-verified-bg); color: var(--status-verified-fg); }
+.meeting-status.completed { background: var(--status-resolved-bg); color: var(--status-resolved-fg); }
+.meeting-status.scheduled { background: var(--status-scheduled-bg); color: var(--status-scheduled-fg); }
+.meeting-status.declined { background: var(--status-rejected-bg); color: var(--status-rejected-fg); }
 .meeting-card h3 { display: -webkit-box; overflow: hidden; margin: 0 0 6px; color: var(--ink); font-size: 14px; font-weight: 700; line-height: 1.35; letter-spacing: -.15px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .meeting-card-body { display: -webkit-box; overflow: hidden; margin: 0 0 11px; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .meeting-card-meta { display: grid; gap: 7px; margin-bottom: 11px; color: #647c8e; font-size: 10px; }
@@ -2752,9 +2762,9 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-office-invitations { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .meeting-invitation-status { display: inline-flex; min-width: 0; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid #dbe8e7; border-radius: 8px; background: #f7fbfa; color: #58707d; font-size: 10px; line-height: 1.3; }
 .meeting-invitation-status strong { color: #27465a; font-weight: 650; }
-.meeting-invitation-status.pending, .meeting-invitation-status.pending-approval { border-color: #f1dbad; background: #fff8e9; color: #8a5a0a; }
-.meeting-invitation-status.accepted { border-color: #cae9d8; background: #effaf4; color: #17734e; }
-.meeting-invitation-status.declined { border-color: #f0d5d1; background: #fff6f4; color: #a0443c; }
+.meeting-invitation-status.pending, .meeting-invitation-status.pending-approval { border-color: #f1dbad; background: var(--status-review-bg); color: var(--status-review-fg); }
+.meeting-invitation-status.accepted { border-color: #cae9d8; background: var(--status-resolved-bg); color: var(--status-resolved-fg); }
+.meeting-invitation-status.declined { border-color: #f0d5d1; background: var(--status-rejected-bg); color: var(--status-rejected-fg); }
 .meeting-invitation-error { color: #a0443c; font-size: 10px; }
 .meeting-schedule { display: flex; flex-wrap: wrap; gap: 9px; margin: 0 0 11px; padding: 9px; border: 1px solid #d9efea; border-radius: 10px; background: #f3fbf8; color: var(--brand); }
 .meeting-schedule > svg { flex: 0 0 auto; margin-top: 1px; }
@@ -2799,9 +2809,10 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-upcoming-copy small, .meeting-recent small { overflow: hidden; color: #778b9b; font-size: 9px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .meeting-upcoming > svg, .meeting-recent > svg { flex: 0 0 auto; color: #71889a; }
 .meeting-recent-dot { flex: 0 0 9px; width: 9px; height: 9px; border-radius: 50%; background: #d48a15; }
-.meeting-recent-dot.approved, .meeting-recent-dot.completed { background: #159260; }
-.meeting-recent-dot.scheduled { background: #347ed0; }
-.meeting-recent-dot.declined { background: #c74f48; }
+.meeting-recent-dot.approved { background: var(--status-verified-fg); }
+.meeting-recent-dot.completed { background: var(--status-resolved-fg); }
+.meeting-recent-dot.scheduled { background: var(--status-scheduled-fg); }
+.meeting-recent-dot.declined { background: var(--status-rejected-fg); }
 .meeting-rail-empty, .meeting-rail-error { margin: 0; padding: 12px 0 3px; border-top: 1px solid #f1e9e8; color: #778b9b; font-size: 10px; line-height: 1.5; }
 .meeting-rail-error { color: #a3403a; }
 .meeting-empty { display: grid; justify-items: center; gap: 8px; min-height: 190px; align-content: center; text-align: center; }
@@ -3210,10 +3221,15 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .report-history-event strong { color: #27445c; font-size: 10px; }
 .report-history-event small { color: var(--muted); font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
 .report-history-event time { color: var(--muted); font-size: 9px; text-align: right; }
-.report-history-event.resolved .report-history-icon { background: #0c947e; }
-.report-history-event.verified .report-history-icon { background: #1887da; }
-.report-history-event.under_review .report-history-icon { background: #e79a16; }
-.report-history-event.rejected .report-history-icon, .report-history-event.duplicate .report-history-icon { background: #6e7f91; }
+.report-history-event.submitted .report-history-icon { background: var(--status-neutral-fg); }
+.report-history-event.under_review .report-history-icon { background: var(--status-review-fg); }
+.report-history-event.verified .report-history-icon { background: var(--status-verified-fg); }
+.report-history-event.assigned .report-history-icon { background: var(--status-assigned-fg); }
+.report-history-event.scheduled .report-history-icon { background: var(--status-scheduled-fg); }
+.report-history-event.in_progress .report-history-icon { background: var(--status-progress-fg); }
+.report-history-event.resolved .report-history-icon { background: var(--status-resolved-fg); }
+.report-history-event.rejected .report-history-icon { background: var(--status-rejected-fg); }
+.report-history-event.duplicate .report-history-icon { background: var(--status-duplicate-fg); }
 .report-action-section { padding: clamp(18px, 2vw, 26px); }
 .report-action-section > .report-workspace-section-heading { gap: 14px; align-items: center; margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid #f0e7e8; }
 .report-action-heading-icon { display: grid; width: 46px; height: 46px; flex: 0 0 46px; place-items: center; border-radius: 12px; background: var(--brand-soft); color: var(--brand); }
@@ -3229,10 +3245,15 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .report-action-form .report-action-status-field { width: min(320px, 100%); }
 .report-action-status-control { position: relative; display: block; }
 .report-action-status-icon { position: absolute; z-index: 1; top: 50%; left: 12px; transform: translateY(-50%); pointer-events: none; color: #667b90; }
-.report-action-status-icon[data-status=under_review] { color: #bf7c00; }
-.report-action-status-icon[data-status=verified], .report-action-status-icon[data-status=assigned] { color: #237dbc; }
-.report-action-status-icon[data-status=scheduled] { color: #237dbc; }
-.report-action-status-icon[data-status=resolved], .report-action-status-icon[data-status=in_progress] { color: #078575; }
+.report-action-status-icon[data-status=submitted] { color: var(--status-neutral-fg); }
+.report-action-status-icon[data-status=under_review] { color: var(--status-review-fg); }
+.report-action-status-icon[data-status=verified] { color: var(--status-verified-fg); }
+.report-action-status-icon[data-status=assigned] { color: var(--status-assigned-fg); }
+.report-action-status-icon[data-status=scheduled] { color: var(--status-scheduled-fg); }
+.report-action-status-icon[data-status=in_progress] { color: var(--status-progress-fg); }
+.report-action-status-icon[data-status=resolved] { color: var(--status-resolved-fg); }
+.report-action-status-icon[data-status=rejected] { color: var(--status-rejected-fg); }
+.report-action-status-icon[data-status=duplicate] { color: var(--status-duplicate-fg); }
 .report-action-status-control select { padding-left: 42px; font-weight: 600; }
 .report-action-mode-wrap { display: grid; justify-items: start; gap: 6px; }
 .report-action-mode-label { color: #526b80; font-size: 11px; font-weight: 700; }
@@ -3709,11 +3730,13 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-overview-main { min-width: 0; }
 .meeting-overview-main p { margin: 9px 0 0; color: #294662; font-size: 14px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
 .meeting-detail-status { display: inline-flex; min-height: 27px; align-items: center; padding: 5px 11px; border-radius: 999px; background: #e9f1f7; color: #33546e; font-size: 12px; font-weight: 700; }
-.meeting-detail-status.is-scheduled { background: #e8f2ff; color: #1764bb; }
-.meeting-detail-status.is-complete, .meeting-detail-status.is-approved { background: #ddf7ee; color: #087957; }
-.meeting-detail-status.is-pending, .meeting-detail-status.is-invitation-pending { background: #fff3df; color: #925d0a; }
-.meeting-detail-status.is-declined { background: #ffefed; color: #a43d35; }
-.meeting-detail-status.is-neutral { background: #edf2f5; color: #526978; }
+.meeting-decision-section > .meeting-detail-status { justify-self: start; width: fit-content; max-width: 100%; }
+.meeting-detail-status.is-scheduled { background: var(--status-scheduled-bg); color: var(--status-scheduled-fg); }
+.meeting-detail-status.is-complete { background: var(--status-resolved-bg); color: var(--status-resolved-fg); }
+.meeting-detail-status.is-approved { background: var(--status-verified-bg); color: var(--status-verified-fg); }
+.meeting-detail-status.is-pending, .meeting-detail-status.is-invitation-pending { background: var(--status-review-bg); color: var(--status-review-fg); }
+.meeting-detail-status.is-declined { background: var(--status-rejected-bg); color: var(--status-rejected-fg); }
+.meeting-detail-status.is-neutral { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
 .meeting-overview-date { display: flex; min-height: 62px; align-items: flex-start; gap: 11px; padding: 7px 0 7px 17px; border-left: 1px solid #e1ebe8; color: var(--brand); }
 .meeting-overview-date div { display: grid; min-width: 0; gap: 4px; }
 .meeting-overview-date strong { color: var(--ink); font-size: 13px; }
@@ -3810,8 +3833,8 @@ main#main:has(.announcement-actions button) .page-heading > div { padding-right:
 .meeting-action-copy strong { color: #1c3955; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
 .meeting-action-copy span { display: flex; flex-wrap: wrap; gap: 6px; color: var(--muted); font-size: 11px; }
 .meeting-action-copy i { font-style: normal; }
-.meeting-action-badge { padding: 5px 9px; border-radius: 999px; background: #fff4dc; color: #97600a; font-size: 10px; font-weight: 700; white-space: nowrap; }
-.meeting-action-badge.is-complete { background: #e2f7ef; color: #087b5b; }
+.meeting-action-badge { padding: 5px 9px; border-radius: 999px; background: var(--status-verified-bg); color: var(--status-verified-fg); font-size: 10px; font-weight: 700; white-space: nowrap; }
+.meeting-action-badge.is-complete { background: var(--status-resolved-bg); color: var(--status-resolved-fg); }
 .meeting-action-toggle { min-height: 34px; padding: 6px 9px; border: 1px solid #d9e6eb; border-radius: 8px; background: #fff; color: var(--brand); font-size: 10px; white-space: nowrap; }
 .meeting-action-edit { grid-column: 2 / -1; min-width: 0; }
 .meeting-action-edit summary { width: fit-content; color: var(--brand); cursor: pointer; font-size: 11px; font-weight: 700; }
@@ -5268,4 +5291,18 @@ main#main .issue-map .overview-map-base button { min-width: 44px; min-height: 34
 .report-workspace-dialog .community-dialog-title p { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; }
 .community-dialog-description-meta { display: inline-flex; align-items: center; gap: 7px; }
 .report-workspace-header-status { border-radius: 999px; padding: 4px 8px; line-height: 1.25; }
-.report-current-status-value { color: #27445c; font-size: 10px; font-weight: 700; }
+.report-current-status-value { color: var(--status-neutral-fg); font-size: 10px; font-weight: 700; }
+.report-current-status-value.status-submitted { color: var(--status-neutral-fg); }
+.report-current-status-value.status-under_review { color: var(--status-review-fg); }
+.report-current-status-value.status-verified { color: var(--status-verified-fg); }
+.report-current-status-value.status-assigned { color: var(--status-assigned-fg); }
+.report-current-status-value.status-scheduled { color: var(--status-scheduled-fg); }
+.report-current-status-value.status-in_progress { color: var(--status-progress-fg); }
+.report-current-status-value.status-resolved { color: var(--status-resolved-fg); }
+.report-current-status-value.status-rejected { color: var(--status-rejected-fg); }
+.report-current-status-value.status-duplicate { color: var(--status-duplicate-fg); }
+
+/* Keep native checkbox/radio controls round or square; the global input min-height is for text fields. */
+input:is([type="checkbox"], [type="radio"]) { min-height: 0; }
+input:is([type="checkbox"], [type="radio"]):focus { outline: 0; box-shadow: none; }
+label:has(input:is([type="checkbox"], [type="radio"]):focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }

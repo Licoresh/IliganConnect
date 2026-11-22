@@ -19,6 +19,16 @@ export type CategoryReportCluster = {
   categoryName: string;
   color: string;
   count: number;
+  pointIds: string[];
+};
+
+export type ReportPinGroup = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  count: number;
+  pointIds: string[];
+  categories: Array<{ categoryName: string; color: string; count: number }>;
 };
 
 export type PositionedMapPoint = {
@@ -109,8 +119,8 @@ function categoryKey(name: string) {
 }
 
 /** Screen-space grouping shared by the staff map and resident web/native maps. */
-export function clusterReportsByCategory(points: ClusterableReportPoint[], zoom: number, radius = 54): CategoryReportCluster[] {
-  if (zoom <= BARANGAY_TOTAL_ZOOM || zoom >= INDIVIDUAL_REPORT_PIN_ZOOM || !points.length) return [];
+export function clusterReportsByCategory(points: ClusterableReportPoint[], zoom: number, radius = 54, minZoom = BARANGAY_TOTAL_ZOOM): CategoryReportCluster[] {
+  if (zoom <= minZoom || zoom >= INDIVIDUAL_REPORT_PIN_ZOOM || !points.length) return [];
   const scale = 256 * 2 ** zoom;
   const projected: ProjectedPoint[] = points.flatMap((point, index) => {
     if (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude) || Math.abs(point.latitude) > 90 || Math.abs(point.longitude) > 180) return [];
@@ -155,12 +165,13 @@ export function clusterReportsByCategory(points: ClusterableReportPoint[], zoom:
     const centerX = members.reduce((sum, point) => sum + point.x, 0) / members.length;
     const centerY = members.reduce((sum, point) => sum + point.y, 0) / members.length;
     const center = unproject(centerX, centerY, scale);
-    const categories = new Map<string, { name: string; color: string; count: number }>();
+    const categories = new Map<string, { name: string; color: string; count: number; pointIds: string[] }>();
     for (const point of members) {
       const name = point.categoryName?.trim() || "Other reports";
       const key = categoryKey(name) || "other reports";
-      const current = categories.get(key) ?? { name, color: point.color || "#08756b", count: 0 };
+      const current = categories.get(key) ?? { name, color: point.color || "#08756b", count: 0, pointIds: [] };
       current.count++;
+      if (point.id) current.pointIds.push(point.id);
       categories.set(key, current);
     }
     const categoryRows = [...categories.entries()].sort(([a], [b]) => a.localeCompare(b));
@@ -182,9 +193,35 @@ export function clusterReportsByCategory(points: ClusterableReportPoint[], zoom:
         categoryName: category.name,
         color: category.color,
         count: category.count,
+        pointIds: category.pointIds,
       });
     });
     groupNumber++;
   }
   return clusters;
+}
+
+/** Group nearby reports at their true geographic cluster center without spreading their pins apart. */
+export function clusterReportPinGroups(points: ClusterableReportPoint[], zoom: number, radius = 54, minZoom = BARANGAY_TOTAL_ZOOM): ReportPinGroup[] {
+  const groups = new Map<string, ReportPinGroup>();
+  for (const cluster of clusterReportsByCategory(points, zoom, radius, minZoom)) {
+    const separator = cluster.id.lastIndexOf("-");
+    const id = cluster.id.slice(0, separator);
+    const group = groups.get(id) ?? {
+      id,
+      latitude: cluster.centerLatitude,
+      longitude: cluster.centerLongitude,
+      count: 0,
+      pointIds: [],
+      categories: [],
+    };
+    group.count += cluster.count;
+    group.pointIds.push(...cluster.pointIds);
+    group.categories.push({ categoryName: cluster.categoryName, color: cluster.color, count: cluster.count });
+    groups.set(id, group);
+  }
+  return [...groups.values()].map((group) => ({
+    ...group,
+    categories: group.categories.sort((a, b) => b.count - a.count || a.categoryName.localeCompare(b.categoryName)),
+  }));
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clusterReportsByCategory, offsetMapCoordinate, separateNearbyMapPoints } from "../shared/map-clusters";
+import { clusterReportPinGroups, clusterReportsByCategory, offsetMapCoordinate, separateNearbyMapPoints } from "../shared/map-clusters";
 
 test("map counts collapse by barangay at low zoom and individual pins at street zoom", () => {
   const points = [{ latitude: 8.23, longitude: 124.24, categoryName: "Roads", color: "#2457a6" }];
@@ -25,6 +25,27 @@ test("invalid coordinates do not create count markers", () => {
     { latitude: Number.NaN, longitude: 124.24, categoryName: "Roads" },
     { latitude: 8.23, longitude: 181, categoryName: "Roads" },
   ], 12), []);
+});
+
+test("city-scale resident pin groups stay at their geographic center until street zoom", () => {
+  const groups = clusterReportPinGroups([
+    { id: "road-1", latitude: 8.23, longitude: 124.24, categoryName: "Roads", color: "#2457a6" },
+    { id: "road-2", latitude: 8.23, longitude: 124.24, categoryName: "Roads", color: "#2457a6" },
+    { id: "drain-1", latitude: 8.23, longitude: 124.24, categoryName: "Drainage", color: "#08756b" },
+  ], 9, 54, 8.9);
+
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].count, 3);
+  assert.deepEqual(groups[0].pointIds.sort(), ["drain-1", "road-1", "road-2"]);
+  assert.deepEqual(groups[0].categories.map(({ categoryName, count }) => ({ categoryName, count })), [
+    { categoryName: "Roads", count: 2 },
+    { categoryName: "Drainage", count: 1 },
+  ]);
+  assert.ok(Math.abs(groups[0].latitude - 8.23) < 1e-9);
+  assert.ok(Math.abs(groups[0].longitude - 124.24) < 1e-9);
+  assert.deepEqual(clusterReportPinGroups([
+    { id: "road-1", latitude: 8.23, longitude: 124.24, categoryName: "Roads" },
+  ], 14, 54, 8.9), []);
 });
 
 test("category badge offsets stay fixed in screen space as map zoom changes", () => {

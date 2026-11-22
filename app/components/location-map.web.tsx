@@ -3,7 +3,7 @@ import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { MapProps, MapStyle, Point } from "./location-map";
 import * as maplibre from "maplibre-gl";
-import { aggregateReportCells, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
+import { aggregateReportCells, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, ILIGAN_CITY_MAX_MAP_ZOOM, ILIGAN_CITY_MIN_MAP_ZOOM, ILIGAN_MAP_BOUNDS, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
 import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
 import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, colors } from "./ui";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -106,8 +106,11 @@ export default function LocationMap({
   summaryColor = colors.brand,
 }: MapProps) {
   const compactControls = useWindowDimensions().width <= 600;
+  const cityBounds = bounds ?? ILIGAN_MAP_BOUNDS;
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibre.Map | null>(null),
+    initialBoundsFit = useRef(false),
+    activeReportPopup = useRef<{ key: string; popup: maplibre.Popup } | null>(null),
     choose = useRef(onChoose),
     pointPress = useRef(onPointPress),
     pointDetails = useRef(onOpenPointDetails),
@@ -126,7 +129,7 @@ export default function LocationMap({
   densityCellPress.current = onDensityCellPress;
   barangayPress.current = onBarangayPress;
   backgroundPress.current = onMapBackgroundPress;
-  barangayView.current = showBarangayBoundaries;
+  barangayView.current = zoomBehavior === "barangay-gis" && showBarangayBoundaries;
   viewportChange.current = onViewportChange;
   const [ready, setReady] = useState(false),
     [error, setError] = useState(""),
@@ -150,7 +153,13 @@ export default function LocationMap({
       container: container.current,
       attributionControl: { compact: true },
       center: initialRegion ? [initialRegion.longitude, initialRegion.latitude] : [124.2452, 8.228],
-      zoom: initialRegion ? Math.max(2, Math.min(18, Math.log2(360 / initialRegion.longitudeDelta))) : 11.2,
+      zoom: initialRegion ? Math.max(ILIGAN_CITY_MIN_MAP_ZOOM, Math.min(ILIGAN_CITY_MAX_MAP_ZOOM, Math.log2(360 / initialRegion.longitudeDelta))) : 11.2,
+      minZoom: ILIGAN_CITY_MIN_MAP_ZOOM,
+      maxZoom: ILIGAN_CITY_MAX_MAP_ZOOM,
+      maxBounds: [
+        [cityBounds.southWest.longitude, cityBounds.southWest.latitude],
+        [cityBounds.northEast.longitude, cityBounds.northEast.latitude],
+      ],
       style: {
         version: 8,
         glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
@@ -185,7 +194,7 @@ export default function LocationMap({
           { id: "report-density", type: "fill", source: "density", layout: { visibility: "none" }, paint: {
             "fill-color": ["get", "color"], "fill-opacity": 0.4, "fill-outline-color": ["get", "color"],
           } },
-          { id: "barangay-fill", type: "fill", source: "barangays", paint: { "fill-color": ["get", "fill"], "fill-opacity": 0.58, "fill-outline-color": "#ffffff" } },
+          { id: "barangay-fill", type: "fill", source: "barangays", paint: { "fill-color": ["get", "fill"], "fill-opacity": ["get", "opacity"], "fill-outline-color": "#ffffff" } },
           { id: "barangay-outline", type: "line", source: "barangays", paint: { "line-color": ["case", ["get", "selected"], "#083f75", "#ffffff"], "line-width": ["case", ["get", "selected"], 3, 1.25], "line-opacity": 0.92 } },
         ],
       },
@@ -249,14 +258,14 @@ export default function LocationMap({
       if (!current.isStyleLoaded()) { current.once("idle", update); return; }
       for (const id of ["osm", "topo", "imagery"])
         current.setLayoutProperty(id, "visibility", id === (base === "map" ? "osm" : base === "terrain" ? "topo" : "imagery") ? "visible" : "none");
-      current.setLayoutProperty("report-density", "visibility", density && points.length && !showBarangayBoundaries ? "visible" : "none");
+      current.setLayoutProperty("report-density", "visibility", density && points.length && (zoomBehavior === "issue-map" || !showBarangayBoundaries) ? "visible" : "none");
       current.setLayoutProperty("barangay-fill", "visibility", showBarangayBoundaries ? "visible" : "none");
       current.setLayoutProperty("barangay-outline", "visibility", showBarangayBoundaries ? "visible" : "none");
       current.easeTo({ pitch: base === "terrain" ? 45 : 0, duration: 350 });
     };
     update();
     return () => { map.current?.off("idle", update); };
-  }, [base, density, ready, points.length, showBarangayBoundaries]);
+  }, [base, density, ready, points.length, showBarangayBoundaries, zoomBehavior]);
   useEffect(() => {
     if (!ready || !map.current) return;
     const cells: GeoJSON.FeatureCollection<GeoJSON.Polygon> = { type: "FeatureCollection", features: reportCells.map((cell) => ({
@@ -267,13 +276,22 @@ export default function LocationMap({
     (map.current.getSource("density") as maplibre.GeoJSONSource).setData(cells);
   }, [ready, reportCells]);
   useEffect(() => {
-    if (!ready || !showBarangayBoundaries || !map.current) return;
-    const area = bounds;
-    if (area) map.current.fitBounds(
-      [[area.southWest.longitude, area.southWest.latitude], [area.northEast.longitude, area.northEast.latitude]],
+    if (!ready || !map.current) return;
+    if (!initialBoundsFit.current) {
+      initialBoundsFit.current = true;
+      if (!point && !onChoose && zoomBehavior === "issue-map") {
+        map.current.fitBounds(
+          [[cityBounds.southWest.longitude, cityBounds.southWest.latitude], [cityBounds.northEast.longitude, cityBounds.northEast.latitude]],
+          { padding: 30, maxZoom: 14, duration: 0 },
+        );
+        return;
+      }
+    }
+    if (showBarangayBoundaries && zoomBehavior === "barangay-gis") map.current.fitBounds(
+      [[cityBounds.southWest.longitude, cityBounds.southWest.latitude], [cityBounds.northEast.longitude, cityBounds.northEast.latitude]],
       { padding: 28, duration: 360 },
     );
-  }, [ready, showBarangayBoundaries, bounds]);
+  }, [ready, showBarangayBoundaries, cityBounds, zoomBehavior, !!point, !!onChoose]);
   useEffect(() => {
     if (!ready || !map.current) return;
     const features = iliganBarangayBoundaries.map((feature) => {
@@ -283,15 +301,16 @@ export default function LocationMap({
         type: "Feature" as const,
         id: feature.properties.adm4_psgc,
         geometry: feature.geometry,
-        properties: { name: feature.properties.adm4_en, count, density: perKm2, fill: barangayMetric === "density" ? barangayDensityColor(perKm2, maxBarangayDensity) : barangayHeatColor(count), selected: feature.properties.adm4_en === selectedBarangayName },
+        properties: { name: feature.properties.adm4_en, count, density: perKm2, fill: barangayMetric === "density" ? barangayDensityColor(perKm2, maxBarangayDensity) : barangayHeatColor(count), opacity: zoomBehavior === "barangay-gis" ? 0.58 : 0.035, selected: feature.properties.adm4_en === selectedBarangayName },
       };
     });
     (map.current.getSource("barangays") as maplibre.GeoJSONSource).setData({ type: "FeatureCollection", features });
-  }, [ready, barangayCountsKey]);
+  }, [ready, barangayCountsKey, zoomBehavior]);
   useEffect(() => {
     if (!ready || !map.current) return;
     const previous = new Map(markers.current.map((marker) => [marker.getElement().dataset.markerKey, marker]));
-    markers.current = [...(point ? [point] : []), ...(userPoint ? [userPoint] : []), ...(showPoints && !showBarangayBoundaries && (zoomBehavior === "issue-map" || zoomLevel >= INDIVIDUAL_REPORT_PIN_ZOOM) ? reportPoints : [])].map((p, index) => {
+    const individualPoints = reportPoints;
+    markers.current = [...(point ? [point] : []), ...(userPoint ? [userPoint] : []), ...(showPoints && (!showBarangayBoundaries || zoomBehavior === "issue-map") && (zoomBehavior === "issue-map" || zoomLevel >= INDIVIDUAL_REPORT_PIN_ZOOM) ? individualPoints : [])].map((p, index) => {
       const isUser = p === userPoint;
       const markerKey = isUser ? "user" : p === point ? "chosen" : p.id ?? `${p.latitude}:${p.longitude}:${index}`;
       const signature = JSON.stringify([p.latitude, p.longitude, p.title, p.subtitle, p.categoryName, p.color, p.createdAt, p.photoUrl, p.statusLabel, p.barangayName, p === point ? pointLabel : "", !!onChoose, reportPopupBehavior]);
@@ -300,6 +319,7 @@ export default function LocationMap({
       if (existing?.getElement().dataset.signature === signature) return existing;
       const reopenPopup = existing?.getPopup()?.isOpen();
       existing?.remove();
+      let reportPopup: maplibre.Popup | null = null;
       const pin = document.createElement("button");
       pin.type = "button";
       pin.dataset.markerKey = markerKey;
@@ -312,6 +332,16 @@ export default function LocationMap({
       const core = document.createElement("span");
       core.className = "report-map-pin__core";
       core.setAttribute("aria-hidden", "true");
+      const body = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      body.setAttribute("class", "report-map-pin__body");
+      body.setAttribute("viewBox", "0 0 36 48");
+      body.setAttribute("aria-hidden", "true");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M18 1.5C8.9 1.5 1.5 8.9 1.5 18c0 12.3 16.5 28.5 16.5 28.5S34.5 30.3 34.5 18C34.5 8.9 27.1 1.5 18 1.5Z");
+      path.setAttribute("fill", isUser ? "#3976d2" : /^#[0-9a-fA-F]{3,8}$/.test(p.color || "") ? p.color! : colors.brand);
+      path.setAttribute("stroke", "white");
+      path.setAttribute("stroke-width", "2.5");
+      body.append(path);
       if (p === point && pointLabel) {
         const label = document.createElement("span");
         label.className = "report-map-pin__label";
@@ -320,7 +350,7 @@ export default function LocationMap({
       }
       const iconName = isUser ? "locate" : categoryIconFor(p.categoryName || "");
       core.textContent = String.fromCodePoint(Number(Ionicons.glyphMap[iconName]));
-      pin.append(core);
+      pin.append(body, core);
       if (!isUser) {
         const hover = document.createElement("span");
         hover.className = "report-map-pin__hover";
@@ -340,25 +370,29 @@ export default function LocationMap({
         }
         pin.append(hover);
         pin.addEventListener("click", (event) => {
+          event.preventDefault();
           event.stopPropagation();
+          event.stopImmediatePropagation();
           const current = map.current;
-          if (current) centerOnReport(current, p);
-          pointPress.current?.(p);
-          if (reportPopupBehavior === "draggable") {
-            requestAnimationFrame(() => {
-              const activeMap = map.current;
-              const markerKey = p === point ? "chosen" : p.id ?? "chosen";
-              const popup = markers.current.find((item) => item.getElement().dataset.markerKey === markerKey)?.getPopup();
-              if (activeMap && popup && !popup.isOpen()) popup.setLngLat([p.longitude, p.latitude]).addTo(activeMap);
-            });
+          if (current) {
+            centerOnReport(current, p);
+            if (reportPopupBehavior !== "hidden" && reportPopup) {
+              if (activeReportPopup.current?.popup !== reportPopup) activeReportPopup.current?.popup.remove();
+              reportPopup.setLngLat([p.longitude, p.latitude]).addTo(current);
+              activeReportPopup.current = { key: markerKey, popup: reportPopup };
+            }
           }
+          pointPress.current?.(p);
         });
       }
-      const marker = new maplibre.Marker({ element: pin, anchor: "center", draggable: p === point && !!onChoose })
+      const marker = new maplibre.Marker({ element: pin, anchor: "bottom", draggable: p === point && !!onChoose })
         .setLngLat([p.longitude, p.latitude])
         .addTo(map.current!);
       if ((p.title || p === userPoint) && (isUser || reportPopupBehavior !== "hidden")) {
         const popup = new maplibre.Popup({ closeButton: false, offset: 18, maxWidth: "280px", className: "report-pin-popup" });
+        reportPopup = popup;
+        popup.on("open", () => { activeReportPopup.current = { key: markerKey, popup }; });
+        popup.on("close", () => { if (activeReportPopup.current?.popup === popup) activeReportPopup.current = null; });
         const card = document.createElement("article");
         card.className = "report-pin-card";
         card.style.cssText = `width:276px;box-sizing:border-box;padding:12px;border:1px solid ${colors.line};border-radius:18px;background:#fff;color:${colors.brandDark};box-shadow:0 6px 18px #173b3a24;font-family:system-ui,sans-serif`;
@@ -500,7 +534,7 @@ export default function LocationMap({
     aggregateMarkers.current.forEach((marker) => marker.remove());
     aggregateMarkers.current = [];
     const current = map.current;
-    if (!ready || !current || !showPoints || showBarangayBoundaries || zoomBehavior === "issue-map") return;
+    if (!ready || !current || !showPoints || (showBarangayBoundaries && zoomBehavior === "barangay-gis")) return;
     const addCountMarker = (latitude: number, longitude: number, centerLatitude: number, centerLongitude: number, count: number, color: string, label: string, onPress?: () => void) => {
       const button = document.createElement("button");
       button.type = "button";
@@ -541,10 +575,14 @@ export default function LocationMap({
       const selected = points.find((p) => p.id === selectedPointId);
       if (selected) {
         centerOnReport(map.current, selected);
-        if (reportPopupBehavior === "draggable") {
+        if (reportPopupBehavior !== "hidden") {
           const marker = markers.current.find((item) => item.getElement().dataset.reportId === selectedPointId);
           const popup = marker?.getPopup();
-          if (popup && !popup.isOpen()) popup.setLngLat([selected.longitude, selected.latitude]).addTo(map.current);
+          if (popup && activeReportPopup.current?.key !== selectedPointId) {
+            activeReportPopup.current?.popup.remove();
+            popup.setLngLat([selected.longitude, selected.latitude]).addTo(map.current);
+            activeReportPopup.current = { key: selectedPointId, popup };
+          }
         }
       }
     } else if (userPoint) map.current.easeTo({ center: [userPoint.longitude, userPoint.latitude], zoom: 13 });
@@ -552,20 +590,27 @@ export default function LocationMap({
   return (
     <>
       <style>{`
-        .report-map-pin{position:relative;width:48px;height:48px;padding:6px;border:0;border-radius:50%;background:transparent;cursor:pointer;overflow:visible}
+        .report-map-pin{position:relative;display:block;width:44px;height:47px;padding:0;border:0;border-radius:0;background:transparent;cursor:pointer;overflow:visible}
+        .report-map-pin__body{position:absolute;left:4px;top:0;width:36px;height:48px;filter:drop-shadow(0 2px 3px #10263f99)}
+        .report-map-cluster{position:relative;display:flex;align-items:center;justify-content:center;width:62px;height:46px;padding:0;border:0;background:transparent;cursor:pointer}
+        .report-map-cluster__icons{display:flex;align-items:center;justify-content:center}
+        .report-map-cluster__icon{display:grid;width:30px;height:30px;margin-left:-8px;place-items:center;border:2.5px solid #fff;border-radius:50%;background:var(--pin-color,#08756b);color:#fff;box-shadow:0 2px 7px #173b3a66;font:15px Ionicons,ionicons,sans-serif}
+        .report-map-cluster__icon:first-child{margin-left:0}
+        .report-map-cluster__count{position:absolute;top:0;right:0;display:grid;min-width:18px;height:18px;padding:0 3px;place-items:center;border:1.5px solid #fff;border-radius:10px;background:#12343d;color:#fff;font:800 8px/1 system-ui,sans-serif}
+        .report-map-cluster:focus-visible{outline:3px solid #f5b840;outline-offset:2px;border-radius:12px}
         .report-map-pin__label{position:absolute;left:50%;bottom:calc(100% + 4px);z-index:2;max-width:220px;overflow:hidden;padding:6px 9px;transform:translateX(-50%);border:1px solid #dce8e4;border-radius:12px;background:#fff;color:#173b3a;box-shadow:0 3px 10px #173b3a30;font:700 11px system-ui,sans-serif;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
-        .report-map-pin__core{display:flex;width:36px;height:36px;align-items:center;justify-content:center;border:3px solid #fff;border-radius:50%;background:var(--pin-color,${colors.brand});color:#fff;box-shadow:0 2px 8px #173b3a66;font:20px Ionicons,ionicons,sans-serif;box-sizing:border-box}
+        .report-map-pin__core{position:absolute;left:12px;top:8px;display:flex;width:20px;height:20px;align-items:center;justify-content:center;color:#fff;font:15px Ionicons,ionicons,sans-serif;box-sizing:border-box;pointer-events:none}
         .report-map-pin--you .report-map-pin__core{border-radius:50%;transform:none}
-        .report-map-pin--selected .report-map-pin__core{box-shadow:0 0 0 4px #f5b840aa,0 2px 8px #173b3a66}
+        .report-map-pin--selected .report-map-pin__body{filter:drop-shadow(0 0 3px #f5b840) drop-shadow(0 2px 3px #10263f99)}
         .report-map-pin:focus-visible{outline:3px solid #f5b840;outline-offset:3px}
-        .report-map-pin__hover{display:none;position:absolute;bottom:48px;left:50%;transform:translateX(-50%);width:180px;padding:10px;border-radius:12px;background:#fff;color:#12343d;box-shadow:0 3px 14px #173b3a33;text-align:left;font:12px/1.4 system-ui,sans-serif;pointer-events:none}
+        .report-map-pin__hover{display:none;position:absolute;bottom:47px;left:50%;transform:translateX(-50%);width:180px;padding:10px;border-radius:12px;background:#fff;color:#12343d;box-shadow:0 3px 14px #173b3a33;text-align:left;font:12px/1.4 system-ui,sans-serif;pointer-events:none}
         .report-map-pin__hover strong,.report-map-pin__hover span{display:block;overflow-wrap:anywhere}
         .report-map-pin:hover .report-map-pin__hover,.report-map-pin:focus-visible .report-map-pin__hover{display:block}
         .report-pin-popup .maplibregl-popup-content{padding:0;border-radius:18px;box-shadow:none}
         .report-pin-card__close{margin-left:auto;min-width:48px;min-height:48px;border:0;border-radius:50%;background:#eef5f3;color:#12343d;font-size:24px;cursor:pointer}
         .report-pin-card--draggable .report-pin-card__drag-handle{display:grid;flex:none;width:36px;height:36px;margin-left:auto;padding:8px;place-items:center;border:0;border-radius:10px;background:#e5f6f2;color:#08756b;cursor:grab;touch-action:none}
         .report-pin-card--draggable .report-pin-card__close{margin-left:0}
-        .report-pin-card__drag-handle svg{width:20px;height:20px;fill:currentColor}
+        .report-pin-card__drag-handle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}
         .report-pin-card__drag-handle.is-dragging{cursor:grabbing;background:#d6f0e9}
         .maplibregl-ctrl-attrib.maplibregl-compact{min-width:48px;min-height:48px;padding:0;box-sizing:border-box}
         .maplibregl-ctrl-attrib.maplibregl-compact-show{padding:8px 54px 8px 10px;max-width:min(280px,calc(100vw - 64px))}

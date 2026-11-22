@@ -163,14 +163,17 @@ export function categoryToneFor(name: string) {
 }
 
 export function statusToneFor(status: string) {
-  const value = status.toLowerCase();
-  return value.includes("resolved") || value.includes("completed")
-    ? { background: "#e5f3e9", foreground: "#286b3b" }
-    : value.includes("rejected") || value.includes("cancelled")
-      ? { background: "#ffefed", foreground: "#a43d35" }
-      : value.includes("pending") || value.includes("review")
-        ? { background: "#fff3dc", foreground: "#865a0b" }
-        : { background: "#e9f0fa", foreground: "#3c5f93" };
+  const value = status.toLowerCase().replace(/[_-]/g, " ").trim();
+  if (value.includes("duplicate") || value.includes("linked")) return { background: "#eeeefa", foreground: "#53577f" };
+  if (["resolved", "completed", "published"].some((term) => value.includes(term))) return { background: "#e5f3e9", foreground: "#286b3b" };
+  if (["rejected", "declined", "cancelled"].some((term) => value.includes(term))) return { background: "#ffefed", foreground: "#a43d35" };
+  if (["pending", "review", "unavailable"].some((term) => value.includes(term))) return { background: "#fff3dc", foreground: "#865a0b" };
+  if (["assigned", "forwarded"].some((term) => value.includes(term))) return { background: "#f0eaff", foreground: "#6844a3" };
+  if (value.includes("scheduled")) return { background: "#e8f2ff", foreground: "#1764bb" };
+  if (["progress", "ongoing"].some((term) => value.includes(term))) return { background: "#fff0df", foreground: "#a65712" };
+  if (value.includes("accepted")) return { background: "#e5f3e9", foreground: "#286b3b" };
+  if (["verified", "approved", "open"].some((term) => value.includes(term))) return { background: "#e5f6f2", foreground: "#08756b" };
+  return { background: "#edf2f5", foreground: "#526978" };
 }
 
 export const colors = {
@@ -184,6 +187,8 @@ export const colors = {
   line: "#d8e4e0",
   surface: "#fff",
 };
+
+export const contentGaps = { stack: 12, grid: 16 } as const;
 
 export const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },

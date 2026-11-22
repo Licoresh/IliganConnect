@@ -113,6 +113,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
           ? query.in("organization_id", officeOrganizationIds)
           : query.eq("id", "00000000-0000-0000-0000-000000000000");
         query = queue === "resolved" ? query.eq("status", "resolved") : query.in("status", ["assigned", "scheduled", "in_progress"]);
+        if (status) query = query.eq("status", status);
       } else if (status) query = query.eq("status", status);
       else if (queue === "review") query = query.in("status", ["submitted", "under_review"]);
       else if (queue === "route") query = query.eq("status", "verified");
@@ -210,7 +211,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
             </select></label>
         </div>
         <details className="report-filter-panel">
-          <summary><SlidersHorizontal size={16} aria-hidden="true" /><strong>Refine results</strong><span className="muted">Category, location, office &amp; date</span><ChevronDown className="filter-chevron" size={16} aria-hidden="true" /></summary>
+          <summary><SlidersHorizontal size={16} aria-hidden="true" /><strong>Refine results</strong><span className="muted">Category, location, office, status &amp; date</span><ChevronDown className="filter-chevron" size={16} aria-hidden="true" /></summary>
           <div className="toolbar">
             {[
               { name: "Category", items: officeView ? refs.categories.filter((item) => access.rules.some((rule) => rule.enabled && rule.category_id === item.id && officeOrganizationIds.includes(rule.organization_id))) : refs.categories, value: category, set: setCategory },
@@ -219,9 +220,9 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
             ].map((f) => <label key={f.name}>{f.name}<select value={f.value} onChange={(e) => { f.set(e.target.value); setPage(0); }}>
               <option value="">All permitted</option>{f.items.map((x) => <option key={x.id} value={x.id}>{f.name === "Category" ? reportCategoryPresentation(x.name).label : x.name}</option>)}
             </select></label>)}
-            {!officeView && <label>Status<select value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }}>
-              <option value="">Current queue</option>{statuses.map((s) => <option key={s} value={s}>{label(s)}</option>)}
-            </select></label>}
+            <label>Status<select value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }}>
+              <option value="">{officeView ? "All statuses" : "Current queue"}</option>{(officeView ? (queue === "resolved" ? ["resolved"] : ["assigned", "scheduled", "in_progress"]) as Status[] : statuses).map((s) => <option key={s} value={s}>{officeView ? reportStatusLabel(s) : label(s)}</option>)}
+            </select></label>
             <label>Submitted from<input type="date" value={since} max={until || undefined} onChange={(e) => { setSince(e.target.value); setPage(0); }} /></label>
             <label>Submitted through<input type="date" value={until} min={since || undefined} onChange={(e) => { setUntil(e.target.value); setPage(0); }} /></label>
           </div>
@@ -528,7 +529,7 @@ export function ReportDetail({
   const historyPanel = <aside className="report-workspace-history" aria-labelledby="report-history-title">
     <div className="report-workspace-history-heading"><History size={19} aria-hidden="true" /><div><h3 id="report-history-title">Case timeline</h3><p>Current status and recorded activity</p></div></div>
     <div className="report-current-case-status" role="status" aria-label={`Current case status: ${currentStatusTitle}`}>
-      <div><span>Current status</span><strong className="report-current-status-value">{currentStatusTitle}</strong></div>
+      <div><span>Current status</span><strong className={`report-current-status-value status-${r.status}`}>{currentStatusTitle}</strong></div>
       <p>{reportStatusDescription(r.status)}</p>
       {r.status === "scheduled" && r.scheduled_at && <small className="report-current-schedule">Scheduled for {reportScheduleLabel(r.scheduled_at)} · Philippine time</small>}
     </div>
@@ -615,7 +616,7 @@ export function ReportDetail({
       </div>}
       {routeDecisionOnly
         ? <div className="report-route-decision"><span>Routing decision</span><strong><UsersRound size={16} aria-hidden="true" /> Forward to an eligible office</strong><small>The barangay review and assessment are already recorded.</small></div>
-        : progressOnly ? <div className="report-action-current-status"><span>Current status stays the same</span><strong className="report-current-status-value">{currentStatusTitle}</strong></div>
+        : progressOnly ? <div className="report-action-current-status"><span>Current status stays the same</span><strong className={`report-current-status-value status-${r.status}`}>{currentStatusTitle}</strong></div>
         : <label className="report-action-status-field"><span>{reviewPending ? "Review decision" : r.status === "scheduled" ? "Next action" : "Case status"} <span className="report-action-required" aria-hidden="true">*</span></span><span className="report-action-status-control"><ActionStatusIcon className="report-action-status-icon" data-status={selectedStatus} size={20} aria-hidden="true" /><select required value={selectedStatus} onChange={(event) => { setStatus(event.target.value); setAssessmentErrors({}); }}>
           {stepStatuses.map(next => <option key={next} value={next}>{reviewPending && next === "verified" ? "Verify · keep with barangay" : reviewPending && next === "assigned" ? "Verify & forward to office" : next === "under_review" ? r.status === "submitted" ? "Acknowledge and review" : "Reopen for barangay review" : next === "scheduled" ? r.status === "scheduled" ? "Reschedule work" : "Schedule work" : next === "in_progress" ? "Start scheduled work · Ongoing" : next === "resolved" ? "Work completed · Resolve report" : reportStatusLabel(next)}</option>)}
         </select></span></label>}

@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "
 import MapView, { Callout, Marker, Polygon, type Region } from "react-native-maps";
 import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { aggregateReportCells, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, ILIGAN_MAP_BOUNDS, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
+import { aggregateReportCells, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, ILIGAN_CITY_MAX_MAP_ZOOM, ILIGAN_CITY_MIN_MAP_ZOOM, ILIGAN_MAP_BOUNDS, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
 import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
 import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, PhotoViewer, colors } from "./ui";
 export { ILIGAN_MAP_BOUNDS };
@@ -69,7 +69,7 @@ const ReportPin = memo(function ReportPin({ selected, onPointPress, reportPopupB
     const timer = setTimeout(() => setTracking(false), 350);
     return () => clearTimeout(timer);
   }, [p.color, p.categoryName, selected]);
-  return (<Marker tracksViewChanges={tracking} coordinate={p} zIndex={selected ? 1003 : 1002} accessibilityLabel={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community report"}: ${p.title || "Reported issue"}`} onPress={() => onPointPress?.(p)}>
+  return (<Marker tracksViewChanges={tracking} coordinate={p} anchor={{ x: 0.5, y: 0.9 }} zIndex={selected ? 1003 : 1002} accessibilityLabel={`${p.categoryName ? categoryDisplayName(p.categoryName) : "Community report"}: ${p.title || "Reported issue"}`} onPress={() => onPointPress?.(p)}>
             <View style={{ width: 42, height: 46, alignItems: "center" }}>
               <View style={{ position: "absolute", top: 26, width: 11, height: 11, backgroundColor: pinColor, borderWidth: 1.5, borderColor: "white", transform: [{ rotate: "45deg" }] }} />
               {selected && <View style={{ position: "absolute", top: -3, width: 40, height: 40, borderRadius: 20, backgroundColor: `${pinColor}24` }} />}
@@ -131,6 +131,7 @@ export default function LocationMap({
 }: MapProps) {
   const compactControls = useWindowDimensions().width <= 600;
   const map = useRef<MapView>(null);
+  const cityBounds = bounds ?? ILIGAN_MAP_BOUNDS;
   const lastBarangayTap = useRef(0);
   const gestureStart = useRef({ x: 0, y: 0 });
   const gestureLastY = useRef(0);
@@ -141,7 +142,12 @@ export default function LocationMap({
   const pageScrollFrame = useRef<number | null>(null);
   const onPageScrollRef = useRef(onPageScroll);
   onPageScrollRef.current = onPageScroll;
-  const defaultRegion: Region = { latitude: 8.228, longitude: 124.2452, latitudeDelta: 0.12, longitudeDelta: 0.12 };
+  const defaultRegion: Region = {
+    latitude: (ILIGAN_MAP_BOUNDS.northEast.latitude + ILIGAN_MAP_BOUNDS.southWest.latitude) / 2,
+    longitude: (ILIGAN_MAP_BOUNDS.northEast.longitude + ILIGAN_MAP_BOUNDS.southWest.longitude) / 2,
+    latitudeDelta: (ILIGAN_MAP_BOUNDS.northEast.latitude - ILIGAN_MAP_BOUNDS.southWest.latitude) * 1.2,
+    longitudeDelta: (ILIGAN_MAP_BOUNDS.northEast.longitude - ILIGAN_MAP_BOUNDS.southWest.longitude) * 1.2,
+  };
   const currentRegion = useRef(initialRegion ?? defaultRegion);
   const [zoomLevel, setZoomLevel] = useState(() => mapZoomFromLongitudeDelta(currentRegion.current.longitudeDelta));
   const [localBase, setLocalBase] = useState<MapStyle>("satellite"), [stylePickerOpen, setStylePickerOpen] = useState(false);
@@ -245,15 +251,15 @@ export default function LocationMap({
     return <Polygon
       key={feature.properties.adm4_psgc}
       coordinates={feature.geometry.coordinates[0].map(([longitude, latitude]) => ({ latitude, longitude }))}
-      strokeColor={selectedBarangayName === name ? "#083f75" : count ? "#ffffff" : "#e2e8f0"}
+      strokeColor={zoomBehavior === "issue-map" ? "#ffffff" : selectedBarangayName === name ? "#083f75" : count ? "#ffffff" : "#e2e8f0"}
       strokeWidth={selectedBarangayName === name ? 3 : count ? 1.5 : 0.8}
-      fillColor={`${(barangayMetric === "density" ? barangayDensityColor(density, maxBarangayDensity) : barangayHeatColor(count))}${count ? "a8" : "35"}`}
-      tappable
-      onPress={() => { lastBarangayTap.current = Date.now(); onBarangayPress?.(name); }}
+    fillColor={zoomBehavior === "issue-map" ? "#08756b0c" : `${(barangayMetric === "density" ? barangayDensityColor(density, maxBarangayDensity) : barangayHeatColor(count))}${count ? "a8" : "35"}`}
+      tappable={zoomBehavior === "barangay-gis"}
+      onPress={() => { if (zoomBehavior === "barangay-gis") { lastBarangayTap.current = Date.now(); onBarangayPress?.(name); } }}
     />;
-  }), [showBarangayBoundaries, barangayCounts, onBarangayPress, selectedBarangayName, barangayMetric, maxBarangayDensity]);
+  }), [showBarangayBoundaries, barangayCounts, onBarangayPress, selectedBarangayName, barangayMetric, maxBarangayDensity, zoomBehavior]);
   const zoom = (direction: 1 | -1) => map.current?.getCamera().then((camera) => {
-    map.current?.animateCamera({ ...camera, zoom: Math.max(3, Math.min(20, (camera.zoom ?? 12) + direction)) }, { duration: 180 });
+    map.current?.animateCamera({ ...camera, zoom: Math.max(ILIGAN_CITY_MIN_MAP_ZOOM, Math.min(ILIGAN_CITY_MAX_MAP_ZOOM, (camera.zoom ?? 12) + direction)) }, { duration: 180 });
   });
   const center = () => {
     if (point) map.current?.animateToRegion({ ...point, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 250);
@@ -272,7 +278,7 @@ export default function LocationMap({
     onPointPress?.(selected);
   }, [onPointPress]);
   useEffect(() => {
-    if (!showBarangayBoundaries) return;
+    if (!showBarangayBoundaries || zoomBehavior !== "barangay-gis") return;
     const area = bounds ?? ILIGAN_MAP_BOUNDS;
     map.current?.animateToRegion({
       latitude: (area.northEast.latitude + area.southWest.latitude) / 2,
@@ -280,7 +286,7 @@ export default function LocationMap({
       latitudeDelta: (area.northEast.latitude - area.southWest.latitude) * 1.18,
       longitudeDelta: (area.northEast.longitude - area.southWest.longitude) * 1.18,
     }, 360);
-  }, [showBarangayBoundaries, bounds]);
+  }, [showBarangayBoundaries, bounds, zoomBehavior]);
   useEffect(() => {
     if (!point) return;
     map.current?.animateToRegion({ ...point, latitudeDelta: 0.02, longitudeDelta: 0.02 }, 250);
@@ -299,6 +305,8 @@ export default function LocationMap({
         style={{ flex: 1 }}
         scrollEnabled={!pageScrollActive}
         zoomEnabled
+        minZoomLevel={ILIGAN_CITY_MIN_MAP_ZOOM}
+        maxZoomLevel={ILIGAN_CITY_MAX_MAP_ZOOM}
         pitchEnabled={false}
         rotateEnabled={false}
         onTouchStart={startMapTouch}
@@ -307,14 +315,24 @@ export default function LocationMap({
         onTouchCancel={endMapTouch}
         mapType={base === "terrain" ? "terrain" : base === "satellite" ? "satellite" : "standard"}
         initialRegion={point ? { ...point, latitudeDelta: 0.02, longitudeDelta: 0.02 } : currentRegion.current}
-        onRegionChangeComplete={(region) => { currentRegion.current = region; setZoomLevel(mapZoomFromLongitudeDelta(region.longitudeDelta)); onViewportChange?.(region); }}
+        onRegionChangeComplete={(region) => {
+          const latitude = Math.max(cityBounds.southWest.latitude, Math.min(cityBounds.northEast.latitude, region.latitude));
+          const longitude = Math.max(cityBounds.southWest.longitude, Math.min(cityBounds.northEast.longitude, region.longitude));
+          if (Math.abs(latitude - region.latitude) > 0.000001 || Math.abs(longitude - region.longitude) > 0.000001) {
+            map.current?.animateToRegion({ ...region, latitude, longitude }, 0);
+            return;
+          }
+          currentRegion.current = region;
+          setZoomLevel(mapZoomFromLongitudeDelta(region.longitudeDelta));
+          onViewportChange?.(region);
+        }}
         onPress={(e) => {
           if (onChoose) choosePoint(e.nativeEvent.coordinate);
-          else if (showBarangayBoundaries && Date.now() - lastBarangayTap.current > 160) onMapBackgroundPress?.();
+          else if (showBarangayBoundaries && zoomBehavior === "barangay-gis" && Date.now() - lastBarangayTap.current > 160) onMapBackgroundPress?.();
         }}
       >
-        {barangayLayer}
         {densityLayer}
+        {barangayLayer}
         {point && (
           <Marker
             key={`${point.latitude}:${point.longitude}`}
@@ -339,7 +357,7 @@ export default function LocationMap({
         {showPoints && !showBarangayBoundaries && zoomBehavior === "barangay-gis" && zoomLevel < INDIVIDUAL_REPORT_PIN_ZOOM && categoryClusters.map((cluster) => <Marker key={cluster.id} coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }} zIndex={1002} accessibilityLabel={`${cluster.count} ${categoryDisplayName(cluster.categoryName)} reports`} onPress={() => zoomInto(cluster.centerLatitude, cluster.centerLongitude, 2)}>
           <View style={{ minWidth: 38, height: 38, paddingHorizontal: 5, borderRadius: 20, borderWidth: 2.5, borderColor: "white", backgroundColor: cluster.color, alignItems: "center", justifyContent: "center", shadowColor: "#10263f", shadowOpacity: 0.24, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 5 }}><Text style={{ color: "white", fontSize: cluster.count > 99 ? 10 : 12, fontWeight: "900" }}>{cluster.count.toLocaleString("en-PH")}</Text></View>
         </Marker>)}
-        {showPoints && !showBarangayBoundaries && (zoomBehavior === "issue-map" || zoomLevel >= INDIVIDUAL_REPORT_PIN_ZOOM) && reportPoints.map((p, i) => (
+        {showPoints && (!showBarangayBoundaries || zoomBehavior === "issue-map") && (zoomBehavior === "issue-map" || zoomLevel >= INDIVIDUAL_REPORT_PIN_ZOOM) && reportPoints.map((p, i) => (
           <ReportPin key={p.id || i} {...p} selected={p.id === selectedPointId} onPointPress={focusPoint} reportPopupBehavior={reportPopupBehavior} />
         ))}
       </MapView>

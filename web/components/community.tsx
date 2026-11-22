@@ -684,12 +684,13 @@ export function Community({
                 const otherStates = states.filter((next) => next !== r.status && next !== "draft" && next !== "pending_review" && next !== primaryNext);
                 const dateValue = r.publish_at || r.created_at;
                 const dateText = new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" }).format(new Date(dateValue));
-                const statusText = r.status === "published" && r.publish_at && new Date(r.publish_at).getTime() > Date.now() ? "Scheduled" : label(r.status);
+                const isScheduled = r.status === "published" && !!r.publish_at && new Date(r.publish_at).getTime() > Date.now();
+                const statusText = isScheduled ? "Scheduled" : label(r.status);
                 const nextLabel = (next: string) => next === "published" ? "Publish" : "Archive";
                 return (
                   <article className="panel announcement-card" key={r.id}>
                     <div className="announcement-card-top">
-                      <span className={`announcement-status ${r.status}`}>{statusText}</span>
+                      <span className={`announcement-status ${r.status}${isScheduled ? " is-scheduled" : ""}`}>{statusText}</span>
                       <time dateTime={dateValue}><CalendarDays size={14} /> {dateText}</time>
                       {manager && !!otherStates.length && <details className="announcement-menu">
                         <summary aria-label={`More actions for ${r.title}`}><MoreVertical size={17} /></summary>

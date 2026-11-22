@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { validateImageFile } from "../lib/images";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -67,6 +67,11 @@ type RelatedReport = {
   barangay_id: string;
   category_id: string;
   created_at: string;
+  description?: string | null;
+  public_summary?: string | null;
+  location_address?: string | null;
+  purok?: string | null;
+  zone?: string | null;
 };
 type Comment = {
   id: string;
@@ -170,8 +175,18 @@ export function Community({
     [relatedReportSearch, setRelatedReportSearch] = useState(""),
     [showRelatedReportOptions, setShowRelatedReportOptions] = useState(false),
     [page, setPage] = useState(0);
+  const [meetingHeaderStatus, setMeetingHeaderStatus] = useState<{ requestId: string; label: string; className: string } | null>(null);
+  const relatedReportPicker = useRef<HTMLDivElement>(null);
   const searchTerm = useDebouncedValue(search.trim());
   const relatedReportSearchTerm = useDebouncedValue(relatedReportSearch.trim());
+  useEffect(() => {
+    if (!showRelatedReportOptions) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (event.target instanceof Node && !relatedReportPicker.current?.contains(event.target)) setShowRelatedReportOptions(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [showRelatedReportOptions]);
   const columns = table === "meeting_requests"
     ? "id,title,body,status,coordination_status,participation_mode,barangay_id,decision_reason,consultation_id,category_id,report_id,created_at"
     : "*";
@@ -712,7 +727,7 @@ export function Community({
                     <span className="consultation-edit-section-icon"><Link2 size={19} /></span>
                     <div><h3>Related report <span>(optional)</span></h3><p>Link this consultation to an existing report for easier tracking.</p></div>
                   </div>
-                  <div className="consultation-edit-related">
+                  <div className="consultation-edit-related" ref={relatedReportPicker}>
                     <input type="hidden" name="report" value={relatedReport} />
                     {relatedReport && !showRelatedReportOptions ? (
                       <div className="consultation-linked-report">
@@ -813,6 +828,9 @@ export function Community({
           className={table === "consultations" ? "discussion-detail-dialog" : table === "meeting_requests" ? "meeting-details-dialog" : undefined}
           icon={table === "consultations" ? <MessageSquare size={22} /> : table === "meeting_requests" ? <CalendarDays size={22} /> : undefined}
           description={table === "consultations" ? "Review the consultation and follow the community discussion." : table === "meeting_requests" ? profile.role === "office" ? "View meeting details, respond to invitations, and follow actions assigned to your office." : "Review the request and manage its meeting details." : undefined}
+          headerMeta={table === "meeting_requests" && meetingHeaderStatus?.requestId === selectedId
+            ? <span className={meetingHeaderStatus.className}>{meetingHeaderStatus.label}</span>
+            : undefined}
         >
           {target.isPending ? <p className="empty">Opening update…</p> : target.error ? (
             <div role="alert" className="error">
@@ -826,7 +844,7 @@ export function Community({
           ) : table === "meeting_requests" ? (
             <Meeting row={selected} refs={refs} isOffice={profile.role === "office"} manage={profile.role !== "office" && canManage(selected)} manageSchedule={profile.role === "barangay" && canManage(selected)}
               canInvite={profile.role === "admin" || (profile.role === "barangay" && profile.barangay_id === selected.barangay_id)}
-              profileRole={profile.role} profileBarangayId={profile.barangay_id} officeIds={officeIds} />
+              profileRole={profile.role} profileBarangayId={profile.barangay_id} officeIds={officeIds} onStatusChange={setMeetingHeaderStatus} />
           ) : (
             <Announcement
               row={selected}
@@ -1187,7 +1205,7 @@ function Discussion({ row, manage }: { row: Row; manage: boolean }) {
     </div>
   );
 }
-type MeetingSection = "overview" | "participation" | "schedule" | "invitations" | "follow-up" | "decision";
+type MeetingSection = "overview" | "schedule" | "invitations" | "follow-up" | "decision";
 
 function Meeting({
   row,
@@ -1199,6 +1217,7 @@ function Meeting({
   profileRole,
   profileBarangayId,
   officeIds,
+  onStatusChange,
 }: {
   row: Row;
   refs: References;
@@ -1209,6 +1228,7 @@ function Meeting({
   profileRole: Profile["role"];
   profileBarangayId: string | null;
   officeIds: string[];
+  onStatusChange: (status: { requestId: string; label: string; className: string }) => void;
 }) {
   const { run, message, failed, busy } = useSave();
   const [meetingFormError, setMeetingFormError] = useState("");
@@ -1273,6 +1293,26 @@ function Meeting({
       participant_count: number;
     }[]>(db!.rpc("staff_meeting_request_participants", { p_request: row.id })),
   });
+  const relatedReportQuery = useQuery({
+    queryKey: ["meeting-linked-report", row.id, row.report_id],
+    enabled: !!row.report_id,
+    queryFn: async () => {
+      const report = await result<RelatedReport | null>(db!.from("reports")
+        .select("id,title,status,category_id,barangay_id,created_at,description,public_summary,location_address,purok,zone")
+        .eq("id", row.report_id!)
+        .maybeSingle<RelatedReport>());
+      if (!report) return null;
+      const files = await result<{ path: string; action_id: number | null }[]>(db!.from("report_attachments")
+        .select("path,action_id")
+        .eq("report_id", report.id)
+        .is("action_id", null)
+        .order("created_at", { ascending: true })
+        .limit(1)).catch(() => []);
+      if (!files.length) return { report, imageUrl: null as string | null };
+      const { data, error } = await db!.storage.from("report-evidence").createSignedUrl(files[0].path, 3600);
+      return { report, imageUrl: error ? null : data?.signedUrl ?? null };
+    },
+  });
   const meeting = q.data?.meeting;
   useEffect(() => {
     setVenueType(meeting?.venue_type || (meeting?.meet_url ? "online" : "venue"));
@@ -1288,6 +1328,9 @@ function Meeting({
     !barangayInvitations.some((invitation) => invitation.barangay_id === item.id && invitation.status !== "declined"));
   const canRespondToBarangayInvitation = profileRole === "barangay" && currentBarangayInvitation?.status === "pending";
   const ownInvitations = isOffice && officeIds.length ? invitations.filter((invitation) => officeIds.includes(invitation.organization_id)) : invitations;
+  const meetingStatusLabel = meeting?.completed ? "Completed" : meeting ? "Scheduled" : isOffice && row.status === "pending" ? q.data ? !ownInvitations.length ? "Not invited" : ownInvitations.every((invitation) => invitation.status === "declined") ? "Invitation declined" : ownInvitations.some((invitation) => invitation.status === "pending") ? "Invitation pending" : "Awaiting barangay" : "Checking invitation" : label(row.status);
+  const meetingStatusClassName = `meeting-detail-status${meeting?.completed ? " is-complete" : meeting ? " is-scheduled" : ""}`;
+  useEffect(() => onStatusChange({ requestId: row.id, label: meetingStatusLabel, className: meetingStatusClassName }), [row.id, meetingStatusLabel, meetingStatusClassName, onStatusChange]);
   const acceptedOfficeIds = ownInvitations.filter((invitation) => invitation.status === "accepted").map((invitation) => invitation.organization_id);
   const canEditOfficeActions = isOffice && acceptedOfficeIds.length > 0;
   const canEditActionItem = (item: { organization_id: string | null }) => manage || (canEditOfficeActions && !!item.organization_id && acceptedOfficeIds.includes(item.organization_id));
@@ -1304,7 +1347,6 @@ function Meeting({
   const meetingSectionId = (section: string) => `meeting-${row.id}-${section}`;
   const sectionTabs: { key: MeetingSection; label: string }[] = [
     { key: "overview", label: "Overview" },
-    { key: "participation", label: "Participation" },
     ...(manageSchedule && row.status === "approved" ? [{ key: "schedule" as const, label: "Schedule" }] : []),
     ...(hasInvitationSections ? [{ key: "invitations" as const, label: "Invitations" }] : []),
     ...(meeting ? [{ key: "follow-up" as const, label: "Follow-up" }] : []),
@@ -1354,9 +1396,6 @@ function Meeting({
           <div><h3>Request overview</h3><p>Review the request, its current status, and scheduled time.</p></div>
         </div>
         <div className="meeting-overview-main">
-          <span className={`meeting-detail-status ${meeting?.completed ? "is-complete" : meeting ? "is-scheduled" : ""}`}>
-            {meeting?.completed ? "Completed" : meeting ? "Scheduled" : isOffice && row.status === "pending" ? q.data ? !ownInvitations.length ? "Not invited" : ownInvitations.every((invitation) => invitation.status === "declined") ? "Invitation declined" : ownInvitations.some((invitation) => invitation.status === "pending") ? "Invitation pending" : "Awaiting barangay" : "Checking invitation" : label(row.status)}
-          </span>
           <p>{row.body}</p>
           {meeting && <div className="meeting-overview-place"><MapPin size={16} aria-hidden="true" /><div><strong>{meeting.venue_type === "online" ? "Online meeting" : "Meeting venue"}</strong><span>{meeting.venue_type === "online" ? "Google Meet" : meeting.venue}</span></div></div>}
           {meetingLink && <a className="meeting-join-link" href={meetingLink} target="_blank" rel="noreferrer"><Link2 size={15} aria-hidden="true" />Join Google Meet</a>}
@@ -1367,37 +1406,61 @@ function Meeting({
         </div>
       </section>
 
-      {row.report_id && (
-        <section className="meeting-section">
+      <div className={`meeting-overview-support${row.report_id ? " has-report" : ""}`}>
+        <section className="meeting-section meeting-overview-participants">
           <div className="meeting-section-heading">
-            <span className="meeting-section-icon"><FileText size={20} /></span>
-            <div><h3>Related report</h3><p>Report linked to this request for context.</p></div>
+            <span className="meeting-section-icon"><Users size={20} aria-hidden="true" /></span>
+            <div><h3>Residents participating</h3><p>Residents who have joined this meeting.</p></div>
+            {(profileRole === "admin" || profileRole === "barangay") && <span className="meeting-roster-count" aria-label={`${residentParticipantCount} participating residents`}>{residentParticipantCount}</span>}
           </div>
-          {row.report_id && <div className="meeting-report-id"><span>Report ID</span><code>{row.report_id}</code></div>}
+          {profileRole === "admin" || profileRole === "barangay" ? participantsQuery.isPending
+            ? <p className="meeting-empty" role="status">Loading resident list…</p>
+            : participantsQuery.error
+              ? <div className="meeting-roster-empty"><p>Resident list couldn’t load.</p><button type="button" className="meeting-roster-retry" onClick={() => void participantsQuery.refetch()}>Try again</button></div>
+              : residentParticipants.length
+                ? <div className="meeting-resident-list">{residentParticipants.map((participant) => (
+                  <div className="meeting-resident" key={participant.resident_id}>
+                    <span className="meeting-resident-icon"><UserRound size={16} aria-hidden="true" /></span>
+                    <strong>{participant.resident_name || "Resident"}</strong>
+                    <small>Joined {new Date(participant.joined_at).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium" })}</small>
+                  </div>
+                ))}</div>
+                : <p className="meeting-empty">No participating residents yet.</p>
+            : <p className="meeting-empty">The resident list is visible to the meeting barangay and administrators.</p>}
+          {residentParticipants[0] && residentParticipants[0].participant_count > residentParticipants.length && <p className="meeting-empty">Showing the first {residentParticipants.length} of {residentParticipants[0].participant_count} participants.</p>}
         </section>
-      )}
-      </div>
 
-      <div id={meetingSectionId("panel-participation")} className="meeting-section-panel" role="tabpanel" aria-labelledby={meetingSectionId("tab-participation")} tabIndex={0} hidden={activeSection !== "participation"}>
-        <section className="meeting-section">
+        {row.report_id && <section className="meeting-section meeting-overview-related-report">
           <div className="meeting-section-heading">
-            <span className="meeting-section-icon"><Users size={20} /></span>
-            <div><h3>Resident participation</h3><p>{row.participation_mode === "open" ? "Residents from the meeting barangay and accepted invited barangays can join this open meeting." : "This is a closed meeting. Residents cannot join."}</p></div>
+            <span className="meeting-section-icon"><FileText size={20} aria-hidden="true" /></span>
+            <div><h3>Related report</h3><p>Issue linked to this meeting request.</p></div>
           </div>
-          <div className="meeting-resident-roster">
-            {profileRole === "admin" || profileRole === "barangay" ? <>
-            <div className="meeting-roster-heading"><strong>Residents participating</strong><span>{residentParticipantCount}</span></div>
-            {participantsQuery.isPending ? <p className="meeting-empty">Loading resident list…</p> : participantsQuery.error ? <div className="meeting-roster-empty"><p>Resident participants could not be loaded.</p><button type="button" className="meeting-roster-retry" onClick={() => void participantsQuery.refetch()}>Try again</button></div> : residentParticipants.length ? <div className="meeting-resident-list">{residentParticipants.map((participant) => (
-              <div className="meeting-resident" key={participant.resident_id}>
-                <span className="meeting-resident-icon"><UserRound size={16} aria-hidden="true" /></span>
-                <strong>{participant.resident_name || "Resident"}</strong>
-                <small>Joined {new Date(participant.joined_at).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium" })}</small>
-              </div>
-            ))}</div> : <p className="meeting-empty">{row.participation_mode === "open" ? "No residents have joined this meeting yet." : "Resident participation is disabled for this closed meeting."}</p>}
-            {residentParticipants[0] && residentParticipants[0].participant_count > residentParticipants.length && <p className="meeting-empty">Showing the first {residentParticipants.length} of {residentParticipants[0].participant_count} participants.</p>}
-            </> : <p className="meeting-empty">The resident list is visible to the meeting barangay and administrators.</p>}
-          </div>
-        </section>
+          {relatedReportQuery.isPending
+            ? <p className="meeting-empty" role="status">Loading linked report…</p>
+            : relatedReportQuery.error
+              ? <div className="meeting-roster-empty"><p>Linked report details couldn’t load.</p><button type="button" className="meeting-roster-retry" onClick={() => void relatedReportQuery.refetch()}>Try again</button></div>
+              : relatedReportQuery.data?.report
+                ? <article className="meeting-report-preview">
+                  {relatedReportQuery.data.imageUrl
+                    ? <img src={relatedReportQuery.data.imageUrl} alt={`Photo for ${relatedReportQuery.data.report.title}`} loading="lazy" />
+                    : <div className="meeting-report-photo-empty"><ImagePlus size={21} aria-hidden="true" /><span>No report photo</span></div>}
+                  <div className="meeting-report-copy">
+                    <div className="meeting-report-badges">
+                      <span>{refs.categories.find((category) => category.id === relatedReportQuery.data!.report!.category_id)?.name || "Community report"}</span>
+                      <span>{label(relatedReportQuery.data.report.status)}</span>
+                    </div>
+                    <h4>{relatedReportQuery.data.report.title}</h4>
+                    {(relatedReportQuery.data.report.public_summary || relatedReportQuery.data.report.description) && <p>{relatedReportQuery.data.report.public_summary || relatedReportQuery.data.report.description}</p>}
+                    <div className="meeting-report-details">
+                      <span>{refs.barangays.find((barangay) => barangay.id === relatedReportQuery.data!.report!.barangay_id)?.name || "Iligan City"}</span>
+                      <time dateTime={relatedReportQuery.data.report.created_at}>{new Date(relatedReportQuery.data.report.created_at).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium" })}</time>
+                      {(relatedReportQuery.data.report.location_address || relatedReportQuery.data.report.purok || relatedReportQuery.data.report.zone) && <span>{relatedReportQuery.data.report.location_address || [relatedReportQuery.data.report.purok, relatedReportQuery.data.report.zone].filter(Boolean).join(" · ")}</span>}
+                    </div>
+                  </div>
+                </article>
+                : <p className="meeting-empty">The linked report is no longer available.</p>}
+        </section>}
+      </div>
       </div>
 
       {manageSchedule && row.status === "approved" && (
@@ -1437,10 +1500,6 @@ function Meeting({
             <div><h3>Plan the meeting</h3><p>Set the format and timing, then share an update with residents.</p></div>
           </div>
           <section className="meeting-form-section">
-          <div className="meeting-section-heading">
-            <span className="meeting-section-icon"><CalendarDays size={20} /></span>
-            <div><h3>Format, date, time, and location</h3><p>Choose how and when the meeting will happen.</p></div>
-          </div>
           <fieldset className="meeting-mode-fieldset">
             <legend>Meeting format <b>*</b></legend>
             <div className="meeting-mode-options">
@@ -1516,7 +1575,7 @@ function Meeting({
                 <span className="meeting-participant-icon"><Users size={17} /></span>
                 <div className="meeting-invitation-copy">
                   <strong>{refs.organizations.find((o) => o.id === p.organization_id)?.name || "Office"}</strong>
-                  <p>{p.status === "pending" ? "Awaiting reply" : label(p.status)}{p.decline_reason && ` · ${p.decline_reason}`}</p>
+                  <p>{p.decline_reason ? `Reason: ${p.decline_reason}` : "Invitation to participate in this meeting."}</p>
                   {requestOpen && p.status === "pending" && officeIds.includes(p.organization_id) && (
                     <form className="meeting-form" onSubmit={(event) => {
                       event.preventDefault();
@@ -1536,9 +1595,10 @@ function Meeting({
                     </form>
                   )}
                 </div>
+                <span className={`meeting-invitation-status ${p.status}`}>{p.status === "pending" ? "Awaiting reply" : label(p.status)}</span>
                 {canInvite && p.status === "pending" && <button type="button" className="meeting-remove" aria-label="Withdraw office invitation" disabled={busy} onClick={() => void run(db!.rpc("remove_meeting_office_invitation", { p_request: row.id, p_organization: p.organization_id }))}><X size={17} /></button>}
               </div>
-            ))}</div> : <p className="meeting-empty">{officeIds.length && !canInvite ? "Your office has not been invited to this meeting." : "No offices have been invited yet."}</p>}
+            ))}</div> : <p className="meeting-empty meeting-invitation-empty">{officeIds.length && !canInvite ? "Your office has not been invited to this meeting." : "No offices have been invited yet."}</p>}
             {canInvite && requestOpen && <form className="meeting-add-office" onSubmit={(e) => {
               e.preventDefault();
               const organizationId = new FormData(e.currentTarget).get("office");
@@ -1558,12 +1618,17 @@ function Meeting({
               ? "Invite another barangay separately from participating offices. Invited staff can respond to the meeting invitation."
               : "Review and respond to the invitation sent to your barangay."}</p></div>
           </div>
-          {!!barangayInvitations.length && <div className="meeting-office-invitations" aria-live="polite">
-            {barangayInvitations.map((invitation) => <span className={`meeting-invitation-status ${invitation.status}`} key={invitation.barangay_id}>
-              <strong>{refs.barangays.find((item) => item.id === invitation.barangay_id)?.name ?? "Invited barangay"}</strong>
-              <span>{invitation.status === "pending" ? "Reply needed" : label(invitation.status)}</span>
-            </span>)}
+          {!!barangayInvitations.length && <div className="meeting-participant-list meeting-barangay-invitation-list" aria-live="polite">
+            {barangayInvitations.map((invitation) => <div className="meeting-participant" key={invitation.barangay_id}>
+              <span className="meeting-participant-icon is-teal"><MapPin size={17} aria-hidden="true" /></span>
+              <div className="meeting-invitation-copy">
+                <strong>{refs.barangays.find((item) => item.id === invitation.barangay_id)?.name ?? "Invited barangay"}</strong>
+                <p>Invitation to participate in this meeting.</p>
+              </div>
+                <span className={`meeting-invitation-status ${invitation.status}`}>{invitation.status === "pending" ? "Awaiting reply" : label(invitation.status)}</span>
+            </div>)}
           </div>}
+          {!barangayInvitations.length && canInvite && requestOpen && <p className="meeting-empty meeting-invitation-empty">No barangays have been invited yet.</p>}
           {canRespondToBarangayInvitation && <div className="meeting-barangay-invitation-response">
             <p>Your barangay has been invited. Accept to confirm staff participation. Residents can join only when the meeting is open.</p>
             <div className="meeting-form-actions">
@@ -1582,7 +1647,7 @@ function Meeting({
               {barangayInviteOpen ? <X size={16} /> : <Plus size={16} />}
               {barangayInviteOpen ? "Cancel invitation" : "Invite another barangay"}
             </button>
-            {barangayInviteOpen && <form id={`meeting-barangay-invite-${row.id}`} className="meeting-form meeting-barangay-invite-form" onSubmit={(event) => {
+            {barangayInviteOpen && <form id={`meeting-barangay-invite-${row.id}`} className="meeting-form meeting-add-office meeting-add-barangay" onSubmit={(event) => {
               event.preventDefault();
               if (!barangayInvite) return;
               void run(db!.rpc("invite_meeting_barangay", { p_request: row.id, p_barangay: barangayInvite })).then((saved) => {
@@ -1590,7 +1655,7 @@ function Meeting({
               });
             }}>
               <label className="meeting-field"><span>Barangay to invite</span><select value={barangayInvite} required onChange={(event) => setBarangayInvite(event.target.value)}><option value="">Choose a barangay</option>{availableBarangays.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-              <div className="meeting-form-actions"><button type="submit" disabled={busy || !barangayInvite}>{busy ? "Sending…" : "Send invitation"}</button></div>
+              <button type="submit" disabled={busy || !barangayInvite}><Plus size={17} />{busy ? "Sending…" : "Send invitation"}</button>
             </form>}
           </>}
           {canInvite && requestOpen && !availableBarangays.length && <p className="meeting-empty">Every other barangay has already been invited.</p>}

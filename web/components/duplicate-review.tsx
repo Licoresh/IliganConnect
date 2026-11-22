@@ -1,7 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { Check, ChevronDown, Copy, MapPin, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronDown, Copy, Image as ImageIcon, MapPin, RefreshCw } from "lucide-react";
 import { label, type Report, type Status } from "@community/shared";
 import { db, result } from "../lib/client";
 
@@ -12,13 +12,68 @@ type Candidate = {
   problem_label: string | null; barangay_name: string;
 };
 export type DuplicateCandidateOption = Pick<Candidate, "id" | "title">;
+type ComparisonPhoto = { path: string; url: string | null };
+
+async function loadComparisonPhotos(reportIds: [string, string], signal: AbortSignal): Promise<[ComparisonPhoto[], ComparisonPhoto[]]> {
+  const fileLists = await Promise.all(reportIds.map((reportId) => result<{ path: string }[]>(
+    db!.from("report_attachments").select("path").eq("report_id", reportId).is("action_id", null).order("created_at", { ascending: true }).limit(4).abortSignal(signal),
+  )));
+  const paths = fileLists.flatMap((files) => files.map(({ path }) => path));
+  if (!paths.length) return [[], []];
+  const { data, error } = await db!.storage.from("report-evidence").createSignedUrls(paths, 3600);
+  if (error) throw new Error(error.message);
+  const photos = fileLists.map((files) => files.map(({ path }) => ({ path, url: data?.find((item) => item.path === path)?.signedUrl ?? null })));
+  return [photos[0], photos[1]];
+}
+
 const date = (value: string) => new Date(value).toLocaleString("en-PH", {
   month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila",
 });
 
-export function DuplicateReview({ report, canChoose, selectedId, onChoose, onCandidatesChange }: {
-  report: Report; canChoose: boolean; selectedId: string;
-  onChoose: (candidate: Pick<Candidate, "id" | "title">) => void;
+function DuplicateComparison({ report, candidate }: { report: Report; candidate: Candidate }) {
+  const [open, setOpen] = useState(false);
+  const photoQuery = useQuery({
+    queryKey: ["duplicate-comparison-photos", report.id, candidate.id],
+    enabled: open,
+    staleTime: 30_000,
+    queryFn: ({ signal }) => loadComparisonPhotos([report.id, candidate.id], signal),
+  });
+  const items = [
+    { ...report, heading: "Report being reviewed", area: "" },
+    { ...candidate, heading: "Possible main report", area: candidate.barangay_name },
+  ];
+  return <details className="duplicate-comparison" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary>Compare reports<ChevronDown size={16} aria-hidden="true" /></summary>
+    <div className="duplicate-comparison-grid">
+      {items.map((item, index) => <div key={item.id}>
+        <strong className="duplicate-comparison-label">{item.heading}</strong><h5>{item.title}</h5>
+        <p className="duplicate-comparison-meta">{label(item.status)} · {date(item.created_at)}</p>
+        {item.area && <p className="duplicate-comparison-meta">{item.area}</p>}
+        <div className="duplicate-comparison-photos" aria-label={`${item.heading} photos`}>
+          <span>Report photos</span>
+          {photoQuery.isPending ? <p className="duplicate-comparison-photo-state" role="status">Loading photos…</p>
+            : photoQuery.error ? <p className="duplicate-comparison-photo-state" role="status">Photos could not be loaded.</p>
+              : photoQuery.data?.[index]?.length ? <div className="duplicate-comparison-photo-grid">
+                {photoQuery.data[index].map((photo, photoIndex) => photo.url
+                  ? <a className="duplicate-comparison-photo" key={photo.path} href={photo.url} target="_blank" rel="noreferrer" aria-label={`Open photo ${photoIndex + 1} for ${item.heading}`}>
+                    <img src={photo.url} alt={`${item.heading} photo ${photoIndex + 1}`} loading="lazy" />
+                  </a>
+                  : <span className="duplicate-comparison-photo duplicate-comparison-photo-unavailable" key={photo.path}><ImageIcon size={18} aria-label="Photo preview unavailable" /></span>)}
+              </div>
+                : <p className="duplicate-comparison-photo-state">No photos attached.</p>}
+        </div>
+        <div className="duplicate-comparison-description" role="region" aria-label={`${item.heading} description`} tabIndex={0}>{item.description}</div>
+        <p className="duplicate-comparison-meta"><strong>Landmark:</strong> {item.landmark?.trim() || "Not provided"}</p>
+        <p className="duplicate-comparison-id">{item.id}</p>
+      </div>)}
+    </div>
+    {candidate.problem_label && <p className="duplicate-comparison-note">Suggested report’s problem: {candidate.problem_label}</p>}
+    {candidate.status === "resolved" && <p className="duplicate-comparison-note">This report was resolved. Check whether the new report describes a fresh incident before linking it.</p>}
+  </details>;
+}
+
+export function DuplicateReview({ report, onCandidatesChange }: {
+  report: Report;
   onCandidatesChange: (candidates: DuplicateCandidateOption[]) => void;
 }) {
   const q = useQuery({
@@ -47,22 +102,7 @@ export function DuplicateReview({ report, canChoose, selectedId, onChoose, onCan
           {candidate.same_problem && <li>Same problem type</li>}
           {candidate.text_similarity >= .35 && <li>Shared wording</li>}
         </ul>
-        <details className="duplicate-comparison"><summary>Compare reports<ChevronDown size={16} aria-hidden="true" /></summary>
-          <div className="duplicate-comparison-grid">
-            {[{ ...report, heading: "Report being reviewed", area: "" }, { ...candidate, heading: "Possible main report", area: candidate.barangay_name }].map(item => <div key={item.id}>
-              <strong className="duplicate-comparison-label">{item.heading}</strong><h5>{item.title}</h5>
-              <p className="duplicate-comparison-meta">{label(item.status)} · {date(item.created_at)}</p>
-              {item.area && <p className="duplicate-comparison-meta">{item.area}</p>}
-              <div className="duplicate-comparison-description" role="region" aria-label={`${item.heading} description`} tabIndex={0}>{item.description}</div>
-              <p className="duplicate-comparison-meta"><strong>Landmark:</strong> {item.landmark?.trim() || "Not provided"}</p>
-              <p className="duplicate-comparison-id">{item.id}</p>
-            </div>)}
-          </div>
-          {candidate.problem_label && <p className="duplicate-comparison-note">Suggested report’s problem: {candidate.problem_label}</p>}
-          {candidate.status === "resolved" && <p className="duplicate-comparison-note">This report was resolved. Check whether the new report describes a fresh incident before linking it.</p>}
-          {canChoose ? <div className="duplicate-choice"><p>Choose a main report only if both describe the same incident. Add a reason and save to confirm the link.</p><button type="button" aria-pressed={selectedId === candidate.id} className={selectedId === candidate.id ? "secondary" : ""} onClick={() => onChoose(candidate)}><Check size={16} aria-hidden="true" />{selectedId === candidate.id ? "Main report selected" : "Choose as main report"}</button></div>
-            : <p className="duplicate-comparison-note">No duplicate action is available for your permissions and this report’s current status. You can still compare the details.</p>}
-        </details>
+        <DuplicateComparison report={report} candidate={candidate} />
       </article>)}</div>}
   </section>;
 }

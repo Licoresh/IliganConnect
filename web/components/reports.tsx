@@ -325,7 +325,7 @@ export function ReportDetail({
   const q = useQuery({
     queryKey: ["detail", r.id],
     queryFn: async () => {
-      const [problem, permissions, referralOptions, engagement, history, nearby, photos, notes, routing] = await Promise.all([
+      const [problem, permissions, referralOptions, engagement, history, photos, notes, routing] = await Promise.all([
         r.problem_type ? result<{ label: string }>(db!.from("report_problem_types").select("label").eq("category_id", r.category_id).eq("code", r.problem_type).single()) : Promise.resolve(null),
         result<{
           read: boolean;
@@ -353,9 +353,6 @@ export function ReportDetail({
         >(
           db!.rpc("report_action_history", { p_id: r.id }),
         ),
-        result<
-          { id: string; title: string; status: string; distance_m: number }[]
-        >(db!.rpc("recurrence_candidates", { p_id: r.id })),
         (async () => {
           const files = await result<{ id: string; action_id: number | null; path: string }[]>(db!.from("report_attachments").select("id,action_id,path").eq("report_id", r.id));
           if (!files.length) return [];
@@ -377,7 +374,7 @@ export function ReportDetail({
             .or(`barangay_id.is.null,barangay_id.eq.${r.barangay_id}`),
         ),
       ]);
-      return { problem, permissions, referralOptions, engagement, history, nearby, photos, notes, routing };
+      return { problem, permissions, referralOptions, engagement, history, photos, notes, routing };
     },
   });
   const [canonical, setCanonical] = useState({ id: "", title: "" });
@@ -531,7 +528,7 @@ export function ReportDetail({
   const historyPanel = <aside className="report-workspace-history" aria-labelledby="report-history-title">
     <div className="report-workspace-history-heading"><History size={19} aria-hidden="true" /><div><h3 id="report-history-title">Case timeline</h3><p>Current status and recorded activity</p></div></div>
     <div className="report-current-case-status" role="status" aria-label={`Current case status: ${currentStatusTitle}`}>
-      <div><span>Current status</span><strong className={`badge ${r.status}`}>{currentStatusTitle}</strong></div>
+      <div><span>Current status</span><strong className="report-current-status-value">{currentStatusTitle}</strong></div>
       <p>{reportStatusDescription(r.status)}</p>
       {r.status === "scheduled" && r.scheduled_at && <small className="report-current-schedule">Scheduled for {reportScheduleLabel(r.scheduled_at)} · Philippine time</small>}
     </div>
@@ -618,7 +615,7 @@ export function ReportDetail({
       </div>}
       {routeDecisionOnly
         ? <div className="report-route-decision"><span>Routing decision</span><strong><UsersRound size={16} aria-hidden="true" /> Forward to an eligible office</strong><small>The barangay review and assessment are already recorded.</small></div>
-        : progressOnly ? <div className="report-action-current-status"><span>Current status stays the same</span><strong className={`badge ${r.status}`}>{currentStatusTitle}</strong></div>
+        : progressOnly ? <div className="report-action-current-status"><span>Current status stays the same</span><strong className="report-current-status-value">{currentStatusTitle}</strong></div>
         : <label className="report-action-status-field"><span>{reviewPending ? "Review decision" : r.status === "scheduled" ? "Next action" : "Case status"} <span className="report-action-required" aria-hidden="true">*</span></span><span className="report-action-status-control"><ActionStatusIcon className="report-action-status-icon" data-status={selectedStatus} size={20} aria-hidden="true" /><select required value={selectedStatus} onChange={(event) => { setStatus(event.target.value); setAssessmentErrors({}); }}>
           {stepStatuses.map(next => <option key={next} value={next}>{reviewPending && next === "verified" ? "Verify · keep with barangay" : reviewPending && next === "assigned" ? "Verify & forward to office" : next === "under_review" ? r.status === "submitted" ? "Acknowledge and review" : "Reopen for barangay review" : next === "scheduled" ? r.status === "scheduled" ? "Reschedule work" : "Schedule work" : next === "in_progress" ? "Start scheduled work · Ongoing" : next === "resolved" ? "Work completed · Resolve report" : reportStatusLabel(next)}</option>)}
         </select></span></label>}
@@ -656,14 +653,14 @@ export function ReportDetail({
   </section> : null;
 
   return (
-    <Dialog title="Report workspace" description={`${r.id.slice(0, 8).toUpperCase()} · ${category.label} · ${reportStatusLabel(r.status)}`} icon={<CategoryIcon size={23} />} className="report-workspace-dialog" close={close}>
+    <Dialog title="Report workspace" description={`${r.id.slice(0, 8).toUpperCase()} · ${category.label}`} descriptionMeta={<span className={`badge ${r.status} report-workspace-header-status`}>{r.status === "duplicate" ? "Linked duplicate" : reportStatusLabel(r.status)}</span>} icon={<CategoryIcon size={23} />} className="report-workspace-dialog" close={close}>
       <div className="report-workspace-content">
         <section className="report-workspace-summary">
           <span className="report-workspace-category-icon" style={{ background: category.background, color: category.foreground }}><CategoryIcon size={25} /></span>
           <div className="report-workspace-summary-copy">
             <small className="mono">{r.id}</small>
             <h3>{r.title}</h3>
-            <div className="report-workspace-chips"><ReportCategoryLabel name={categoryName} /><span className={"badge " + r.status}>{r.status === "duplicate" ? "Linked duplicate" : reportStatusLabel(r.status)}</span></div>
+            <div className="report-workspace-chips"><ReportCategoryLabel name={categoryName} /></div>
           </div>
           <p>{r.description}</p>
         </section>
@@ -710,11 +707,7 @@ export function ReportDetail({
                             : "The report review and decision are recorded."}</p>
                 </div>
               </section>}
-              {r.status !== "duplicate" && r.status !== "rejected" && <DuplicateReview report={r} canChoose={nextStatuses.includes("duplicate")} selectedId={canonical.id} onChoose={(candidate) => { setCanonical(candidate); setStatus("duplicate"); }} onCandidatesChange={setDuplicateCandidates} />}
-              {q.data?.nearby.length ? <section className="report-workspace-section report-document-section">
-                <div className="report-workspace-section-heading"><MapPin size={22} aria-hidden="true" /><div><h3>Nearby reports for review</h3><p>Nearby reports are recurrence candidates and need human assessment.</p></div></div>
-                <div className="report-related-list">{q.data.nearby.map(item => <div key={item.id}><strong>{item.title}</strong><span>{Math.round(item.distance_m)} m away · {label(item.status)}</span><small className="mono">{item.id}</small></div>)}</div>
-              </section> : null}
+              {r.status !== "duplicate" && r.status !== "rejected" && <DuplicateReview report={r} onCandidatesChange={setDuplicateCandidates} />}
               {!reviewPending && <ReportAssessment key={r.id} reportId={r.id} canReview={!barangayReadOnly && !!q.data?.permissions.review} />}
               {reviewPending
                 ? actionSection || <section className="report-workspace-section"><p className="report-workspace-muted" role="status">{q.isPending ? "Loading review permissions and eligible offices…" : "Your account cannot review this report."}</p></section>

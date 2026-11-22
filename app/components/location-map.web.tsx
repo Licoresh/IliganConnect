@@ -332,7 +332,11 @@ export default function LocationMap({
         }
         pin.append(hover);
         pin.addEventListener("click", () => {
-          map.current?.easeTo({ center: [p.longitude, p.latitude], zoom: Math.max(map.current.getZoom(), 14), duration: 300 });
+          const current = map.current;
+          if (current) {
+            current.stop();
+            current.jumpTo({ center: [p.longitude, p.latitude], zoom: Math.max(current.getZoom(), INDIVIDUAL_REPORT_PIN_ZOOM) });
+          }
           pointPress.current?.(p);
         });
       }
@@ -522,7 +526,8 @@ export default function LocationMap({
     else if (selectedPointId) {
       const selected = points.find((p) => p.id === selectedPointId);
       if (selected) {
-        map.current.easeTo({ center: [selected.longitude, selected.latitude], zoom: 14, duration: 250 });
+        map.current.stop();
+        map.current.jumpTo({ center: [selected.longitude, selected.latitude], zoom: Math.max(map.current.getZoom(), INDIVIDUAL_REPORT_PIN_ZOOM) });
         if (reportPopupBehavior === "draggable") {
           const marker = markers.current.find((item) => item.getElement().dataset.reportId === selectedPointId);
           const popup = marker?.getPopup();

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, BackHandler, Image, Keyboard, Linking, Platform, Pressable, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Alert, BackHandler, Image, Keyboard, Linking, Modal, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { textInputError, SHORT_REASON_LIMIT, characterLimitHint, Lookup, label, consultationPhase, formatMeetingTimeRange, meetingDateInput, normalizeGoogleMeetUrl } from "@community/shared";
@@ -27,6 +27,24 @@ type MeetingParticipant = {
   participant_count: number;
 };
 type MeetingSchedule = { request_id: string; starts_at: string; ends_at: string; completed: boolean };
+type ResidentMeeting = {
+  id: string;
+  title: string;
+  body: string;
+  status: string;
+  decision_reason: string | null;
+  barangay_id: string;
+  resident_id: string;
+  category_id: string | null;
+  report_id: string | null;
+  created_at: string;
+  coordination_status: string;
+  participation_mode: "open" | "closed";
+  schedule: MeetingSchedule | null;
+  invitations: { request_id: string; status: "pending" | "accepted" | "declined"; organizations: { name: string }[] | null }[];
+  barangayInvitations: { request_id: string; barangay_id: string; status: "pending" | "accepted" | "declined" }[];
+  participants: MeetingParticipant[];
+};
 type MeetingFilter = "open" | "scheduled" | "pending" | "approved" | "declined" | "completed" | "all";
 export function Community({
   barangays,
@@ -46,7 +64,7 @@ export function Community({
   initialConsultationId?: string | null;
   initialMeetingRequestId?: string | null;
   onPageNavigate?: () => void;
-  onOpenReport: (reportId: string, consultationId: string) => Promise<void>;
+  onOpenReport: (reportId: string, origin: { consultationId?: string; meetingRequestId?: string }) => Promise<void>;
   residentId: string;
 }) {
   const [tab, setTab] = useState<string>(initialTab),
@@ -59,7 +77,7 @@ export function Community({
     [meetingScope, setMeetingScope] = useState("barangay"),
     [meetingFilter, setMeetingFilter] = useState<MeetingFilter>("open"),
     [participationMode, setParticipationMode] = useState<"open" | "closed">("closed"),
-    [expandedMeeting, setExpandedMeeting] = useState<string | null>(initialMeetingRequestId ?? null),
+    [activeMeetingId, setActiveMeetingId] = useState<string | null>(initialMeetingRequestId ?? null),
     [page, setPage] = useState(0),
     [title, setTitle] = useState(""),
     [body, setBody] = useState(""),
@@ -79,6 +97,7 @@ export function Community({
   const desktopWeb = Platform.OS === "web" && screenWidth >= 1200;
   const requestSubmission = useRef(false);
   const categoryPickerAnchorRef = useRef<View>(null);
+  const meetingGrid = screenWidth >= 900;
   function navigateTab(next: string) {
     if (next !== tab) onPageNavigate?.();
     setTab(next);
@@ -88,6 +107,12 @@ export function Community({
     const timer = setTimeout(() => { setAppliedSearch(search.trim()); setPage(0); }, 280);
     return () => clearTimeout(timer);
   }, [search]);
+  useEffect(() => {
+    if (!initialMeetingRequestId) return;
+    setTab("meetings");
+    setMeetingTarget(initialMeetingRequestId);
+    setActiveMeetingId(initialMeetingRequestId);
+  }, [initialMeetingRequestId]);
   const ownReports = useQuery({
     queryKey: ["meeting-report-options", residentId],
     enabled: tab === "request",
@@ -252,11 +277,24 @@ export function Community({
   const currentPageCount = tab === "consultations"
     ? (q.data?.consultations.length ?? 0)
     : (q.data?.requests.length ?? 0);
+  const activeMeeting = q.data?.requests.find((item) => item.id === activeMeetingId);
+  const activeMeetingState = activeMeeting ? meetingStatus(activeMeeting.status, activeMeeting.schedule, activeMeeting.coordination_status) : null;
+  const activeMeetingJoined = !!activeMeeting?.participants.some((participant) => participant.resident_id === residentId);
+  const activeMeetingFollowing = !!activeMeeting && !!q.data?.meetingFollows.some((item) => item.request_id === activeMeeting.id);
+  const activeMeetingCanJoin = !!activeMeeting && activeMeeting.participation_mode === "open" && activeMeeting.status === "approved" && !activeMeeting.schedule?.completed && (
+    activeMeeting.resident_id === residentId || activeMeeting.barangay_id === defaultBarangay ||
+    activeMeeting.barangayInvitations.some((invitation) => invitation.barangay_id === defaultBarangay && invitation.status === "accepted")
+  );
   useEffect(() => {
     if (Platform.OS !== "android" || !selected) return;
     const listener = BackHandler.addEventListener("hardwareBackPress", () => { setSelected(null); return true; });
     return () => listener.remove();
   }, [!!selected]);
+  useEffect(() => {
+    if (Platform.OS === "web" || !activeMeetingId) return;
+    const listener = BackHandler.addEventListener("hardwareBackPress", () => { setActiveMeetingId(null); return true; });
+    return () => listener.remove();
+  }, [activeMeetingId]);
   const selectedMeetingCategory = categories.find((item) => item.id === category);
   const selectedMeetingCategoryTone = selectedMeetingCategory ? categoryToneFor(selectedMeetingCategory.name) : { background: colors.brandSoft, foreground: colors.brand };
   async function save(
@@ -342,6 +380,33 @@ export function Community({
         { id: "declined", name: "Declined" },
         { id: "all", name: "All statuses" },
       ];
+  const meetingScopeOptions = [
+    { id: "barangay", name: "Barangay meetings", detail: "Local meetings and accepted invites", icon: "business-outline" as const },
+    { id: "yours", name: "Your requests", detail: "Requests you sent to any barangay", icon: "person-outline" as const },
+  ];
+  const meetingScopeSelector = <View accessibilityRole="radiogroup" accessibilityLabel="Meeting list" style={[{ flexDirection: "row", gap: 8 }, desktopWeb && { width: "56%", maxWidth: 620 }]}>
+    {meetingScopeOptions.map((option) => {
+      const active = meetingScope === option.id;
+      return <Pressable key={option.id} accessibilityRole="radio" accessibilityLabel={`${option.name}. ${option.detail}`} accessibilityState={{ checked: active }} onPress={() => { const next = option.id === "yours" ? "yours" : "barangay"; setMeetingScope(next); setMeetingFilter(next === "yours" ? "scheduled" : "open"); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: desktopWeb ? 52 : tabletWeb ? 58 : 66, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 10, paddingVertical: 7, borderRadius: desktopWeb ? 9 : 15, borderWidth: 1, borderColor: active ? colors.brand : colors.line, backgroundColor: active ? "#eff9f6" : "white" }, pressed && { opacity: 0.82 }]}>
+        <View style={{ width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: active ? colors.brandSoft : "#f1f5f7" }}><Ionicons name={option.icon} size={19} color={active ? colors.brand : colors.muted} /></View>
+        <View style={{ flex: 1, minWidth: 0, gap: compactMobile ? 0 : 3 }}><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 17, fontWeight: "800" }}>{option.name}</Text>{!compactMobile && <Text style={[s.small, { fontSize: 11, lineHeight: 15 }]}>{option.detail}</Text>}</View>
+        <Ionicons name={active ? "checkmark-circle" : "ellipse-outline"} size={19} color={active ? colors.brand : colors.line} />
+      </Pressable>;
+    })}
+  </View>;
+  const meetingSearch = <View style={desktopWeb ? { flex: 1, minWidth: 300, gap: 7 } : { gap: 10 }}>
+    {!desktopWeb && <Text style={[s.fieldLabel, { fontSize: 16 }]}>Find a meeting update</Text>}
+    <Field maxLength={200} label="Search meetings" placeholder="Search meeting requests" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />
+    {appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}
+  </View>;
+  const meetingStatusControl = <View style={desktopWeb ? { width: 280, gap: 7 } : { gap: 7 }}>
+    <Text style={s.fieldLabel}>Meeting status</Text>
+    <Choices compact title="Meeting status" sheetTitle="Filter meetings" searchable={false} subtitle={meetingScope === "yours" ? "Your requests start with upcoming approved meetings, sorted by date." : "Barangay meetings start with approved open meetings residents can join."} items={meetingFilterItems} value={meetingFilter} onChange={(value) => { setMeetingFilter(value as MeetingFilter); setPage(0); }} />
+  </View>;
+  const meetingScopeHelp = <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f5f8fa" }}>
+    <Ionicons name="information-circle-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} />
+    <Text style={[s.small, { flex: 1 }]}>{meetingScope === "yours" ? meetingFilter === "scheduled" ? "Upcoming approved meetings are ordered by their next scheduled date. Choose another status to review the rest of your requests." : "Your requests include meetings you sent to any barangay. Use the status filter to narrow this list." : meetingFilter === "open" ? "Open meetings are approved and available to join. Accepted invitations from other barangays are included." : "Meetings from your barangay and accepted cross-barangay invitations are included."}</Text>
+  </View>;
   return (
     <>
       {!desktopWeb && <View style={{ minHeight: tabletWeb ? compactTablet ? 112 : 124 : 140, justifyContent: "center", overflow: "hidden", paddingHorizontal: tabletWeb ? 15 : 18, paddingVertical: tabletWeb ? 12 : 18, borderRadius: tabletWeb ? 20 : 24, borderWidth: 1, borderColor: "#dcece8", backgroundColor: "#edf8f5" }}>
@@ -380,29 +445,26 @@ export function Community({
         {(search || area || participation !== "all") && <Button secondary title="Clear community filters" onPress={() => { setSearch(""); setArea(""); setParticipation("all"); setPage(0); }} />}
         </>
       )}
-      {tab === "meetings" && <View style={[s.card, desktopWeb ? { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-end", gap: 14, padding: 15, borderRadius: 12 } : tabletWeb ? { gap: 12, padding: 14, borderRadius: 16 } : { gap: 16, padding: 17 }]}>
-        <View style={desktopWeb ? { width: 260, gap: 7 } : { gap: 10 }}>{!desktopWeb && <Text style={[s.fieldLabel, { fontSize: 16 }]}>Find a meeting update</Text>}<Field maxLength={200} label="Search meetings" placeholder="Search meeting requests" value={search} onChangeText={(value) => { setSearch(value); setPage(0); }} leading={<Ionicons name="search-outline" size={19} color={colors.muted} />} />{appliedSearch !== search.trim() && <Text style={s.small}>Updating results…</Text>}</View>
-        <View style={desktopWeb ? { flex: 1, minWidth: 350, gap: 8 } : { gap: 10 }}>
-          {!desktopWeb && <View style={{ gap: 3 }}><Text style={s.fieldLabel}>Browse meetings</Text>{!compactMobile && <Text style={s.small}>Choose the list you want to see.</Text>}</View>}
-          <View accessibilityRole="radiogroup" accessibilityLabel="Meeting list" style={{ flexDirection: "row", gap: 8 }}>
-            {[
-              { id: "barangay", name: "Barangay meetings", detail: "Local meetings and accepted invites", icon: "business-outline" as const },
-              { id: "yours", name: "Your requests", detail: "Requests you sent to any barangay", icon: "person-outline" as const },
-            ].map((option) => {
-              const active = meetingScope === option.id;
-              return <Pressable key={option.id} accessibilityRole="radio" accessibilityLabel={`${option.name}. ${option.detail}`} accessibilityState={{ checked: active }} onPress={() => { const next = option.id === "yours" ? "yours" : "barangay"; setMeetingScope(next); setMeetingFilter(next === "yours" ? "scheduled" : "open"); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: desktopWeb ? 52 : tabletWeb ? 58 : 66, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 10, paddingVertical: 7, borderRadius: desktopWeb ? 9 : 15, borderWidth: 1, borderColor: active ? colors.brand : colors.line, backgroundColor: active ? "#eff9f6" : "white" }, pressed && { opacity: 0.82 }]}>
-                <View style={{ width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: active ? colors.brandSoft : "#f1f5f7" }}><Ionicons name={option.icon} size={19} color={active ? colors.brand : colors.muted} /></View>
-                <View style={{ flex: 1, minWidth: 0, gap: compactMobile ? 0 : 3 }}><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 17, fontWeight: "800" }}>{option.name}</Text>{!compactMobile && <Text style={[s.small, { fontSize: 11, lineHeight: 15 }]}>{option.detail}</Text>}</View>
-                <Ionicons name={active ? "checkmark-circle" : "ellipse-outline"} size={19} color={active ? colors.brand : colors.line} />
-              </Pressable>;
-            })}
+      {tab === "meetings" && <View style={[s.card, desktopWeb ? { gap: 14, padding: 16, borderRadius: 14 } : tabletWeb ? { gap: 12, padding: 14, borderRadius: 16 } : { gap: 16, padding: 17 }]}>
+        {desktopWeb ? <>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 20 }}>
+            <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Text style={s.fieldLabel}>Browse meetings</Text><Text style={s.small}>Choose which meeting requests to view.</Text></View>
+            {meetingScopeSelector}
           </View>
-          <View style={desktopWeb ? { width: 220, gap: 6 } : { gap: 7 }}>
-            <Text style={s.fieldLabel}>Meeting status</Text>
-            <Choices compact title="Meeting status" sheetTitle="Filter meetings" searchable={false} subtitle={meetingScope === "yours" ? "Your requests start with upcoming approved meetings, sorted by date." : "Barangay meetings start with approved open meetings residents can join."} items={meetingFilterItems} value={meetingFilter} onChange={(value) => { setMeetingFilter(value as MeetingFilter); setPage(0); }} />
+          <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 14 }}>
+            {meetingSearch}
+            {meetingStatusControl}
           </View>
-          <View style={[{ flexDirection: "row", alignItems: "flex-start", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f5f8fa" }, desktopWeb && { width: "100%" }]}><Ionicons name="information-circle-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>{meetingScope === "yours" ? meetingFilter === "scheduled" ? "Upcoming approved meetings are ordered by their next scheduled date. Choose another status to review the rest of your requests." : "Your requests include meetings you sent to any barangay. Use the status filter to narrow this list." : meetingFilter === "open" ? "Open meetings are approved and available to join. Accepted invitations from other barangays are included." : "Meetings from your barangay and accepted cross-barangay invitations are included."}</Text></View>
-        </View>
+          {meetingScopeHelp}
+        </> : <>
+          <View style={{ gap: 10 }}>
+            <View style={{ gap: 3 }}><Text style={s.fieldLabel}>Browse meetings</Text>{!compactMobile && <Text style={s.small}>Choose the list you want to see.</Text>}</View>
+            {meetingScopeSelector}
+          </View>
+          {meetingSearch}
+          {meetingStatusControl}
+          {meetingScopeHelp}
+        </>}
       </View>}
       {tab !== "request" && q.isPending && <ListSkeleton variant={tab === "consultations" ? "discussion" : "meeting"} count={3} label={`Loading ${tab === "consultations" ? "community discussions" : "meeting requests"}`} />}
       {tab !== "request" && q.error && <View style={s.card}><Text accessibilityRole="alert" style={s.error}>Couldn’t load community updates. Check your connection and try again.</Text><Button secondary title="Try again" loading={q.isFetching} onPress={() => void q.refetch()} /></View>}
@@ -459,92 +521,29 @@ export function Community({
       {tab === "meetings" && (
         <>
           {!!meetingTarget && <Button secondary title="Show all meeting requests" onPress={() => { setMeetingTarget(""); setPage(0); }} />}
-          <View style={desktopWeb ? { flexDirection: "row", flexWrap: "wrap", alignItems: "stretch", gap: 14 } : { gap: 12 }}>
+          <View style={meetingGrid ? { flexDirection: "row", flexWrap: "wrap", alignItems: "stretch", gap: 14 } : { gap: 12 }}>
           {q.data?.requests.map((r) => {
             const state = meetingStatus(r.status, r.schedule, r.coordination_status);
             const categoryName = categories.find((item) => item.id === r.category_id)?.name;
-            const acceptedInvitations = r.invitations.filter((invitation) => invitation.status === "accepted").length;
-            const waitingInvitations = r.invitations.filter((invitation) => invitation.status === "pending").length;
-            const declinedInvitations = r.invitations.filter((invitation) => invitation.status === "declined").length;
-            const acceptedBarangayInvitations = r.barangayInvitations.filter((invitation) => invitation.status === "accepted").length;
-            const waitingBarangayInvitations = r.barangayInvitations.filter((invitation) => invitation.status === "pending").length;
-            const joined = r.participants.some((participant) => participant.resident_id === residentId);
-            const followingUpdates = q.data.meetingFollows.some((item) => item.request_id === r.id);
             const meetingDate = r.schedule ? meetingDateInput(r.schedule.starts_at) : "";
             const hasMeetingDate = !!meetingDate;
             const meetingDay = hasMeetingDate ? meetingDate.slice(-2) : "";
             const meetingMonth = hasMeetingDate
               ? new Intl.DateTimeFormat("en-PH", { month: "short", timeZone: "Asia/Manila" }).format(new Date(r.schedule!.starts_at)).toUpperCase()
               : "";
-            const canJoin = r.participation_mode === "open" && r.status === "approved" && !r.schedule?.completed && (
-              r.resident_id === residentId || r.barangay_id === defaultBarangay ||
-              r.barangayInvitations.some((invitation) => invitation.barangay_id === defaultBarangay && invitation.status === "accepted")
-            );
-            return <View style={[s.card, { gap: 14, padding: desktopWeb ? 16 : 18, borderRadius: desktopWeb ? 12 : 18, width: desktopWeb ? "48%" : undefined, maxWidth: desktopWeb ? 620 : undefined, flexGrow: desktopWeb ? 1 : undefined }]} key={r.id}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <View accessible accessibilityRole="image" accessibilityLabel={hasMeetingDate ? `Meeting date ${meetingDay} ${meetingMonth}` : "Meeting date not set"} style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: hasMeetingDate ? "#e4f6f1" : "#edf3fb", alignItems: "center", justifyContent: "center", gap: 0 }}>
+            return <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`Open meeting details: ${r.title}`} accessibilityHint={`${state.label}. ${r.participation_mode === "open" ? "Open to residents who are eligible to join." : "Closed meeting."}`} onPress={() => setActiveMeetingId(r.id)} style={({ pressed }) => [s.card, { height: screenWidth < 600 ? 276 : screenWidth < 1200 ? 258 : 250, justifyContent: "space-between", gap: 8, padding: screenWidth < 600 ? 15 : 16, borderRadius: desktopWeb ? 14 : 18, width: meetingGrid ? "48%" : undefined, maxWidth: meetingGrid ? 620 : undefined, flexGrow: meetingGrid ? 1 : undefined, overflow: "hidden" }, pressed && { backgroundColor: "#f6fbf9", borderColor: "#acdcd2" }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 }}>
+                <View accessible accessibilityRole="image" accessibilityLabel={hasMeetingDate ? `Meeting date ${meetingDay} ${meetingMonth}` : "Meeting date not set"} style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: hasMeetingDate ? "#e4f6f1" : "#edf3fb", alignItems: "center", justifyContent: "center", gap: 0 }}>
                   {hasMeetingDate ? <><Text style={{ color: colors.brandDark, fontSize: 17, lineHeight: 19, fontWeight: "800" }}>{meetingDay}</Text><Text style={{ color: colors.brand, fontSize: 9, lineHeight: 12, fontWeight: "800", letterSpacing: 0.7 }}>{meetingMonth}</Text></> : <Ionicons name="calendar-outline" size={22} color="#426ca6" />}
                 </View>
-                <View style={{ flex: 1, minWidth: 0, gap: 4 }}><Text style={[s.eyebrow, { marginBottom: 0 }]}>MEETING REQUEST</Text><View style={{ alignSelf: "flex-start", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 4, backgroundColor: state.background }}><Text style={{ color: state.foreground, fontSize: 11, lineHeight: 15, fontWeight: "700" }}>{state.label}</Text></View></View>
-                <Ionicons name={expandedMeeting === r.id ? "chevron-up" : "chevron-forward"} size={18} color={colors.muted} />
+                <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={[s.eyebrow, { marginBottom: 0 }]}>MEETING REQUEST</Text><View style={{ alignSelf: "flex-start", borderRadius: 14, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: state.background }}><Text numberOfLines={1} style={{ color: state.foreground, fontSize: 10, lineHeight: 14, fontWeight: "700" }}>{state.label}</Text></View></View>
+                <View style={{ maxWidth: 104, alignItems: "flex-end", gap: 4 }}><View style={{ alignSelf: "flex-end", borderRadius: 14, paddingHorizontal: 8, paddingVertical: 5, backgroundColor: r.participation_mode === "open" ? "#e4f6ef" : "#f0f3f6" }}><Text numberOfLines={1} style={{ color: r.participation_mode === "open" ? "#146f50" : colors.muted, fontSize: 9, lineHeight: 12, fontWeight: "800" }}>{r.participation_mode === "open" ? "OPEN TO JOIN" : "CLOSED"}</Text></View><Ionicons name="chevron-forward" size={16} color={colors.muted} /></View>
               </View>
-              <Text style={[s.title, { fontSize: 18, lineHeight: 24 }]}>{r.title}</Text>
-              <View style={{ alignSelf: "flex-start", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: r.participation_mode === "open" ? "#e4f6ef" : "#f0f3f6" }}><Text style={{ color: r.participation_mode === "open" ? "#146f50" : colors.muted, fontSize: 11, fontWeight: "800" }}>{r.participation_mode === "open" ? "OPEN TO JOIN" : "CLOSED MEETING"}</Text></View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}><Ionicons name="location-outline" size={15} color={colors.brand} /><Text style={s.small}>{barangays.find((item) => item.id === r.barangay_id)?.name ?? "Iligan City"}{categoryName ? ` · ${categoryName}` : ""}</Text></View>
-              <Text style={[s.small, { color: colors.brandDark }]}>{state.detail}</Text>
-              {!!r.schedule && <View style={{ flexDirection: "row", alignItems: "center", gap: 7, padding: 10, borderRadius: 12, backgroundColor: "#f0f8f6" }}><Ionicons name="calendar-outline" size={16} color={colors.brand} /><Text style={[s.small, { flex: 1, color: colors.brandDark, fontWeight: "700" }]}>{formatMeetingTimeRange(r.schedule.starts_at, r.schedule.ends_at)}</Text></View>}
-              <Text style={s.body}>{r.body}</Text>
-              {!!r.invitations.length && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7 }}><Ionicons name="people-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>Office replies: {acceptedInvitations} accepted · {waitingInvitations} awaiting · {declinedInvitations} declined</Text></View>}
-              {!!r.barangayInvitations.length && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7 }}><Ionicons name="business-outline" size={16} color={colors.muted} style={{ marginTop: 1 }} /><Text style={[s.small, { flex: 1 }]}>Barangay invitations: {acceptedBarangayInvitations} accepted · {waitingBarangayInvitations} awaiting</Text></View>}
-              {!!r.participants.length && <View style={{ gap: 4, padding: 11, borderRadius: 13, backgroundColor: "#f2faf7" }}>
-                <Text style={{ color: colors.brandDark, fontSize: 12, fontWeight: "800" }}>Participants ({r.participants[0].participant_count})</Text>
-                <Text style={s.small}>{r.participants.slice(0, 5).map((participant) => participant.resident_name).join(", ")}{r.participants[0].participant_count > 5 ? ` and ${r.participants[0].participant_count - 5} more` : ""}</Text>
-              </View>}
-              {canJoin && <Button secondary disabled={busy} title={joined ? "Joined · Leave meeting" : "Join open meeting"} onPress={() => void save(
-                joined ? db!.rpc("leave_meeting_request", { p_request: r.id }) : db!.rpc("join_meeting_request", { p_request: r.id }),
-                joined ? "You left this meeting." : "You joined this meeting.",
-                "We couldn’t update your participation. Please try again.",
-              )} />}
-              <Button
-                secondary
-                disabled={busy}
-                title={followingUpdates ? "Following updates · Unfollow" : "Follow meeting updates"}
-                onPress={() => void save(
-                  followingUpdates
-                    ? db!.from("meeting_followers").delete().eq("request_id", r.id)
-                    : db!.from("meeting_followers").upsert({ request_id: r.id, user_id: residentId }, { onConflict: "request_id,user_id", ignoreDuplicates: true }),
-                  followingUpdates ? "You’ll no longer receive updates for this meeting." : "You’ll be notified when this meeting is updated.",
-                  "We couldn’t update your meeting follow setting. Please try again.",
-                )}
-              />
-              {r.participation_mode === "open" && r.status !== "approved" && <Text style={s.small}>Residents can join after the meeting request is approved.</Text>}
-              {r.decision_reason && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 10, borderRadius: 13, backgroundColor: "#f0f8f6" }}><Ionicons name="document-text-outline" size={17} color={colors.brand} style={{ marginTop: 2 }} /><Text style={[s.small, { flex: 1, color: colors.brandDark }]}><Text style={{ fontWeight: "800" }}>Decision: </Text>{r.decision_reason}</Text></View>}
-              {r.status === "pending" && (
-                <Button
-                  secondary
-                  disabled={busy}
-                  title={
-                    q.data.supports.some((x) => x.request_id === r.id)
-                      ? "Supported · Withdraw support"
-                      : "Support this request"
-                  }
-                  onPress={() =>
-                    void save(
-                      q.data.supports.some((x) => x.request_id === r.id)
-                        ? db!
-                            .from("meeting_supporters")
-                            .delete()
-                            .eq("request_id", r.id)
-                        : db!
-                            .from("meeting_supporters")
-                            .insert({ request_id: r.id }),
-                    )
-                  }
-                />
-              )}
-              <Pressable accessibilityRole="button" accessibilityLabel={expandedMeeting === r.id ? "Hide meeting details" : "View meeting details"} accessibilityState={{ expanded: expandedMeeting === r.id }} onPress={() => setExpandedMeeting(expandedMeeting === r.id ? null : r.id)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, borderRadius: 13, backgroundColor: "#eef9f6" }, pressed && { opacity: 0.8 }]}><Text style={{ flex: 1, color: colors.brand, fontSize: 13, fontWeight: "800" }}>{expandedMeeting === r.id ? "Hide meeting details" : "View meeting details"}</Text><Ionicons name={expandedMeeting === r.id ? "chevron-up" : "chevron-forward"} size={18} color={colors.brand} /></Pressable>
-              {expandedMeeting === r.id && <MeetingDetails requestId={r.id} requestStatus={r.status} schedule={r.schedule} />}
-            </View>;
+              <Text numberOfLines={2} style={[s.title, { fontSize: 17, lineHeight: 22 }]}>{r.title}</Text>
+              <View style={{ minHeight: 17, flexDirection: "row", alignItems: "center", gap: 6 }}><Ionicons name="location-outline" size={14} color={colors.brand} /><Text numberOfLines={1} style={[s.small, { flex: 1 }]}>{barangays.find((item) => item.id === r.barangay_id)?.name ?? "Iligan City"}{categoryName ? ` · ${categoryName}` : ""}</Text></View>
+              <Text numberOfLines={2} style={[s.body, { fontSize: 13, lineHeight: 18, flexShrink: 1 }]}>{r.body}</Text>
+              <View style={{ minHeight: 34, flexDirection: "row", alignItems: "center", gap: 7, marginTop: "auto", paddingHorizontal: 10, borderRadius: 12, backgroundColor: "#eff8f6" }}><Ionicons name="calendar-outline" size={15} color={colors.brand} /><Text numberOfLines={1} style={{ flex: 1, color: colors.brandDark, fontSize: 11, lineHeight: 15, fontWeight: "700" }}>{r.schedule ? formatMeetingTimeRange(r.schedule.starts_at, r.schedule.ends_at) : "Meeting time to be confirmed"}</Text></View>
+            </Pressable>;
           })}
           </View>
           {!q.data?.requests.length && !q.isPending && !q.error && <View style={[s.card, { alignItems: "center", paddingVertical: 22, gap: 7 }]}><View style={{ width: 44, height: 44, borderRadius: 15, backgroundColor: "#eaf7f3", alignItems: "center", justifyContent: "center" }}><Ionicons name="calendar-outline" size={21} color={colors.brand} /></View><Text style={s.title}>{meetingScope === "yours" ? "No requests yet" : "No barangay meetings found"}</Text><Text style={[s.small, { textAlign: "center" }]}>{search ? "Try a different meeting search." : meetingScope === "yours" ? "Meeting requests you send to any barangay will appear here." : "Open meetings and accepted cross-barangay invitations will appear here."}</Text>{search ? <Button secondary title="Clear search" onPress={() => { setSearch(""); setPage(0); }} /> : <Button title="Request a meeting" onPress={() => navigateTab("request")} />}</View>}
@@ -718,6 +717,44 @@ export function Community({
         </View>
         </>
       )}
+      {tab === "meetings" && activeMeeting && activeMeetingState && <MeetingDetailsModal
+        meeting={activeMeeting}
+        state={activeMeetingState}
+        categories={categories}
+        barangays={barangays}
+        categoryName={categories.find((item) => item.id === activeMeeting.category_id)?.name}
+        barangayName={barangays.find((item) => item.id === activeMeeting.barangay_id)?.name ?? "Iligan City"}
+        joined={activeMeetingJoined}
+        following={activeMeetingFollowing}
+        canJoin={activeMeetingCanJoin}
+        supported={!!q.data?.supports.some((item) => item.request_id === activeMeeting.id)}
+        busy={busy}
+        desktop={desktopWeb}
+        wide={screenWidth >= 768}
+        message={message}
+        onClose={() => setActiveMeetingId(null)}
+        onJoin={() => void save(
+          activeMeetingJoined ? db!.rpc("leave_meeting_request", { p_request: activeMeeting.id }) : db!.rpc("join_meeting_request", { p_request: activeMeeting.id }),
+          activeMeetingJoined ? "You left this meeting." : "You joined this meeting.",
+          "We couldn’t update your participation. Please try again.",
+        )}
+        onFollow={() => void save(
+          activeMeetingFollowing
+            ? db!.from("meeting_followers").delete().eq("request_id", activeMeeting.id)
+            : db!.from("meeting_followers").upsert({ request_id: activeMeeting.id, user_id: residentId }, { onConflict: "request_id,user_id", ignoreDuplicates: true }),
+          activeMeetingFollowing ? "You’ll no longer receive updates for this meeting." : "You’ll be notified when this meeting is updated.",
+          "We couldn’t update your meeting follow setting. Please try again.",
+        )}
+        onSupport={() => void save(
+          q.data!.supports.some((item) => item.request_id === activeMeeting.id)
+            ? db!.from("meeting_supporters").delete().eq("request_id", activeMeeting.id)
+            : db!.from("meeting_supporters").insert({ request_id: activeMeeting.id }),
+        )}
+        onOpenReport={(reportId) => {
+          setActiveMeetingId(null);
+          void onOpenReport(reportId, { meetingRequestId: activeMeeting.id }).catch(() => Alert.alert("Linked report unavailable", "This report is unavailable to your account right now. Please try again later."));
+        }}
+      />}
     </>
   );
 }
@@ -736,7 +773,7 @@ function Conversation({
   residentId: string;
   categories: Lookup[];
   barangays: Lookup[];
-  onOpenReport: (reportId: string, consultationId: string) => Promise<void>;
+  onOpenReport: (reportId: string, origin: { consultationId?: string; meetingRequestId?: string }) => Promise<void>;
 }) {
   const [body, setBody] = useState(""),
     [commentTouched, setCommentTouched] = useState(false),
@@ -870,7 +907,7 @@ function Conversation({
           disabled={busyAction !== null}
           onPress={async () => {
             setBusyAction("report"); setErrorMessage(""); setMessage("");
-            try { await onOpenReport(row.report_id!, row.id); }
+            try { await onOpenReport(row.report_id!, { consultationId: row.id }); }
             catch { setErrorMessage("This linked report is unavailable to your account right now. Please try again later."); }
             finally { setBusyAction(null); }
           }}
@@ -934,6 +971,160 @@ function meetingStatus(status: string, schedule: MeetingSchedule | null, coordin
   if (status === "approved" && coordinationStatus === "unavailable") return { label: "Approved · office unavailable", detail: "All invited offices declined. Check the barangay’s note for next steps.", background: "#fff4df", foreground: "#956000" };
   if (status === "approved") return { label: "Approved", detail: "The barangay will add the date and place here when they are set.", background: "#e3f6ed", foreground: "#08764f" };
   return { label: label(status), detail: "Check this request for updates.", background: "#eef3f8", foreground: colors.muted };
+}
+
+function MeetingDetailsModal({
+  meeting,
+  state,
+  categories,
+  barangays,
+  categoryName,
+  barangayName,
+  joined,
+  following,
+  canJoin,
+  supported,
+  busy,
+  desktop,
+  wide,
+  message,
+  onClose,
+  onJoin,
+  onFollow,
+  onSupport,
+  onOpenReport,
+}: {
+  meeting: ResidentMeeting;
+  state: ReturnType<typeof meetingStatus>;
+  categories: Lookup[];
+  barangays: Lookup[];
+  categoryName?: string;
+  barangayName: string;
+  joined: boolean;
+  following: boolean;
+  canJoin: boolean;
+  supported: boolean;
+  busy: boolean;
+  desktop: boolean;
+  wide: boolean;
+  message: string;
+  onClose: () => void;
+  onJoin: () => void;
+  onFollow: () => void;
+  onSupport: () => void;
+  onOpenReport: (reportId: string) => void;
+}) {
+  const { width } = useWindowDimensions();
+  const acceptedOffices = meeting.invitations.filter((item) => item.status === "accepted");
+  const waitingOffices = meeting.invitations.filter((item) => item.status === "pending");
+  const declinedOffices = meeting.invitations.filter((item) => item.status === "declined");
+  const acceptedBarangays = meeting.barangayInvitations.filter((item) => item.status === "accepted");
+  const waitingBarangays = meeting.barangayInvitations.filter((item) => item.status === "pending");
+  const residentCount = meeting.participants[0]?.participant_count ?? 0;
+  const closeMeeting = () => onClose();
+  const sectionHeading = (title: string, icon: "document-text-outline" | "people-outline" | "business-outline" | "calendar-outline") => (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+      <View style={{ width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: "#e4f6f1" }}><Ionicons name={icon} size={18} color={colors.brand} /></View>
+      <Text style={{ color: colors.brandDark, fontSize: 15, lineHeight: 20, fontWeight: "800" }}>{title}</Text>
+    </View>
+  );
+  return <Modal visible transparent animationType={wide ? "fade" : "slide"} statusBarTranslucent onRequestClose={closeMeeting}>
+    <View style={{ flex: 1, justifyContent: wide ? "center" : "flex-end", alignItems: wide ? "center" : undefined, padding: wide ? desktop ? 24 : 16 : 0, backgroundColor: "#10263f88" }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Close meeting details" onPress={closeMeeting} style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }} />
+      <View accessibilityViewIsModal style={{ width: wide ? "100%" : undefined, maxWidth: desktop ? 840 : 720, maxHeight: wide ? "88%" : "94%", minHeight: wide ? 360 : undefined, overflow: "hidden", borderRadius: wide ? 22 : 26, borderBottomLeftRadius: wide ? 22 : 0, borderBottomRightRadius: wide ? 22 : 0, backgroundColor: "#fff", shadowColor: "#10263f", shadowOffset: { width: 0, height: 12 }, shadowOpacity: wide ? 0.2 : 0, shadowRadius: 28, elevation: wide ? 16 : 0 }}>
+        {!wide && <View style={{ alignSelf: "center", width: 46, height: 5, marginTop: 9, marginBottom: 3, borderRadius: 3, backgroundColor: "#c8d2df" }} />}
+        <View style={{ minHeight: 74, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: wide ? 22 : 18, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#e5eeec", backgroundColor: "#fff" }}>
+          <View style={{ width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#e4f6f1" }}><Ionicons name="calendar-outline" size={21} color={colors.brand} /></View>
+          <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+            <Text accessibilityRole="header" numberOfLines={2} style={{ color: colors.brandDark, fontSize: width < 400 ? 18 : 20, lineHeight: width < 400 ? 23 : 26, fontWeight: "800" }}>{meeting.title}</Text>
+            <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 12 }}>{barangayName}{categoryName ? ` · ${categoryName}` : ""}</Text>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close meeting details" onPress={closeMeeting} style={({ pressed }) => [{ width: 44, height: 44, borderRadius: 13, borderWidth: 1, borderColor: colors.line, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" }, pressed && { backgroundColor: "#f2f8f6" }]}><Ionicons name="close" size={21} color={colors.brandDark} /></Pressable>
+        </View>
+        <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16, paddingHorizontal: wide ? 22 : 16, paddingTop: 16, paddingBottom: 20 }}>
+          <View style={{ gap: 10 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 7 }}>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, backgroundColor: state.background }}><Text style={{ color: state.foreground, fontSize: 11, fontWeight: "800" }}>{state.label}</Text></View>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, backgroundColor: meeting.participation_mode === "open" ? "#e4f6ef" : "#f0f3f6" }}><Text style={{ color: meeting.participation_mode === "open" ? "#146f50" : colors.muted, fontSize: 11, fontWeight: "800" }}>{meeting.participation_mode === "open" ? "OPEN TO JOIN" : "CLOSED MEETING"}</Text></View>
+            </View>
+            <Text style={{ color: colors.brandDark, fontSize: 14, lineHeight: 21 }}>{meeting.body}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, backgroundColor: "#eff8f6" }}><Ionicons name="time-outline" size={17} color={colors.brand} /><Text style={{ flex: 1, color: colors.brandDark, fontSize: 12, lineHeight: 17, fontWeight: "700" }}>{state.detail}</Text></View>
+            {!!meeting.schedule && <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 9, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, borderWidth: 1, borderColor: "#dcefe9", backgroundColor: "#f7fbfa" }}><Ionicons name="calendar-outline" size={17} color={colors.brand} style={{ marginTop: 1 }} /><View style={{ flex: 1, gap: 2 }}><Text style={{ color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 0.4 }}>MEETING DATE & PHILIPPINE TIME</Text><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 18, fontWeight: "700" }}>{formatMeetingTimeRange(meeting.schedule.starts_at, meeting.schedule.ends_at)}</Text></View></View>}
+          </View>
+          {!!meeting.report_id && <MeetingLinkedReport reportId={meeting.report_id} categories={categories} onPress={() => onOpenReport(meeting.report_id!)} />}
+          <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: "#e4eeec" }}>
+            {sectionHeading("Resident participation", "people-outline")}
+            <View style={{ gap: 5, padding: 12, borderRadius: 14, backgroundColor: "#f6faf9" }}>
+              <Text style={{ color: colors.brandDark, fontSize: 13, fontWeight: "800" }}>{residentCount ? `${residentCount} ${residentCount === 1 ? "resident" : "residents"} participating` : "No participating residents yet"}</Text>
+              {residentCount > 0 && <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18 }}>{meeting.participants.slice(0, 5).map((participant) => participant.resident_name).join(" · ")}{residentCount > 5 ? ` and ${residentCount - 5} more` : ""}</Text>}
+              {!canJoin && meeting.participation_mode === "open" && meeting.status !== "approved" && <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18 }}>Residents can join after the barangay approves this meeting.</Text>}
+            </View>
+          </View>
+          {(meeting.invitations.length > 0 || meeting.barangayInvitations.length > 0) && <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: "#e4eeec" }}>
+            {sectionHeading("Invitations", "business-outline")}
+            <View style={{ gap: 9 }}>
+              {!!meeting.invitations.length && <InvitationSummary title="Invited offices" accepted={acceptedOffices.length} waiting={waitingOffices.length} declined={declinedOffices.length} names={meeting.invitations.flatMap((item) => item.organizations?.map((organization) => organization.name) ?? [])} />}
+              {!!meeting.barangayInvitations.length && <InvitationSummary title="Invited barangays" accepted={acceptedBarangays.length} waiting={waitingBarangays.length} declined={meeting.barangayInvitations.filter((item) => item.status === "declined").length} names={meeting.barangayInvitations.map((item) => barangays.find((barangay) => barangay.id === item.barangay_id)?.name).filter((name): name is string => !!name)} />}
+            </View>
+          </View>}
+          <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: "#e4eeec" }}>
+            {sectionHeading("Schedule and follow-through", "calendar-outline")}
+            <MeetingDetails requestId={meeting.id} requestStatus={meeting.status} schedule={meeting.schedule} />
+          </View>
+          {!!meeting.decision_reason && <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: "#e4eeec" }}>
+            {sectionHeading("Barangay decision", "document-text-outline")}
+            <Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 19 }}>{meeting.decision_reason}</Text>
+          </View>}
+        </ScrollView>
+        <View style={{ gap: 8, paddingHorizontal: wide ? 22 : 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: "#e5eeec", backgroundColor: "#fff" }}>
+          {!!message && <Text accessibilityLiveRegion="polite" style={{ color: colors.brand, fontSize: 12, lineHeight: 17 }}>{message}</Text>}
+          <View style={{ flexDirection: width < 460 ? "column" : "row", gap: 8 }}>
+            {canJoin ? <MeetingActionButton primary disabled={busy} title={joined ? "Leave meeting" : "Join open meeting"} icon={joined ? "log-out-outline" : "people-outline"} onPress={onJoin} /> : meeting.status === "pending" ? <MeetingActionButton primary disabled={busy} title={supported ? "Withdraw support" : "Support this request"} icon={supported ? "checkmark-circle-outline" : "hand-left-outline"} onPress={onSupport} /> : null}
+            <MeetingActionButton disabled={busy} title={following ? "Following updates · Unfollow" : "Follow meeting updates"} icon={following ? "notifications" : "notifications-outline"} onPress={onFollow} />
+          </View>
+        </View>
+      </View>
+    </View>
+  </Modal>;
+}
+
+function MeetingActionButton({ primary = false, disabled, title, icon, onPress }: { primary?: boolean; disabled: boolean; title: string; icon: "log-out-outline" | "people-outline" | "checkmark-circle-outline" | "hand-left-outline" | "notifications" | "notifications-outline"; onPress: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ disabled, busy: disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [{ flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, borderRadius: 13, borderWidth: primary ? 0 : 1, borderColor: colors.line, backgroundColor: primary ? colors.brand : "#fff", opacity: disabled ? 0.58 : 1 }, pressed && !disabled && { opacity: 0.8 }]}>
+    {disabled ? <ActivityIndicator size="small" color={primary ? "#fff" : colors.brand} /> : <Ionicons name={icon} size={17} color={primary ? "#fff" : colors.brand} />}
+    <Text numberOfLines={1} style={{ color: primary ? "#fff" : colors.brand, fontSize: 12, fontWeight: "800" }}>{title}</Text>
+  </Pressable>;
+}
+
+function InvitationSummary({ title, accepted, waiting, declined, names }: { title: string; accepted: number; waiting: number; declined: number; names: string[] }) {
+  return <View style={{ gap: 4, padding: 11, borderRadius: 13, borderWidth: 1, borderColor: colors.line, backgroundColor: "#fff" }}>
+    <Text style={{ color: colors.brandDark, fontSize: 12, fontWeight: "800" }}>{title}</Text>
+    <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16 }}>{accepted} accepted · {waiting} awaiting{declined ? ` · ${declined} declined` : ""}</Text>
+    {!!names.length && <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16 }}>{names.join(" · ")}</Text>}
+  </View>;
+}
+
+function MeetingLinkedReport({ reportId, categories, onPress }: { reportId: string; categories: Lookup[]; onPress: () => void }) {
+  const report = useQuery({
+    queryKey: ["meeting-linked-report", reportId],
+    queryFn: async () => {
+      const own = await result<{ id: string; title: string; category_id: string; status: string } | null>(db!.from("reports").select("id,title,category_id,status").eq("id", reportId).maybeSingle());
+      if (own) return own;
+      return (await result<{ id: string; title: string; category_id: string; status: string }[]>(db!.rpc("public_report_by_id", { p_id: reportId })))[0] ?? null;
+    },
+  });
+  const reportCategory = categories.find((item) => item.id === report.data?.category_id)?.name;
+  return <View style={{ paddingTop: 14, borderTopWidth: 1, borderTopColor: "#e4eeec" }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}><View style={{ width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: "#e4f6f1" }}><Ionicons name="document-text-outline" size={18} color={colors.brand} /></View><View style={{ gap: 2 }}><Text style={{ color: colors.brandDark, fontSize: 15, fontWeight: "800" }}>Related report</Text><Text style={{ color: colors.muted, fontSize: 11 }}>This meeting is linked to a resident report.</Text></View></View>
+    <Pressable accessibilityRole="button" accessibilityLabel={`View linked report${report.data?.title ? `: ${report.data.title}` : ""}`} onPress={onPress} style={({ pressed }) => [{ minHeight: 76, flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderRadius: 14, borderWidth: 1, borderColor: "#cce8e0", backgroundColor: "#f2faf7" }, pressed && { backgroundColor: "#e8f7f2" }]}>
+      <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#ddf3ed" }}><Ionicons name="document-text-outline" size={19} color={colors.brand} /></View>
+      <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+        <Text numberOfLines={2} style={{ color: colors.brandDark, fontSize: 13, lineHeight: 18, fontWeight: "800" }}>{report.data?.title || (report.isPending ? "Loading linked report…" : "View linked report details")}</Text>
+        {!!reportCategory && <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 11 }}>{reportCategory}{report.data?.status ? ` · ${label(report.data.status)}` : ""}</Text>}
+      </View>
+      {report.isPending ? <ActivityIndicator size="small" color={colors.brand} /> : <Ionicons name="chevron-forward" size={18} color={colors.brand} />}
+    </Pressable>
+    {!!report.error && <Text style={{ marginTop: 5, color: colors.muted, fontSize: 11 }}>Report summary could not be loaded. You can still open the linked report.</Text>}
+  </View>;
 }
 
 function MeetingDetails({ requestId, requestStatus, schedule }: { requestId: string; requestStatus: string; schedule: MeetingSchedule | null }) {

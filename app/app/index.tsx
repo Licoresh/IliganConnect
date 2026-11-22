@@ -421,13 +421,13 @@ export default function Home() {
     setTab(destination);
     if (fromDesktopModal) setDesktopNotificationsOpen(false);
   };
-  const openConsultationReport = async (reportId: string, consultationId: string) => {
+  const openConsultationReport = async (reportId: string, origin: { consultationId?: string; meetingRequestId?: string }) => {
     let report = await result<Report | null>(db!.from("reports").select("*").eq("id", reportId).maybeSingle());
     if (!report) report = (await result<Report[]>(db!.rpc("public_report_by_id", { p_id: reportId })))[0] ?? null;
     if (!report) throw new Error("This linked report is no longer available to your account.");
     setReportReturnTab("Community");
-    setCommunityInitialTab("consultations");
-    setCommunityTarget({ consultationId });
+    setCommunityInitialTab(origin.meetingRequestId ? "meetings" : "consultations");
+    setCommunityTarget(origin);
     setSelected(report);
     setTab("Community");
   };
@@ -1950,10 +1950,16 @@ function ProfileForm({
   }
 
   const activityCards = [
-    { key: "reports", title: "Reports submitted", count: totals?.reports_submitted, icon: "document-text-outline" as const, tone: { background: "#e4f3ff", foreground: "#0875d1" }, action: () => onNavigate("Home", undefined, "reports") },
-    { key: "discussions", title: "My discussions", count: totals?.discussions, icon: "chatbubble-ellipses-outline" as const, tone: { background: "#edf0ff", foreground: "#435fce" }, action: () => onNavigate("Community", "consultations") },
-    { key: "meetings", title: "Meeting requests", count: totals?.meeting_requests, icon: "calendar-outline" as const, tone: { background: "#e5f6f2", foreground: colors.brand }, action: () => onNavigate("Community", "meetings") },
+    { key: "reports", title: "Reports submitted", chartLabel: "Reports", count: totals?.reports_submitted, icon: "document-text-outline" as const, tone: { background: "#e4f3ff", foreground: "#0875d1" }, action: () => onNavigate("Home", undefined, "reports") },
+    { key: "discussions", title: "My discussions", chartLabel: "Discussions", count: totals?.discussions, icon: "chatbubble-ellipses-outline" as const, tone: { background: "#edf0ff", foreground: "#435fce" }, action: () => onNavigate("Community", "consultations") },
+    { key: "meetings", title: "Meeting requests", chartLabel: "Meetings", count: totals?.meeting_requests, icon: "calendar-outline" as const, tone: { background: "#e5f6f2", foreground: colors.brand }, action: () => onNavigate("Community", "meetings") },
   ];
+  const activityChartItems = activityCards.map((item) => ({ ...item, value: item.count ?? 0 }));
+  const largestActivity = Math.max(0, ...activityChartItems.map((item) => item.value));
+  const leadingActivity = activityChartItems.filter((item) => item.value === largestActivity && largestActivity > 0);
+  const activityInsight = leadingActivity.length === 1
+    ? `Most activity: ${leadingActivity[0].chartLabel}`
+    : leadingActivity.length > 1 ? `Top activity: ${leadingActivity.map((item) => item.chartLabel).join(" and ")}` : "No activity recorded yet";
   const privacyItems = [
     { key: "profile", title: "Profile visibility", icon: "person-circle-outline" as const, body: "Your name, age, mobile number, email, and home barangay are account details visible to you and authorized administrators. Public report views use the report’s approved public information, not your private contact details." },
     { key: "location", title: "Report location privacy", icon: "location-outline" as const, body: "The city receives the precise location you confirm to assess the issue. Public map views use an approximate location." },
@@ -2085,6 +2091,26 @@ function ProfileForm({
         </View>
         {activity.error && <Pressable accessibilityRole="button" onPress={() => void activity.refetch()} style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 2 }}><Ionicons name="refresh-outline" size={15} color={colors.brand} /><Text style={[s.small, { color: colors.brand }]}>Activity counts unavailable · Retry</Text></Pressable>}
       </View>
+
+      {desktopProfile && <View accessibilityRole="image" accessibilityLabel={`Activity breakdown: ${activityChartItems.map((item) => `${item.title}, ${item.value}`).join(", ")}`} style={[s.card, { padding: 16, gap: 14, borderRadius: 16 }]}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={{ width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#e5f6f2" }}><Ionicons name="stats-chart-outline" size={18} color={colors.brand} /></View>
+          <View style={{ flex: 1, minWidth: 0, gap: 2 }}><Text style={{ color: colors.brandDark, fontSize: 15, lineHeight: 20, fontWeight: "800" }}>Activity breakdown</Text><Text style={s.small}>Your account activity by type · all time</Text></View>
+        </View>
+        {activity.isPending ? <View style={{ minHeight: 84, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}><ActivityIndicator size="small" color={colors.brand} /><Text style={s.small}>Loading activity overview…</Text></View>
+          : activity.error ? <Text style={[s.small, { minHeight: 48, textAlignVertical: "center" }]}>Activity overview could not load. Use Retry above to try again.</Text>
+          : largestActivity === 0 ? <Text style={[s.small, { minHeight: 48, textAlignVertical: "center" }]}>No activity to chart yet. Your reports, discussions, and meeting requests will appear here.</Text>
+          : <>
+            <View style={{ gap: 13 }}>
+              {activityChartItems.map((item) => <View key={item.key} style={{ minHeight: 24, flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Text numberOfLines={1} style={{ width: 92, color: colors.muted, fontSize: 12, lineHeight: 16, fontWeight: "600" }}>{item.chartLabel}</Text>
+                <View style={{ flex: 1, height: 10, overflow: "hidden", borderRadius: 8, backgroundColor: "#eef4f2" }}><View style={{ width: `${(item.value / largestActivity) * 100}%`, minWidth: item.value > 0 ? 7 : 0, height: "100%", borderRadius: 8, backgroundColor: item.tone.foreground }} /></View>
+                <Text style={{ width: 28, color: colors.brandDark, fontSize: 13, lineHeight: 18, fontWeight: "800", textAlign: "right", fontVariant: ["tabular-nums"] }}>{item.value}</Text>
+              </View>)}
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingTop: 11, borderTopWidth: 1, borderTopColor: colors.line }}><Ionicons name="trending-up-outline" size={16} color={colors.brand} /><Text style={{ color: colors.brandDark, fontSize: 12, lineHeight: 17, fontWeight: "700" }}>{activityInsight}</Text></View>
+          </>}
+      </View>}
 
       {!desktopProfile && <View style={[s.card, { padding: 8, gap: 2, borderRadius: 18 }]}>
         <ProfileMenuRow icon="settings-outline" title="Settings" detail="Notifications, privacy and account security" onPress={() => { onPageNavigate(); setMessage(""); setProfilePage("settings"); }} />

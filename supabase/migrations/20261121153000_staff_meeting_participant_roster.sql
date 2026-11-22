@@ -70,3 +70,5 @@ revoke all on function private.staff_meeting_request_participants(uuid) from pub
 revoke all on function public.staff_meeting_request_participants(uuid) from public, anon;
 grant execute on function private.staff_meeting_request_participants(uuid) to authenticated;
 grant execute on function public.staff_meeting_request_participants(uuid) to authenticated;
+
+notify pgrst, 'reload schema';

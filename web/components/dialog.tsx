@@ -7,14 +7,18 @@ export function Dialog({
   children,
   className,
   description,
+  descriptionMeta,
   icon,
+  headerMeta,
 }: {
   title: string;
   close: () => void;
   children: ReactNode;
   className?: string;
   description?: string;
+  descriptionMeta?: ReactNode;
   icon?: ReactNode;
+  headerMeta?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -35,8 +39,9 @@ export function Dialog({
             <span className="community-dialog-icon" aria-hidden="true">{icon}</span>
             <div className="community-dialog-title">
               <h2>{title}</h2>
-              <p>{description}</p>
+              <p>{description}{descriptionMeta && <span className="community-dialog-description-meta"><span aria-hidden="true">·</span>{descriptionMeta}</span>}</p>
             </div>
+            {headerMeta && <div className="community-dialog-header-meta">{headerMeta}</div>}
             <button type="button" className="secondary community-dialog-close" aria-label="Close dialog" onClick={close}><X size={19} /></button>
           </div>
           <div className="community-dialog-body">{children}</div>

@@ -1216,7 +1216,7 @@ export function Explore({
     [showMap, setShowMap] = useState(true),
     [showBarangayMap, setShowBarangayMap] = useState(false),
     [showBarangayBoundaries, setShowBarangayBoundaries] = useState(true),
-    [mapLayersOpen, setMapLayersOpen] = useState(false),
+    [mapLayersOpen, setMapLayersOpen] = useState(Platform.OS !== "web"),
     [barangayMetric, setBarangayMetric] = useState<"density" | "count">("density"),
     [selectedChoroplethName, setSelectedChoroplethName] = useState(""),
     [density, setDensity] = useState(false),
@@ -1538,7 +1538,7 @@ export function Explore({
         <>
           {mapQuery.error && <View style={s.card}><Text style={s.error}>Could not refresh map reports.</Text><Button secondary title="Retry map" loading={mapQuery.isFetching} onPress={() => void mapQuery.refetch()} /></View>}
           {!showBarangayMap && !desktopExplore && <>
-            <View style={{ gap: 10, marginTop: 8, marginBottom: 10 }}>
+            <View style={{ gap: 10, marginTop: windowWidth < 768 ? 2 : 8, marginBottom: 10 }}>
               {mapReports.length > mapPoints.length && <Text style={s.small}>{mapReports.length - mapPoints.length} reports use manual addresses. Open List to view them.</Text>}
               {renderMapLayersControl()}
             </View>

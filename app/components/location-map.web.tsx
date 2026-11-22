@@ -143,11 +143,6 @@ export default function LocationMap({
   const maxBarangayDensity = useMemo(() => Math.max(0, ...iliganBarangayBoundaries.map((item) => barangayDensity(barangayCounts[barangayMapKey(item.properties.adm4_en)] ?? 0, barangayAreaKm2(item)))), [barangayCounts]);
   const base = mapStyle ?? localBase;
   const baseName = base === "map" ? "Map" : base === "terrain" ? "Terrain" : "Satellite";
-  const attribution = base === "map"
-    ? "© OpenStreetMap contributors"
-    : base === "terrain"
-      ? "Map data: © OpenStreetMap contributors, SRTM · Map style: © OpenTopoMap (CC-BY-SA)"
-      : "Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community";
   const chooseMapPoint = (latitude: number, longitude: number) => choose.current?.({ latitude, longitude });
   useEffect(() => {
     if (!container.current) return;
@@ -171,21 +166,18 @@ export default function LocationMap({
             type: "raster",
             tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
             tileSize: 256,
-            attribution: "© OpenStreetMap contributors",
           },
           topo: {
             type: "raster",
             tiles: ["https://a.tile.opentopomap.org/{z}/{x}/{y}.png", "https://b.tile.opentopomap.org/{z}/{x}/{y}.png", "https://c.tile.opentopomap.org/{z}/{x}/{y}.png"],
             tileSize: 256,
             maxzoom: 17,
-            attribution: "Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)",
           },
           imagery: {
             type: "raster",
             tiles: ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
             tileSize: 256,
             maxzoom: 19,
-            attribution: "Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community",
           },
           density: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
           barangays: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
@@ -214,9 +206,6 @@ export default function LocationMap({
     resize.observe(container.current);
     m.on("zoomend", () => setZoomLevel(m.getZoom()));
     m.on("load", () => {
-      const attribution = m.getContainer().querySelector("details.maplibregl-ctrl-attrib");
-      attribution?.classList.remove("maplibregl-compact-show");
-      attribution?.removeAttribute("open");
       setZoomLevel(m.getZoom());
       setReady(true);
     });
@@ -615,9 +604,6 @@ export default function LocationMap({
         .report-pin-card--draggable .report-pin-card__close{margin-left:0}
         .report-pin-card__drag-handle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}
         .report-pin-card__drag-handle.is-dragging{cursor:grabbing;background:#d6f0e9}
-        .maplibregl-ctrl-attrib.maplibregl-compact{min-width:48px;min-height:48px;padding:0;box-sizing:border-box}
-        .maplibregl-ctrl-attrib.maplibregl-compact-show{padding:8px 54px 8px 10px;max-width:min(280px,calc(100vw - 64px))}
-        .maplibregl-ctrl-attrib-button{width:48px;height:48px;background-repeat:no-repeat;background-position:center;background-size:24px 24px}
       `}</style>
       <style>{`.report-photo-lightbox{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:24px;background:#06111eee}.report-photo-lightbox img{max-width:100%;max-height:100%;object-fit:contain}.report-photo-lightbox__close{position:fixed;top:max(18px,env(safe-area-inset-top));right:18px;width:48px;height:48px;border:0;border-radius:50%;background:#fff;color:#12343d;font-size:30px;line-height:1;cursor:pointer}.report-photo-lightbox__close:focus-visible{outline:3px solid #f5b840;outline-offset:2px}.report-pin-card__photo-button{display:block;width:100%;padding:0;border:0;background:transparent;text-align:left;cursor:zoom-in}`}</style>
       <View>
@@ -631,7 +617,6 @@ export default function LocationMap({
             {(["map", "terrain", "satellite"] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: base === value }} accessibilityLabel={`${value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}${base === value ? ", selected" : ""}`} onPress={() => { setLocalBase(value); onMapStyleChange?.(value); setStylePickerOpen(false); }} style={{ minHeight: 48, paddingHorizontal: 10, borderRadius: 9, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: base === value ? colors.brandSoft : colors.surface }}><Text style={{ color: base === value ? colors.brand : colors.muted, fontSize: 14, fontWeight: "700" }}>{value === "map" ? "Map" : value === "terrain" ? "Terrain" : "Satellite"}</Text>{base === value && <Ionicons name="checkmark" size={18} color={colors.brand} />}</Pressable>)}
           </View>}
         </View>
-        <Text pointerEvents="none" accessibilityLabel={`Map attribution: ${attribution}`} style={{ position: "absolute", left: 9, top: stylePickerOpen ? 224 : 62, maxWidth: compactControls ? 194 : 230, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, backgroundColor: "#fffffff2", color: "#425957", fontSize: 9, lineHeight: 12 } as never}>{attribution}</Text>
         {density && <View pointerEvents="none" style={{ position: "absolute", left: 10, bottom: 10, width: 194, maxWidth: "calc(100% - 20px)", borderRadius: 12, paddingHorizontal: 9, paddingVertical: 7, backgroundColor: "#ffffffed", boxShadow: "0 3px 12px #173b3a30" } as never}>
           {!points.length ? <Text style={{ color: "#526461", fontSize: 10, fontWeight: "700" }}>No matching reports</Text> : <>
             <Text style={{ color: "#173b3a", fontSize: 10, fontWeight: "800", marginBottom: 4 }}>Reports / 250 m cell</Text>
@@ -639,11 +624,10 @@ export default function LocationMap({
             <Text style={{ color: "#647571", fontSize: 8, marginTop: 3 }}>Tap a square to view its count</Text>
           </>}
         </View>}
-        <div style={{ position: "absolute", right: compactControls ? 8 : 12, top: compactControls ? 8 : 12, width: compactControls ? 92 : undefined, display: "flex", flexDirection: compactControls ? "row" : "column", flexWrap: compactControls ? "wrap" : "nowrap", justifyContent: compactControls ? "space-between" : "flex-start", gap: compactControls ? 4 : 8 }}>
+        <div style={{ position: "absolute", right: compactControls ? 8 : 12, top: compactControls ? 8 : 12, display: "flex", flexDirection: "column", gap: compactControls ? 4 : 8, zIndex: 5 }}>
           {[["Zoom in", "+", () => map.current?.zoomIn({ duration: 180 })], ["Zoom out", "−", () => map.current?.zoomOut({ duration: 180 })]].map(([label, icon, action]) => <button key={label as string} type="button" aria-label={label as string} onClick={action as () => void} style={{ width: compactControls ? 44 : 48, height: compactControls ? 44 : 48, border: 0, borderRadius: 14, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer", fontSize: 22 }}>{icon as string}</button>)}
-          {!compactControls && onExpand && <button type="button" aria-label="Expand map" onClick={onExpand} style={{ width: 48, height: 48, border: 0, borderRadius: 12, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer" }}><Ionicons name="expand-outline" size={19} color="#12343d" /></button>}
+          {onExpand && <button type="button" aria-label="Expand map" onClick={onExpand} style={{ width: compactControls ? 44 : 48, height: compactControls ? 44 : 48, border: 0, borderRadius: 12, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer" }}><Ionicons name="expand-outline" size={19} color="#12343d" /></button>}
         </div>
-        {compactControls && onExpand && <button type="button" aria-label="Expand map" onClick={onExpand} style={{ position: "absolute", right: 8, bottom: 8, width: 44, height: 44, border: 0, borderRadius: 12, background: "white", color: "#12343d", boxShadow: "0 2px 10px #173b3a33", cursor: "pointer" }}><Ionicons name="expand-outline" size={19} color="#12343d" /></button>}
       </div>
       {error && <Text>{error}</Text>}
       </View>

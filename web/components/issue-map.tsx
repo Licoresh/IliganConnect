@@ -166,11 +166,25 @@ export default function IssueMap({
   const officeView = access.profile.role === "office";
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null),
+    activeMapPopup = useRef<maplibregl.Popup | null>(null),
     barangayPopup = useRef<maplibregl.Popup | null>(null),
     mapPickedBarangay = useRef(false),
-    preserveBarangaySelectionForList = useRef(false),
+    preserveBarangaySelectionOnPopupClose = useRef(false),
     reportListHeading = useRef<HTMLHeadingElement>(null),
     hoveredFeatureId = useRef<string | number | undefined>(undefined);
+  const openMapPopup = (targetMap: maplibregl.Map, location: maplibregl.LngLatLike, card: HTMLElement, handle: HTMLButtonElement) => {
+    const previous = activeMapPopup.current;
+    if (previous) {
+      if (previous === barangayPopup.current) preserveBarangaySelectionOnPopupClose.current = true;
+      previous.remove();
+    }
+    const popup = createDraggableMapPopup(targetMap, location, card, handle);
+    activeMapPopup.current = popup;
+    popup.on("close", () => {
+      if (activeMapPopup.current === popup) activeMapPopup.current = null;
+    });
+    return popup;
+  };
   const [ready, setReady] = useState(false),
     [retryKey, setRetryKey] = useState(0),
     [tileError, setTileError] = useState(false),
@@ -229,7 +243,7 @@ export default function IssueMap({
   };
   const setMode = (next: "map" | "barangays" | "list") => {
     const current = modeRef.current;
-    if (canChangeBarangay && mapPickedBarangay.current && !preserveBarangaySelectionForList.current && (current === "barangays" && next !== "barangays" || current !== "barangays" && next === "barangays")) clearMapPickedBarangay();
+    if (canChangeBarangay && mapPickedBarangay.current && !preserveBarangaySelectionOnPopupClose.current && (current === "barangays" && next !== "barangays" || current !== "barangays" && next === "barangays")) clearMapPickedBarangay();
     setOverviewMode(next);
   };
   useEffect(() => {
@@ -246,7 +260,7 @@ export default function IssueMap({
     mapPickedBarangay.current = false;
     barangayPopup.current?.remove();
     barangayPopup.current = null;
-    preserveBarangaySelectionForList.current = false;
+    preserveBarangaySelectionOnPopupClose.current = false;
     setError("");
     setBarangay(id);
     mapPickedBarangay.current = source === "map" && !!id;
@@ -773,6 +787,7 @@ export default function IssueMap({
         },
       });
       m.on("click", "barangay-fill", (event) => {
+        if (m.queryRenderedFeatures(event.point, { layers: ["points"] }).length) return;
         const feature = event.features?.[0];
         const name = feature?.properties?.name;
         if (typeof name !== "string") return;
@@ -801,7 +816,7 @@ export default function IssueMap({
         button.textContent = "View barangay reports";
         button.addEventListener("click", () => {
           if (overview) {
-            preserveBarangaySelectionForList.current = true;
+            preserveBarangaySelectionOnPopupClose.current = true;
             setMode("list");
           }
           requestAnimationFrame(() => {
@@ -810,12 +825,12 @@ export default function IssueMap({
           });
         });
         card.append(header, title, note, button);
-        const popup = createDraggableMapPopup(m, event.lngLat, card, handle);
+        const popup = openMapPopup(m, event.lngLat, card, handle);
         barangayPopup.current = popup;
         popup.on("close", () => {
           if (barangayPopup.current === popup) barangayPopup.current = null;
-          if (preserveBarangaySelectionForList.current) {
-            preserveBarangaySelectionForList.current = false;
+          if (preserveBarangaySelectionOnPopupClose.current) {
+            preserveBarangaySelectionOnPopupClose.current = false;
             return;
           }
           if (canChangeBarangay && mapPickedBarangay.current && modeRef.current === "barangays") clearMapPickedBarangay();
@@ -838,7 +853,7 @@ export default function IssueMap({
         note.className = "map-popup-note";
         note.textContent = "Count reflects the filters and reports loaded in this map view.";
         card.append(header, title, note);
-        createDraggableMapPopup(m, event.lngLat, card, handle);
+        openMapPopup(m, event.lngLat, card, handle);
       });
       m.addLayer(markersReady ? {
         id: "points",
@@ -895,7 +910,7 @@ export default function IssueMap({
           setSelectedId(String(f.properties.id)),
         );
         node.append(header, categoryLabel, title, status, button);
-        createDraggableMapPopup(m, f.geometry.coordinates as [number, number], node, handle);
+        openMapPopup(m, f.geometry.coordinates as [number, number], node, handle);
       });
       m.on("mouseenter", "points", () => { m.getCanvas().style.cursor = "pointer"; });
       m.on("mousemove", "points", (e) => {

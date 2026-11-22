@@ -391,10 +391,18 @@ export function Community({
   const meetingScopeSelector = <View accessibilityRole="radiogroup" accessibilityLabel="Meeting list" style={[{ flexDirection: "row", gap: 8 }, desktopWeb && { width: "56%", maxWidth: 620 }]}>
     {meetingScopeOptions.map((option) => {
       const active = meetingScope === option.id;
-      return <Pressable key={option.id} accessibilityRole="radio" accessibilityLabel={`${option.name}. ${option.detail}`} accessibilityState={{ checked: active }} onPress={() => { const next = option.id === "yours" ? "yours" : "barangay"; setMeetingScope(next); setMeetingFilter(next === "yours" ? "scheduled" : "open"); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: desktopWeb ? 52 : tabletWeb ? 58 : 66, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 10, paddingVertical: 7, borderRadius: desktopWeb ? 9 : 15, borderWidth: 1, borderColor: active ? colors.brand : colors.line, backgroundColor: active ? "#eff9f6" : "white" }, pressed && { opacity: 0.82 }]}>
-        <View style={{ width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: active ? colors.brandSoft : "#f1f5f7" }}><Ionicons name={option.icon} size={19} color={active ? colors.brand : colors.muted} /></View>
-        <View style={{ flex: 1, minWidth: 0, gap: compactMobile ? 0 : 3 }}><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 17, fontWeight: "800" }}>{option.name}</Text>{!compactMobile && <Text style={[s.small, { fontSize: 11, lineHeight: 15 }]}>{option.detail}</Text>}</View>
-        <Ionicons name={active ? "checkmark-circle" : "ellipse-outline"} size={19} color={active ? colors.brand : colors.line} />
+      return <Pressable key={option.id} accessibilityRole="radio" accessibilityLabel={`${option.name}. ${option.detail}`} accessibilityState={{ checked: active }} onPress={() => { const next = option.id === "yours" ? "yours" : "barangay"; setMeetingScope(next); setMeetingFilter(next === "yours" ? "scheduled" : "open"); setPage(0); }} style={({ pressed }) => [{ flex: 1, minWidth: 0, minHeight: compactMobile ? 82 : desktopWeb ? 52 : tabletWeb ? 58 : 66, flexDirection: compactMobile ? "column" : "row", alignItems: compactMobile ? "stretch" : "center", justifyContent: "center", gap: compactMobile ? 5 : 9, paddingHorizontal: compactMobile ? 9 : 10, paddingVertical: compactMobile ? 8 : 7, borderRadius: desktopWeb ? 9 : 15, borderWidth: 1, borderColor: active ? colors.brand : colors.line, backgroundColor: active ? "#eff9f6" : "white" }, pressed && { opacity: 0.82 }]}>
+        {compactMobile ? <>
+          <View style={{ width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ width: 32, height: 32, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: active ? colors.brandSoft : "#f1f5f7" }}><Ionicons name={option.icon} size={18} color={active ? colors.brand : colors.muted} /></View>
+            <Ionicons name={active ? "checkmark-circle" : "ellipse-outline"} size={19} color={active ? colors.brand : colors.line} />
+          </View>
+          <Text style={{ width: "100%", color: colors.brandDark, fontSize: screenWidth < 380 ? 12 : 13, lineHeight: screenWidth < 380 ? 16 : 17, fontWeight: "800", textAlign: "center" }}>{option.name}</Text>
+        </> : <>
+          <View style={{ width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: active ? colors.brandSoft : "#f1f5f7" }}><Ionicons name={option.icon} size={19} color={active ? colors.brand : colors.muted} /></View>
+          <View style={{ flex: 1, minWidth: 0, gap: 3 }}><Text style={{ color: colors.brandDark, fontSize: 13, lineHeight: 17, fontWeight: "800" }}>{option.name}</Text><Text style={[s.small, { fontSize: 11, lineHeight: 15 }]}>{option.detail}</Text></View>
+          <Ionicons name={active ? "checkmark-circle" : "ellipse-outline"} size={19} color={active ? colors.brand : colors.line} />
+        </>}
       </Pressable>;
     })}
   </View>;

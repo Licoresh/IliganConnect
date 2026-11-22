@@ -146,6 +146,7 @@ export default function Home() {
   const sessionUser = useRef<string | null>(null);
   const barangaysAnchorRef = useRef<View>(null);
   const scroll = useRef<ScrollView>(null);
+  const communityScrollY = useRef<number | null>(null);
   const exploreScrollY = useRef(0);
   const mainScrollY = useRef(0);
   const onMapPageScroll = useCallback((delta: number) => {
@@ -173,6 +174,16 @@ export default function Home() {
       mainScrollY.current = nextY;
       scroll.current?.scrollTo({ y: nextY, animated: false });
       return;
+    }
+    if (reportReturnTab === "Community" && tab === "Community") {
+      if (selected) return;
+      if (communityScrollY.current !== null) {
+        const nextY = communityScrollY.current;
+        communityScrollY.current = null;
+        mainScrollY.current = nextY;
+        scroll.current?.scrollTo({ y: nextY, animated: false });
+        return;
+      }
     }
     mainScrollY.current = 0;
     scroll.current?.scrollTo({ y: 0, animated: false });
@@ -422,9 +433,16 @@ export default function Home() {
     if (fromDesktopModal) setDesktopNotificationsOpen(false);
   };
   const openConsultationReport = async (reportId: string, origin: { consultationId?: string; meetingRequestId?: string }) => {
-    let report = await result<Report | null>(db!.from("reports").select("*").eq("id", reportId).maybeSingle());
-    if (!report) report = (await result<Report[]>(db!.rpc("public_report_by_id", { p_id: reportId })))[0] ?? null;
-    if (!report) throw new Error("This linked report is no longer available to your account.");
+    communityScrollY.current = mainScrollY.current;
+    let report: Report | null = null;
+    try { report = await result<Report | null>(db!.from("reports").select("*").eq("id", reportId).maybeSingle()); } catch { /* Fall back to the resident-safe report view below. */ }
+    if (!report) {
+      try { report = (await result<Report[]>(db!.rpc("public_report_by_id", { p_id: reportId })))[0] ?? null; } catch { /* ReportTracking will show an unavailable message if neither view can be opened. */ }
+    }
+    if (!report) {
+      communityScrollY.current = null;
+      throw new Error("This linked report is no longer available to your account.");
+    }
     setReportReturnTab("Community");
     setCommunityInitialTab(origin.meetingRequestId ? "meetings" : "consultations");
     setCommunityTarget(origin);
@@ -638,6 +656,20 @@ export default function Home() {
                     includeSamples={q.data.includeSamples}
                   />
                 </View>}
+                {tab === "Community" && (!selected || reportReturnTab === "Community") && <View style={selected ? { display: "none" } : undefined}>
+                  <Community
+                    residentId={q.data.profile.id}
+                    barangays={q.data.barangays}
+                    categories={q.data.categories}
+                    defaultBarangay={q.data.profile.barangay_id || ""}
+                    onPageNavigate={scrollToPageTop}
+                    initialTab={communityInitialTab}
+                    initialConsultationId={communityTarget.consultationId}
+                    initialMeetingRequestId={communityTarget.meetingRequestId}
+                    reportOpen={!!selected}
+                    onOpenReport={openConsultationReport}
+                  />
+                </View>}
                 {selected ? (
                   <ReportTracking
                     key={selected.id}
@@ -646,7 +678,7 @@ export default function Home() {
                     categoryName={q.data.categories.find((item) => item.id === selected.category_id)?.name ?? "Community report"}
                     barangayName={q.data.barangays.find((item) => item.id === selected.barangay_id)?.name ?? "Iligan City"}
                     onMapPageScroll={onMapPageScroll}
-                    backLabel={reportReturnTab === "Notifications" ? "Back to notifications" : reportReturnTab === "Explore" ? "Back to map" : reportReturnTab === "Community" ? "Back to conversation" : "Back to reports"}
+                    backLabel={reportReturnTab === "Notifications" ? "Back to notifications" : reportReturnTab === "Explore" ? "Back to map" : reportReturnTab === "Community" ? communityTarget.meetingRequestId ? "Back to meeting" : "Back to conversation" : "Back to reports"}
                     close={() => { setSelected(null); setTab(reportReturnTab); }}
                   />
                 ) : tab === "Report" ? (
@@ -667,19 +699,7 @@ export default function Home() {
                       void qc.invalidateQueries({ queryKey: ["my-reports", user] });
                     }}
                   />
-                ) : tab === "Explore" ? null : tab === "Community" ? (
-                  <Community
-                    residentId={q.data.profile.id}
-                    barangays={q.data.barangays}
-                    categories={q.data.categories}
-                    defaultBarangay={q.data.profile.barangay_id || ""}
-                    onPageNavigate={scrollToPageTop}
-                    initialTab={communityInitialTab}
-                    initialConsultationId={communityTarget.consultationId}
-                    initialMeetingRequestId={communityTarget.meetingRequestId}
-                    onOpenReport={openConsultationReport}
-                  />
-                ) : tab === "Announcements" ? (
+                ) : tab === "Explore" || tab === "Community" ? null : tab === "Announcements" ? (
                   <Announcements barangays={q.data.barangays} initialSelected={selectedAnnouncement} />
                 ) : tab === "Notifications" && !desktopWeb ? (
                   <NotificationCenter

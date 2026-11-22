@@ -9,6 +9,7 @@ import {
   Check,
   CheckCircle2,
   ChevronLeft,
+  ChevronDown,
   ChevronRight,
   Clock3,
   Eye,
@@ -47,6 +48,9 @@ type Row = {
   coordination_status?: "open" | "unavailable";
   participation_mode?: "open" | "closed";
   barangay_id: string | null;
+  target_barangay_ids?: string[];
+  target_organization_ids?: string[];
+  include_barangay_admins?: boolean;
   organization_id?: string | null;
   outcome?: string;
   decision_reason?: string;
@@ -81,6 +85,51 @@ type Comment = {
   official: boolean;
   created_at: string;
 };
+type MultiChoiceOption = { id: string; name: string };
+function MultiChoiceField({
+  labelText, name, options, selected, onChange, placeholder, required = true,
+}: {
+  labelText: string;
+  name: string;
+  options: MultiChoiceOption[];
+  selected: string[];
+  onChange: (value: string[]) => void;
+  placeholder: string;
+  required?: boolean;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+  const selectedNames = options.filter((option) => selected.includes(option.id)).map((option) => option.name);
+  const summary = selectedNames.length > 2 ? `${selectedNames.length} selected` : selectedNames.join(", ");
+  return (
+    <div className={`consultation-edit-field consultation-multi-field${open ? " is-open" : ""}`} ref={root}>
+      <span className="consultation-edit-field-label"><span>{labelText}{required && <> <b>*</b></>}</span></span>
+      <button type="button" className="consultation-multi-trigger" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((value) => !value)} disabled={!options.length}>
+        <span>{summary || placeholder}</span><ChevronDown size={17} aria-hidden="true" />
+      </button>
+      {selected.map((id) => <input key={id} type="hidden" name={name} value={id} />)}
+      {open && <div className="consultation-multi-options" role="group" aria-label={labelText}>
+        {options.length ? options.map((option) => <label key={option.id} className="consultation-multi-option">
+          <input type="checkbox" checked={selected.includes(option.id)} onChange={(event) => onChange(event.target.checked ? [...selected, option.id] : selected.filter((id) => id !== option.id))} />
+          <span>{option.name}</span>
+        </label>) : <p>No options are available for your account.</p>}
+      </div>}
+    </div>
+  );
+}
 const localDate = (value?: string) => {
   return meetingDateTimeInput(value);
 };
@@ -169,6 +218,10 @@ export function Community({
     [meetingView, setMeetingView] = useState<"grid" | "list">("grid"),
     [draftOrganization, setDraftOrganization] = useState(""),
     [draftBarangay, setDraftBarangay] = useState(""),
+    [draftConsultBarangays, setDraftConsultBarangays] = useState<string[]>([]),
+    [draftConsultOrganizations, setDraftConsultOrganizations] = useState<string[]>([]),
+    [includeBarangayAdmins, setIncludeBarangayAdmins] = useState(true),
+    [consultationScopeError, setConsultationScopeError] = useState(""),
     [editTitleLength, setEditTitleLength] = useState(0),
     [editBodyLength, setEditBodyLength] = useState(0),
     [relatedReport, setRelatedReport] = useState(""),
@@ -217,6 +270,31 @@ export function Community({
       ),
   });
   const officeIds = profile.role === "office" ? (memberships.data || []).map((membership) => membership.organization_id) : [];
+  const officeConsultationIds = access.organizations
+    .filter((organization) => organization.active && organization.can_consult)
+    .map((organization) => organization.id);
+  const consultationOrganizationOptions = refs.organizations.filter((organization) => {
+    const details = organization as typeof organization & { active?: boolean; can_consult?: boolean };
+    if (details.active !== true || details.can_consult !== true) return false;
+    if (profile.role === "office") return officeConsultationIds.includes(organization.id);
+    return profile.role === "barangay" || profile.role === "admin";
+  });
+  const consultationBarangaysFor = (organizationIds: string[]) => profile.role === "barangay"
+    ? refs.barangays.filter((item) => item.id === profile.barangay_id)
+    : profile.role === "office"
+      ? refs.barangays.filter((item) => organizationIds.some((organizationId) => access.rules.some((rule) =>
+          rule.enabled && rule.organization_id === organizationId && (!rule.barangay_id || rule.barangay_id === item.id),
+        )))
+      : refs.barangays;
+  const consultationBarangayOptions = consultationBarangaysFor(draftConsultOrganizations);
+  const officeScopeEditable = editing === "new" || profile.role !== "office" || (
+    draftConsultOrganizations.every((id) => officeConsultationIds.includes(id)) &&
+    draftConsultBarangays.every((id) => consultationBarangaysFor(draftConsultOrganizations).some((item) => item.id === id))
+  );
+  const consultationScopeLocked = (profile.role === "office" && !officeScopeEditable) || (
+    profile.role === "barangay" && editing !== "new" &&
+    (draftConsultBarangays.length !== 1 || draftConsultBarangays[0] !== profile.barangay_id)
+  );
   const announcementOrganizations = access.organizations.filter((organization) =>
     organization.active && access.rules.some((rule) => rule.organization_id === organization.id && rule.enabled),
   );
@@ -238,6 +316,18 @@ export function Community({
           ? initialBarangay
           : applicableRules.some((rule) => !rule.barangay_id) ? "" : applicableRules.find((rule) => rule.barangay_id)?.barangay_id ?? "")
         : initialBarangay);
+    if (table === "consultations") {
+      const organizations = profile.role === "office" ? officeConsultationIds : [];
+      const allowed = consultationBarangaysFor(organizations);
+      const initial = profile.role === "barangay"
+        ? profile.barangay_id ?? ""
+        : allowed.some((item) => item.id === initialBarangay) ? initialBarangay : allowed[0]?.id ?? "";
+      setDraftConsultOrganizations(organizations);
+      setDraftConsultBarangays(initial ? [initial] : []);
+      setDraftBarangay(initial);
+      setIncludeBarangayAdmins(true);
+      setConsultationScopeError("");
+    }
     setEditTitleLength(0);
     setEditBodyLength(0);
     setRelatedReport("");
@@ -248,12 +338,43 @@ export function Community({
   const startEdit = (row: Row) => {
     setDraftOrganization(row.organization_id ?? "");
     setDraftBarangay(row.barangay_id ?? "");
+    if (table === "consultations") {
+      const locations = row.target_barangay_ids?.length ? row.target_barangay_ids : row.barangay_id ? [row.barangay_id] : [];
+      const organizations = row.target_organization_ids?.length ? row.target_organization_ids : row.organization_id ? [row.organization_id] : [];
+      setDraftConsultBarangays(locations);
+      setDraftConsultOrganizations(organizations);
+      setIncludeBarangayAdmins(row.include_barangay_admins ?? true);
+      setConsultationScopeError("");
+    }
     setEditTitleLength(row.title.length);
     setEditBodyLength(row.body.length);
     setRelatedReport(row.report_id ?? "");
     setRelatedReportSearch("");
     setShowRelatedReportOptions(false);
     setEditing(row);
+  };
+  const chooseConsultationOrganizations = (organizationIds: string[]) => {
+    setDraftConsultOrganizations(organizationIds);
+    const allowed = consultationBarangaysFor(organizationIds).map((item) => item.id);
+    const retained = draftConsultBarangays.filter((id) => allowed.includes(id));
+    const next = retained.length ? retained : allowed[0] ? [allowed[0]] : [];
+    setDraftConsultBarangays(next);
+    setDraftBarangay(next[0] ?? "");
+    if (!next.includes(draftBarangay)) {
+      setRelatedReport("");
+      setRelatedReportSearch("");
+      setShowRelatedReportOptions(false);
+    }
+    setConsultationScopeError("");
+  };
+  const chooseConsultationBarangays = (barangayIds: string[]) => {
+    const next = profile.role === "barangay" ? (profile.barangay_id ? [profile.barangay_id] : []) : barangayIds;
+    setDraftConsultBarangays(next);
+    setDraftBarangay(next[0] ?? "");
+    setRelatedReport("");
+    setRelatedReportSearch("");
+    setShowRelatedReportOptions(false);
+    setConsultationScopeError("");
   };
   const q = useQuery({
     queryKey: ["community", profile.id, table, searchTerm, status, barangay, dateRange, sort, page, officeIds],
@@ -290,7 +411,11 @@ export function Community({
       if (searchTerm) query = query.ilike("title", `%${searchTerm}%`);
       if (status === "unavailable" && table === "meeting_requests") query = query.eq("coordination_status", status);
       else if (status) query = query.eq("status", status);
-      if (barangay && !invitedBarangayRequestIds) query = query.eq("barangay_id", barangay);
+      if (barangay && !invitedBarangayRequestIds) {
+        query = table === "consultations"
+          ? query.or(`barangay_id.eq.${barangay},target_barangay_ids.cs.{${barangay}}`)
+          : query.eq("barangay_id", barangay);
+      }
       if (dateRange !== "all") {
         const start = new Date();
         start.setDate(start.getDate() - Number(dateRange));
@@ -308,12 +433,12 @@ export function Community({
     },
   });
   const relatedReports = useQuery({
-    queryKey: ["consultation-related-reports", profile.id, draftBarangay, relatedReportSearchTerm, relatedReport],
-    enabled: table === "consultations" && !!editing && !!draftBarangay && (showRelatedReportOptions || !!relatedReport),
+    queryKey: ["consultation-related-reports", profile.id, draftConsultBarangays, relatedReportSearchTerm, relatedReport],
+    enabled: table === "consultations" && !!editing && !!draftConsultBarangays.length && (showRelatedReportOptions || !!relatedReport),
     queryFn: async () => {
       const columns = "id,title,status,barangay_id,category_id,created_at";
       const reportsQuery = db!.from("reports").select(columns)
-        .eq("barangay_id", draftBarangay).order("created_at", { ascending: false }).limit(8);
+        .in("barangay_id", draftConsultBarangays).order("created_at", { ascending: false }).limit(8);
       const isReportId = new RegExp(`^${UUID_PATTERN}$`, "i").test(relatedReportSearchTerm);
       const filteredReportsQuery = relatedReportSearchTerm
         ? isReportId ? reportsQuery.eq("id", relatedReportSearchTerm) : reportsQuery.ilike("title", `%${relatedReportSearchTerm}%`)
@@ -321,7 +446,7 @@ export function Community({
       const [options, selectedReport] = await Promise.all([
         result<RelatedReport[]>(filteredReportsQuery),
         relatedReport
-          ? result<RelatedReport | null>(db!.from("reports").select(columns).eq("id", relatedReport).eq("barangay_id", draftBarangay).maybeSingle<RelatedReport>())
+          ? result<RelatedReport | null>(db!.from("reports").select(columns).eq("id", relatedReport).in("barangay_id", draftConsultBarangays).maybeSingle<RelatedReport>())
           : Promise.resolve(null),
       ]);
       return selectedReport && !options.some((report) => report.id === selectedReport.id)
@@ -432,7 +557,10 @@ export function Community({
           ) : (
             <div className={`consultation-grid${meetingView === "list" ? " is-list" : ""}`}>
               {q.data.map((r) => {
-                const place = refs.barangays.find((item) => item.id === r.barangay_id)?.name ?? "Citywide";
+                const scopedBarangayIds = r.target_barangay_ids?.length ? r.target_barangay_ids : r.barangay_id ? [r.barangay_id] : [];
+                const place = scopedBarangayIds.map((id) => refs.barangays.find((item) => item.id === id)?.name).filter(Boolean).join(", ") || "Citywide";
+                const scopedOrganizationIds = r.target_organization_ids?.length ? r.target_organization_ids : r.organization_id ? [r.organization_id] : [];
+                const issuingOffices = scopedOrganizationIds.map((id) => refs.organizations.find((item) => item.id === id)?.name).filter(Boolean);
                 const manage = canManage(r);
                 const setStatus = (next: string) => void run(db!.from(table).update({ status: next }).eq("id", r.id));
                 const date = (value?: string) => value ? new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value)) : "Date not set";
@@ -445,6 +573,7 @@ export function Community({
                     <h3>{r.title}</h3>
                     <p className="consultation-description">{r.body}</p>
                     <p className="consultation-location"><MapPin size={15} /> {place}</p>
+                    <p className="consultation-issuers"><strong>Participating:</strong> {[...(r.include_barangay_admins ? ["Barangay administration"] : []), ...issuingOffices].join(" · ") || "No additional offices"}</p>
                     <div className="consultation-card-actions">
                       <button className="consultation-discussion" onClick={() => setSelected(r.id)}><MessageSquare size={15} /> Open discussion</button>
                       {manage && <>
@@ -584,10 +713,6 @@ export function Community({
           <form
             key={editing === "new" ? `${table}-new` : `${table}-${editing.id}`}
             className={table === "consultations" ? "consultation-edit-form" : table === "announcements" ? "announcement-edit-form" : undefined}
-            onFocusCapture={(event) => {
-              if (table !== "meeting_requests" && event.target.matches("input, select, textarea"))
-                event.target.scrollIntoView({ block: "nearest" });
-            }}
             onSubmit={async (e) => {
               e.preventDefault();
               const f = new FormData(e.currentTarget);
@@ -616,15 +741,39 @@ export function Community({
               }
               const fileEntry = f.get("announcement_image");
               const image = fileEntry instanceof File && fileEntry.name ? fileEntry : null;
+              const consultationBarangayIds = table === "consultations"
+                ? f.getAll("target_barangay_ids").filter((value): value is string => typeof value === "string")
+                : [];
+              const consultationOrganizationIds = table === "consultations"
+                ? f.getAll("target_organization_ids").filter((value): value is string => typeof value === "string")
+                : [];
+              if (table === "consultations" && !consultationBarangayIds.length) {
+                setConsultationScopeError("Choose at least one barangay for this consultation.");
+                return;
+              }
+              if (table === "consultations" && profile.role === "office" && !consultationOrganizationIds.length) {
+                setConsultationScopeError("Choose at least one consultation-enabled office.");
+                return;
+              }
+              if (table === "consultations" && !consultationOrganizationIds.length && f.get("include_barangay_admins") !== "on" && profile.role !== "barangay") {
+                setConsultationScopeError("Choose a participating office or include barangay administration.");
+                return;
+              }
+              setConsultationScopeError("");
               const payload: Record<string, unknown> = {
                 title: f.get("title"),
                 body: f.get("body"),
-                barangay_id: f.get("barangay") || null,
-                organization_id: table === "announcements" && profile.role === "barangay"
+                barangay_id: table === "consultations" ? consultationBarangayIds[0] || null : f.get("barangay") || null,
+                organization_id: table === "consultations"
+                  ? consultationOrganizationIds[0] || null
+                  : table === "announcements" && profile.role === "barangay"
                   ? null
                   : f.get("organization") || null,
                 ...(table === "consultations"
                   ? {
+                      target_barangay_ids: consultationBarangayIds,
+                      target_organization_ids: consultationOrganizationIds,
+                      include_barangay_admins: f.get("include_barangay_admins") === "on",
                       report_id: f.get("report") || null,
                       opens_at: opensAt!.toISOString(),
                       closes_at: closesAt!.toISOString(),
@@ -696,30 +845,58 @@ export function Community({
                 <section className="consultation-edit-section">
                   <div className="consultation-edit-section-heading">
                     <span className="consultation-edit-section-icon"><MapPin size={20} /></span>
-                    <div><h3>Location and organization</h3><p>Specify the barangay and issuing office for this consultation.</p></div>
+                    <div><h3>Location and organization</h3><p>Choose the barangays and issuing offices that should coordinate.</p></div>
                   </div>
-                  <div className="consultation-edit-grid">
-                    <label className="consultation-edit-field">
-                      <span className="consultation-edit-field-label"><span>Barangay <b>*</b></span></span>
-                      <select name="barangay" required value={draftBarangay} onChange={(event) => {
-                        const nextBarangay = event.target.value;
-                        setDraftBarangay(nextBarangay);
-                        setRelatedReport("");
-                        setRelatedReportSearch("");
-                        setShowRelatedReportOptions(false);
-                      }}>
-                        <option value="">Choose a barangay</option>
-                        {refs.barangays.filter((item) => profile.role !== "barangay" || item.id === profile.barangay_id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="consultation-edit-field">
-                      <span className="consultation-edit-field-label"><span>Issuing office</span></span>
-                      <select name="organization" required={profile.role === "office"} defaultValue={editing === "new" ? "" : editing.organization_id || ""}>
-                        <option value="">{profile.role === "office" ? "Choose your office" : "Barangay administration"}</option>
-                        {refs.organizations.filter((o) => ((o as { active?: boolean }).active !== false || editing !== "new" && editing.organization_id === o.id) && (profile.role !== "office" || access.organizations.some((a) => a.id === o.id && a.can_consult) && memberships.data?.some((m) => m.organization_id === o.id))).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                      </select>
-                    </label>
-                  </div>
+                  <input type="hidden" name="barangay" value={draftConsultBarangays[0] ?? ""} />
+                  {consultationScopeLocked ? (
+                    <>
+                      <div className="consultation-edit-grid consultation-scope-grid">
+                        <label className="consultation-edit-field"><span className="consultation-edit-field-label">Barangays</span><input readOnly value={draftConsultBarangays.map((id) => refs.barangays.find((item) => item.id === id)?.name ?? "Barangay").join(", ")} />{draftConsultBarangays.map((id) => <input key={id} type="hidden" name="target_barangay_ids" value={id} />)}</label>
+                        <label className="consultation-edit-field"><span className="consultation-edit-field-label">Participating offices</span><input readOnly value={draftConsultOrganizations.map((id) => refs.organizations.find((item) => item.id === id)?.name ?? "Office").join(", ")} />{draftConsultOrganizations.map((id) => <input key={id} type="hidden" name="target_organization_ids" value={id} />)}</label>
+                      </div>
+                      <input type="hidden" name="include_barangay_admins" value={includeBarangayAdmins ? "on" : "off"} />
+                      <p className="consultation-scope-note"><ShieldCheck size={15} /> {includeBarangayAdmins ? "Barangay administration is included for the selected areas." : "Barangay administration is not included in this consultation."} Its scope is kept fixed while you edit.</p>
+                    </>
+                  ) : <>
+                    <div className="consultation-edit-grid consultation-scope-grid">
+                      {profile.role === "barangay" ? (
+                        <label className="consultation-edit-field">
+                          <span className="consultation-edit-field-label"><span>Assigned barangay <b>*</b></span></span>
+                          <input value={refs.barangays.find((item) => item.id === profile.barangay_id)?.name ?? "Your assigned barangay"} readOnly />
+                          {draftConsultBarangays[0] && <input type="hidden" name="target_barangay_ids" value={draftConsultBarangays[0]} />}
+                        </label>
+                      ) : (
+                        <MultiChoiceField
+                          labelText="Barangays"
+                          name="target_barangay_ids"
+                          options={consultationBarangayOptions}
+                          selected={draftConsultBarangays}
+                          onChange={chooseConsultationBarangays}
+                          placeholder={profile.role === "office" && !draftConsultOrganizations.length ? "Choose an office first" : "Choose one or more barangays"}
+                        />
+                      )}
+                      <MultiChoiceField
+                        labelText="Issuing offices"
+                        name="target_organization_ids"
+                        options={consultationOrganizationOptions}
+                        selected={draftConsultOrganizations}
+                        onChange={chooseConsultationOrganizations}
+                        placeholder="Choose one or more offices"
+                        required={profile.role === "office"}
+                      />
+                    </div>
+                    {profile.role === "admin" ? (
+                      <label className="consultation-scope-inclusion">
+                        <input type="checkbox" name="include_barangay_admins" checked={includeBarangayAdmins} onChange={(event) => { setIncludeBarangayAdmins(event.target.checked); setConsultationScopeError(""); }} />
+                        <span><strong>Include barangay administration</strong><small>Every selected barangay’s administrators can access and coordinate this consultation.</small></span>
+                      </label>
+                    ) : <>
+                      <input type="hidden" name="include_barangay_admins" value={includeBarangayAdmins ? "on" : "off"} />
+                      <p className="consultation-scope-note"><ShieldCheck size={15} /> {profile.role === "barangay" ? "Your assigned barangay administration is included automatically." : "Administrators of every selected barangay are included automatically."}</p>
+                    </>}
+                  </>}
+                  {consultationScopeError && <p className="consultation-edit-scope-error" role="alert">{consultationScopeError}</p>}
+                  {profile.role === "office" && !draftConsultOrganizations.length && <p className="consultation-scope-note">Select one of your consultation-enabled offices to see the barangays it can serve.</p>}
                 </section>
 
                 <section className="consultation-edit-section">
@@ -736,12 +913,12 @@ export function Community({
                       </div>
                     ) : (
                       <>
-                        <div className="consultation-edit-related-search"><Search size={17} aria-hidden="true" /><input maxLength={160} placeholder="Search report title or paste report ID" value={relatedReportSearch} onFocus={() => setShowRelatedReportOptions(true)} onChange={(event) => { setRelatedReport(""); setRelatedReportSearch(event.target.value); setShowRelatedReportOptions(true); }} aria-label="Search reports in this barangay" aria-expanded={showRelatedReportOptions} aria-controls="consultation-related-report-options" autoComplete="off" />{relatedReportSearch && <button type="button" className="consultation-edit-clear" aria-label="Clear report search" onClick={() => { setRelatedReportSearch(""); setShowRelatedReportOptions(true); }}><X size={17} /></button>}</div>
+                        <div className="consultation-edit-related-search"><Search size={17} aria-hidden="true" /><input maxLength={160} placeholder="Search report title or paste report ID" value={relatedReportSearch} onFocus={() => setShowRelatedReportOptions(true)} onChange={(event) => { setRelatedReport(""); setRelatedReportSearch(event.target.value); setShowRelatedReportOptions(true); }} aria-label="Search reports in the selected barangays" aria-expanded={showRelatedReportOptions} aria-controls="consultation-related-report-options" autoComplete="off" />{relatedReportSearch && <button type="button" className="consultation-edit-clear" aria-label="Clear report search" onClick={() => { setRelatedReportSearch(""); setShowRelatedReportOptions(true); }}><X size={17} /></button>}</div>
                         {showRelatedReportOptions && <div className="consultation-related-report-options" id="consultation-related-report-options" role="listbox" aria-label="Available reports">
-                          {!draftBarangay ? <p>Choose a barangay first to find related reports.</p>
+                          {!draftConsultBarangays.length ? <p>Choose a barangay first to find related reports.</p>
                             : relatedReports.isPending ? <p role="status">Loading reports…</p>
                               : relatedReports.isError ? <p role="alert">Reports could not load. <button type="button" className="text-button" onClick={() => void relatedReports.refetch()}>Try again</button></p>
-                                : !relatedReports.data?.length ? <p>{relatedReportSearchTerm ? "No matching reports found." : "No accessible reports in this barangay."}</p>
+                                : !relatedReports.data?.length ? <p>{relatedReportSearchTerm ? "No matching reports found." : "No accessible reports in the selected barangays."}</p>
                                   : relatedReports.data.map((report) => <button type="button" role="option" aria-selected={relatedReport === report.id} key={report.id} onClick={() => { setRelatedReport(report.id); setRelatedReportSearch(report.title); setShowRelatedReportOptions(false); }}><span><strong>{report.title}</strong><small>{refs.categories.find((category) => category.id === report.category_id)?.name || "Report"} · {label(report.status)} · {new Date(report.created_at).toLocaleDateString("en-PH", { timeZone: "Asia/Manila" })}</small></span><code>{report.id.slice(0, 8).toUpperCase()}</code></button>)}
                         </div>}
                       </>
@@ -1314,6 +1491,7 @@ function Meeting({
     },
   });
   const meeting = q.data?.meeting;
+  const isMeetingCompleted = !!meeting?.completed;
   useEffect(() => {
     setVenueType(meeting?.venue_type || (meeting?.meet_url ? "online" : "venue"));
   }, [meeting?.id, meeting?.venue_type, meeting?.meet_url]);
@@ -1326,17 +1504,33 @@ function Meeting({
   const currentBarangayInvitation = barangayInvitations.find((invitation) => invitation.barangay_id === profileBarangayId);
   const availableBarangays = refs.barangays.filter((item) => item.id !== row.barangay_id &&
     !barangayInvitations.some((invitation) => invitation.barangay_id === item.id && invitation.status !== "declined"));
-  const canRespondToBarangayInvitation = profileRole === "barangay" && currentBarangayInvitation?.status === "pending";
+  const canRespondToBarangayInvitation = !isMeetingCompleted && profileRole === "barangay" && currentBarangayInvitation?.status === "pending";
   const ownInvitations = isOffice && officeIds.length ? invitations.filter((invitation) => officeIds.includes(invitation.organization_id)) : invitations;
-  const meetingStatusLabel = meeting?.completed ? "Completed" : meeting ? "Scheduled" : isOffice && row.status === "pending" ? q.data ? !ownInvitations.length ? "Not invited" : ownInvitations.every((invitation) => invitation.status === "declined") ? "Invitation declined" : ownInvitations.some((invitation) => invitation.status === "pending") ? "Invitation pending" : "Awaiting barangay" : "Checking invitation" : label(row.status);
-  const meetingStatusClassName = `meeting-detail-status${meeting?.completed ? " is-complete" : meeting ? " is-scheduled" : ""}`;
+  const officeInvitationDeclined = ownInvitations.length > 0 && ownInvitations.every((invitation) => invitation.status === "declined");
+  const officeInvitationPending = ownInvitations.some((invitation) => invitation.status === "pending");
+  const meetingStatusLabel = isMeetingCompleted ? "Completed"
+    : isOffice && officeInvitationDeclined ? "Invitation declined"
+      : isOffice && officeInvitationPending ? "Invitation pending"
+        : meeting ? "Scheduled"
+          : isOffice && row.status === "pending" ? q.data ? !ownInvitations.length ? "Not invited" : "Awaiting barangay" : "Checking invitation"
+            : label(row.status);
+  const meetingStatusTone = isMeetingCompleted ? "is-complete"
+    : (isOffice && officeInvitationDeclined) || row.status === "declined" ? "is-declined"
+      : isOffice && officeInvitationPending ? "is-invitation-pending"
+        : meeting ? "is-scheduled"
+          : row.status === "pending" ? "is-pending"
+            : row.status === "approved" ? "is-approved"
+              : "is-neutral";
+  const meetingStatusClassName = `meeting-detail-status ${meetingStatusTone}`;
   useEffect(() => onStatusChange({ requestId: row.id, label: meetingStatusLabel, className: meetingStatusClassName }), [row.id, meetingStatusLabel, meetingStatusClassName, onStatusChange]);
   const acceptedOfficeIds = ownInvitations.filter((invitation) => invitation.status === "accepted").map((invitation) => invitation.organization_id);
-  const canEditOfficeActions = isOffice && acceptedOfficeIds.length > 0;
-  const canEditActionItem = (item: { organization_id: string | null }) => manage || (canEditOfficeActions && !!item.organization_id && acceptedOfficeIds.includes(item.organization_id));
-  const requestOpen = row.status === "pending" || row.status === "approved";
+  const canEditOfficeActions = !isMeetingCompleted && isOffice && acceptedOfficeIds.length > 0;
+  const canEditActionItem = (item: { organization_id: string | null }) => !isMeetingCompleted && (manage || (canEditOfficeActions && !!item.organization_id && acceptedOfficeIds.includes(item.organization_id)));
+  const canManageInvitations = canInvite && !isMeetingCompleted;
+  const requestOpen = !isMeetingCompleted && (row.status === "pending" || row.status === "approved");
   const hasInvitationSections = canInvite || officeIds.length > 0 || invitations.length > 0 || barangayInvitations.length > 0;
-  const hasFinalDecision = canInvite || (manageSchedule && row.status === "approved" && !!meeting) || !!row.decision_reason;
+  const hasFinalDecision = !isMeetingCompleted && (canInvite || (manageSchedule && row.status === "approved" && !!meeting) || !!row.decision_reason);
+  const canViewSchedule = row.status === "approved" && (manageSchedule || (isMeetingCompleted && (manage || canInvite || isOffice)));
   const availableOrganizations = refs.organizations.filter(
     (organization) => {
       const office = organization as typeof organization & { active?: boolean; can_consult?: boolean; can_coordinate?: boolean };
@@ -1345,13 +1539,22 @@ function Meeting({
     },
   );
   const meetingSectionId = (section: string) => `meeting-${row.id}-${section}`;
-  const sectionTabs: { key: MeetingSection; label: string }[] = [
-    { key: "overview", label: "Overview" },
-    ...(manageSchedule && row.status === "approved" ? [{ key: "schedule" as const, label: "Schedule" }] : []),
-    ...(hasInvitationSections ? [{ key: "invitations" as const, label: "Invitations" }] : []),
-    ...(meeting ? [{ key: "follow-up" as const, label: "Follow-up" }] : []),
-    ...(hasFinalDecision ? [{ key: "decision" as const, label: "Decision" }] : []),
-  ];
+  const sectionTabs: { key: MeetingSection; label: string }[] = isMeetingCompleted && canViewSchedule
+    ? [
+        ...(canViewSchedule ? [{ key: "schedule" as const, label: "Schedule" }] : []),
+        ...(hasInvitationSections ? [{ key: "invitations" as const, label: "Invitations" }] : []),
+        ...(meeting ? [{ key: "follow-up" as const, label: "Follow-up" }] : []),
+      ]
+    : [
+        { key: "overview", label: "Overview" },
+        ...(manageSchedule && row.status === "approved" ? [{ key: "schedule" as const, label: "Schedule" }] : []),
+        ...(hasInvitationSections ? [{ key: "invitations" as const, label: "Invitations" }] : []),
+        ...(meeting ? [{ key: "follow-up" as const, label: "Follow-up" }] : []),
+        ...(hasFinalDecision ? [{ key: "decision" as const, label: "Decision" }] : []),
+      ];
+  useEffect(() => {
+    if (isMeetingCompleted && canViewSchedule) setActiveSection("schedule");
+  }, [isMeetingCompleted, canViewSchedule, meeting?.id]);
   const selectSection = (section: MeetingSection) => {
     setActiveSection(section);
     const body = document.getElementById(meetingSectionId("workspace"))?.closest(".community-dialog-body");
@@ -1387,7 +1590,8 @@ function Meeting({
       {q.isPending ? <p className="meeting-feedback">Loading meeting details…</p> : null}
       {q.error && <p role="alert" className="meeting-feedback error">{q.error.message}</p>}
       {message && <p role={failed ? "alert" : "status"} className={`meeting-feedback ${failed ? "error" : "success"}`}>{message}</p>}
-      {(isOffice || manage && !manageSchedule) && <p className="meeting-office-view-note"><Eye size={15} aria-hidden="true" />{isOffice ? "Meeting details are managed by the barangay. You can respond to your invitation and update action items assigned to an office you have accepted for." : "The assigned barangay manages the venue and schedule. You can review the request, invitations, and agreed actions."}</p>}
+      {isMeetingCompleted && <p className="meeting-read-only-note"><Eye size={15} aria-hidden="true" />This meeting is complete. Schedule, invitations, and follow-up are available to view only.</p>}
+      {!isMeetingCompleted && (isOffice || manage && !manageSchedule) && <p className="meeting-office-view-note"><Eye size={15} aria-hidden="true" />{isOffice ? "Meeting details are managed by the barangay. You can respond to your invitation and update action items assigned to an office you have accepted for." : "The assigned barangay manages the venue and schedule. You can review the request, invitations, and agreed actions."}</p>}
 
       <div id={meetingSectionId("panel-overview")} className="meeting-section-panel" role="tabpanel" aria-labelledby={meetingSectionId("tab-overview")} tabIndex={0} hidden={activeSection !== "overview"}>
       <section className="meeting-section meeting-overview">
@@ -1463,13 +1667,15 @@ function Meeting({
       </div>
       </div>
 
-      {manageSchedule && row.status === "approved" && (
+      {canViewSchedule && (
       <div id={meetingSectionId("panel-schedule")} className="meeting-section-panel" role="tabpanel" aria-labelledby={meetingSectionId("tab-schedule")} tabIndex={0} hidden={activeSection !== "schedule"}>
-        <form id={meetingSectionId("schedule")} className="meeting-section meeting-details-form" key={meeting?.id || "new"} onChange={(e) => {
+        <form id={meetingSectionId("schedule")} className={`meeting-section meeting-details-form${isMeetingCompleted ? " is-readonly" : ""}`} key={meeting?.id || "new"} onChange={(e) => {
+          if (isMeetingCompleted) return;
           if (!meetingInputError) return;
           setMeetingInputError(getMeetingInputError(e.currentTarget, meetingInputErrorMode));
         }} onSubmit={(e) => {
           e.preventDefault();
+          if (isMeetingCompleted) return;
           const form = e.currentTarget;
           const f = new FormData(form);
           const date = String(f.get("date") || "");
@@ -1497,29 +1703,29 @@ function Meeting({
           <input type="hidden" name="completed" value={meetingCompleted ? "on" : "off"} />
           <div className="meeting-section-heading meeting-details-heading">
             <span className="meeting-section-icon"><CalendarDays size={20} /></span>
-            <div><h3>Plan the meeting</h3><p>Set the format and timing, then share an update with residents.</p></div>
+            <div><h3>{isMeetingCompleted ? "Meeting schedule" : "Plan the meeting"}</h3><p>{isMeetingCompleted ? "View the final time, format, location, and resident update." : "Set the format and timing, then share an update with residents."}</p></div>
           </div>
           <section className="meeting-form-section">
           <fieldset className="meeting-mode-fieldset">
             <legend>Meeting format <b>*</b></legend>
             <div className="meeting-mode-options">
-              <label className={`meeting-mode-option ${venueType === "venue" ? "is-selected" : ""}`}><input type="radio" name="venue_type" value="venue" checked={venueType === "venue"} onChange={() => setVenueType("venue")} /><span><strong>In person</strong><small>Set the meeting venue</small></span></label>
-              <label className={`meeting-mode-option ${venueType === "online" ? "is-selected" : ""}`}><input type="radio" name="venue_type" value="online" checked={venueType === "online"} onChange={() => setVenueType("online")} /><span><strong>Online</strong><small>Join through Google Meet</small></span></label>
+              <label className={`meeting-mode-option ${venueType === "venue" ? "is-selected" : ""}`}><input type="radio" name="venue_type" value="venue" checked={venueType === "venue"} disabled={isMeetingCompleted} onChange={() => setVenueType("venue")} /><span><strong>In person</strong><small>Set the meeting venue</small></span></label>
+              <label className={`meeting-mode-option ${venueType === "online" ? "is-selected" : ""}`}><input type="radio" name="venue_type" value="online" checked={venueType === "online"} disabled={isMeetingCompleted} onChange={() => setVenueType("online")} /><span><strong>Online</strong><small>Join through Google Meet</small></span></label>
             </div>
           </fieldset>
           <div className="meeting-form-grid">
             {venueType === "venue"
-              ? <label className="meeting-field"><span>Meeting venue <b>*</b></span><input maxLength={240} name="venue" required minLength={3} defaultValue={meeting?.venue_type === "online" ? "" : meeting?.venue} placeholder="Building, office, or complete address" /></label>
+              ? <label className="meeting-field"><span>Meeting venue <b>*</b></span><input maxLength={240} name="venue" required minLength={3} defaultValue={meeting?.venue_type === "online" ? "" : meeting?.venue} placeholder="Building, office, or complete address" disabled={isMeetingCompleted} /></label>
               : <div className="meeting-online-note"><MapPin size={16} aria-hidden="true" /><span>Online through Google Meet. A valid join link is required before this meeting can be saved.</span></div>}
-            <label className="meeting-field meeting-date-field"><span>Meeting date <b>*</b></span><input name="date" type="date" required defaultValue={meeting ? meetingDateInput(meeting.starts_at) : ""} /></label>
+            <label className="meeting-field meeting-date-field"><span>Meeting date <b>*</b></span><input name="date" type="date" required defaultValue={meeting ? meetingDateInput(meeting.starts_at) : ""} disabled={isMeetingCompleted} /></label>
           </div>
           <div className="meeting-time-range">
-            <label className="meeting-field"><span>Starts at <b>*</b></span><input name="starts_at" type="time" required defaultValue={meeting ? meetingTimeInput(meeting.starts_at) : ""} /></label>
+            <label className="meeting-field"><span>Starts at <b>*</b></span><input name="starts_at" type="time" required defaultValue={meeting ? meetingTimeInput(meeting.starts_at) : ""} disabled={isMeetingCompleted} /></label>
             <span className="meeting-time-separator" aria-hidden="true">to</span>
-            <label className="meeting-field"><span>Ends at <b>*</b></span><input name="ends_at" type="time" required defaultValue={meeting ? meetingTimeInput(meeting.ends_at) : ""} /></label>
+            <label className="meeting-field"><span>Ends at <b>*</b></span><input name="ends_at" type="time" required defaultValue={meeting ? meetingTimeInput(meeting.ends_at) : ""} disabled={isMeetingCompleted} /></label>
             <small className="meeting-time-hint">Use Philippine time. Residents and email updates show this full time range.</small>
           </div>
-          {venueType === "online" && <label className="meeting-field"><span>Google Meet link <b>*</b></span><input name="meet_url" type="url" inputMode="url" required autoCapitalize="none" autoCorrect="off" maxLength={300} defaultValue={meeting?.meet_url || ""} placeholder="https://meet.google.com/abc-defg-hij" aria-describedby="meeting-link-hint" /><small id="meeting-link-hint">Create or copy the Meet link from Google Calendar. The resident will receive it by email.</small></label>}
+          {venueType === "online" && <label className="meeting-field"><span>Google Meet link <b>*</b></span><input name="meet_url" type="url" inputMode="url" required autoCapitalize="none" autoCorrect="off" maxLength={300} defaultValue={meeting?.meet_url || ""} placeholder="https://meet.google.com/abc-defg-hij" aria-describedby="meeting-link-hint" disabled={isMeetingCompleted} /><small id="meeting-link-hint">Create or copy the Meet link from Google Calendar. The resident will receive it by email.</small></label>}
           <div className="meeting-calendar-help"><CalendarPlus size={16} aria-hidden="true" /><span>{venueType === "online" ? "Open a Calendar draft, turn on Google Meet, save the event, then paste its link above. A Meet link cannot be generated from a Calendar draft alone." : "Open a Calendar draft with this exact date and time range."}</span></div>
           {meetingInputError && <p className="meeting-feedback error" role="alert">{meetingInputError}</p>}
           {meetingFormError && <p className="meeting-feedback error" role="alert">{meetingFormError}</p>}
@@ -1529,9 +1735,9 @@ function Meeting({
               <span className="meeting-section-icon"><FileText size={20} /></span>
               <div><h3>Resident update</h3><p>Publish the meeting summary, decisions, and key discussion points.</p></div>
             </div>
-          <label className="meeting-field"><span>Public summary and minutes</span><textarea name="outcome" maxLength={2000} defaultValue={meeting?.outcome || ""} placeholder="Write a summary, decisions, and key discussion points…" /></label>
+          <label className="meeting-field"><span>Public summary and minutes</span><textarea name="outcome" maxLength={2000} defaultValue={meeting?.outcome || ""} placeholder="Write a summary, decisions, and key discussion points…" disabled={isMeetingCompleted} /></label>
           </section>
-          <div className="meeting-form-actions"><button type="button" className="secondary" disabled={busy} onClick={(event) => {
+          {!isMeetingCompleted && <div className="meeting-form-actions"><button type="button" className="secondary" disabled={busy} onClick={(event) => {
             const form = event.currentTarget.form;
             if (!form) return;
             const fields = new FormData(form);
@@ -1554,7 +1760,7 @@ function Meeting({
             if (!calendarUrl) { setMeetingInputErrorMode("calendar"); setMeetingInputError("The selected date could not be added to Calendar."); return; }
             setMeetingInputError("");
             window.open(calendarUrl, "_blank", "noopener,noreferrer");
-          }}><CalendarPlus size={15} aria-hidden="true" />Create Calendar draft</button><button disabled={busy}>{busy ? "Saving…" : "Save meeting details"}</button></div>
+          }}><CalendarPlus size={15} aria-hidden="true" />Create Calendar draft</button><button disabled={busy}>{busy ? "Saving…" : "Save meeting details"}</button></div>}
         </form>
       </div>
       )}
@@ -1568,14 +1774,14 @@ function Meeting({
               <span className="meeting-section-icon"><Users size={20} /></span>
               <div><h3>{officeIds.length && !canInvite ? "Your office invitation" : "Office invitations"}</h3><p>{officeIds.length && !canInvite
                 ? "Accept to confirm participation or decline. A reason is optional."
-                : row.coordination_status === "unavailable" ? "All invited offices declined." : "Offices can accept or decline their invitation."}</p></div>
+                : row.status === "pending" ? "Add offices now; they will receive invitations after this request is approved." : row.coordination_status === "unavailable" ? "All invited offices declined." : "Offices can accept or decline their invitation."}</p></div>
             </div>
             {ownInvitations.length ? <div className="meeting-participant-list">{ownInvitations.map((p) => (
               <div className="meeting-participant" key={p.organization_id}>
                 <span className="meeting-participant-icon"><Users size={17} /></span>
                 <div className="meeting-invitation-copy">
                   <strong>{refs.organizations.find((o) => o.id === p.organization_id)?.name || "Office"}</strong>
-                  <p>{p.decline_reason ? `Reason: ${p.decline_reason}` : "Invitation to participate in this meeting."}</p>
+                  <p>{p.decline_reason ? `Reason: ${p.decline_reason}` : row.status === "pending" && p.status === "pending" ? "The office will receive this invitation after the barangay approves the request." : "Invitation to participate in this meeting."}</p>
                   {requestOpen && p.status === "pending" && officeIds.includes(p.organization_id) && (
                     <form className="meeting-form" onSubmit={(event) => {
                       event.preventDefault();
@@ -1595,11 +1801,11 @@ function Meeting({
                     </form>
                   )}
                 </div>
-                <span className={`meeting-invitation-status ${p.status}`}>{p.status === "pending" ? "Awaiting reply" : label(p.status)}</span>
-                {canInvite && p.status === "pending" && <button type="button" className="meeting-remove" aria-label="Withdraw office invitation" disabled={busy} onClick={() => void run(db!.rpc("remove_meeting_office_invitation", { p_request: row.id, p_organization: p.organization_id }))}><X size={17} /></button>}
+                <span className={`meeting-invitation-status ${row.status === "pending" && p.status === "pending" ? "pending-approval" : p.status}`}>{row.status === "pending" && p.status === "pending" ? "After approval" : p.status === "pending" ? "Awaiting reply" : label(p.status)}</span>
+                {canManageInvitations && p.status === "pending" && <button type="button" className="meeting-remove" aria-label="Withdraw office invitation" disabled={busy} onClick={() => void run(db!.rpc("remove_meeting_office_invitation", { p_request: row.id, p_organization: p.organization_id }))}><X size={17} /></button>}
               </div>
             ))}</div> : <p className="meeting-empty meeting-invitation-empty">{officeIds.length && !canInvite ? "Your office has not been invited to this meeting." : "No offices have been invited yet."}</p>}
-            {canInvite && requestOpen && <form className="meeting-add-office" onSubmit={(e) => {
+            {canManageInvitations && requestOpen && <form className="meeting-add-office" onSubmit={(e) => {
               e.preventDefault();
               const organizationId = new FormData(e.currentTarget).get("office");
               if (organizationId) void run(db!.rpc("invite_meeting_office", { p_request: row.id, p_organization: organizationId }));
@@ -1614,7 +1820,7 @@ function Meeting({
         <section className="meeting-section meeting-barangay-invitations">
           <div className="meeting-section-heading">
             <span className="meeting-section-icon"><MapPin size={20} /></span>
-            <div><h3>{canInvite ? "Barangay invitations" : "Your barangay invitation"}</h3><p>{canInvite
+              <div><h3>{canInvite ? "Barangay invitations" : "Your barangay invitation"}</h3><p>{canInvite
               ? "Invite another barangay separately from participating offices. Invited staff can respond to the meeting invitation."
               : "Review and respond to the invitation sent to your barangay."}</p></div>
           </div>
@@ -1636,7 +1842,7 @@ function Meeting({
               <button type="button" className="secondary" disabled={busy} onClick={() => void run(db!.rpc("respond_meeting_barangay_invitation", { p_request: row.id, p_barangay: profileBarangayId, p_accept: false }))}>Decline</button>
             </div>
           </div>}
-          {canInvite && requestOpen && availableBarangays.length > 0 && <>
+          {canManageInvitations && requestOpen && availableBarangays.length > 0 && <>
             <button
               type="button"
               className="meeting-invite-barangay-trigger"
@@ -1658,7 +1864,7 @@ function Meeting({
               <button type="submit" disabled={busy || !barangayInvite}><Plus size={17} />{busy ? "Sending…" : "Send invitation"}</button>
             </form>}
           </>}
-          {canInvite && requestOpen && !availableBarangays.length && <p className="meeting-empty">Every other barangay has already been invited.</p>}
+          {canManageInvitations && requestOpen && !availableBarangays.length && <p className="meeting-empty">Every other barangay has already been invited.</p>}
         </section>
       )}
         </div>}
@@ -1690,7 +1896,7 @@ function Meeting({
                 </form></details>}
               </article>
             ))}</div> : <p className="meeting-empty">No agreed actions recorded yet.</p>}
-            {manage && <form className="meeting-form meeting-action-form" onSubmit={async (e) => {
+            {manage && !isMeetingCompleted && <form className="meeting-form meeting-action-form" onSubmit={async (e) => {
               e.preventDefault();
               const form = e.currentTarget;
               const f = new FormData(form);
@@ -1715,7 +1921,7 @@ function Meeting({
             <span className="meeting-section-icon"><CheckCircle2 size={20} /></span>
             <div><h3>{meeting ? "Meeting decision" : "Request decision"}</h3><p>{row.status === "pending" ? "Review the request and record your decision." : manageSchedule && meeting ? "Mark the meeting complete after the scheduled activities and follow-up are finished." : "Review the recorded request decision and any explanation."}</p></div>
           </div>
-          {row.status !== "pending" && <span className={`meeting-detail-status ${meeting?.completed ? "is-complete" : meeting ? "is-scheduled" : ""}`}>{meeting?.completed ? "Completed" : label(row.status)}</span>}
+          {row.status !== "pending" && <span className={meetingStatusClassName}>{meetingStatusLabel}</span>}
           {row.decision_reason && <p className="meeting-context-note">{row.decision_reason}</p>}
           {canInvite && row.status === "pending" && <form className="meeting-form" onSubmit={async (e) => {
             e.preventDefault();

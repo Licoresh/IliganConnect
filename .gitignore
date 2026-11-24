@@ -18,3 +18,7 @@ app/android/
 /.agents/
 skills-lock.json
 /supabase/.temp/
+
+# Local design-check screenshots and APK publish staging (may contain resident data / large binaries)
+.impeccable/
+app/.publish-check/

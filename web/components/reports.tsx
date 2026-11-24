@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, CircleX, ClipboardCheck, Clock3, ClipboardList, Copy, Download, FilePlus2, FileText, History, Image as ImageIcon, ListFilter, LockKeyhole, MapPin, Paperclip, RefreshCw, Save, Search, Send, SlidersHorizontal, Upload, UsersRound } from "lucide-react";
+import { ArrowUpRight, CalendarDays, Camera, Check, ChevronDown, ChevronRight, CircleCheck, CircleX, ClipboardCheck, Clock3, ClipboardList, Copy, Download, FilePlus2, FileText, History, Image as ImageIcon, ListFilter, LockKeyhole, MapPin, Paperclip, RefreshCw, Save, Send, SlidersHorizontal, Upload, UsersRound } from "lucide-react";
 import { Report, statuses, transitions, label, hasReportCoordinates, reportAssessmentSchema, reportScheduleDayReached, reportScheduleLabel, reportStatusDescription, reportStatusLabel, textInputError, type Status } from "@community/shared";
 import { db, result } from "../lib/client";
 import { openReportFromRow } from "../lib/report-row";
@@ -19,6 +19,7 @@ import { AssessmentFields, ReportAssessment } from "./report-assessment";
 import { ReportHandling, useReportResidents } from "./report-handling";
 import { useAccess } from "./access-context";
 import { WalkInReport } from "./walk-in-report";
+import { ReportThumb, useReportListPhotos } from "./report-photos";
 import { WalkInLocationMap, type WalkInPin } from "./walk-in-location-map";
 
 function manilaDateTimeInput(value: string | null = null) {
@@ -149,6 +150,45 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
     ),
   });
   const possibleCounts = new Map(duplicateSummary.data?.map(item => [item.report_id, item.possible_count]));
+  const listPhotos = useReportListPhotos(q.isSuccess ? duplicateIds : []);
+  // Queue tabs overflow on narrow screens: touch swipes natively; mouse users get wheel and drag scrolling.
+  const queueTabs = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = queueTabs.current;
+    if (!row) return;
+    let startX = 0, startScroll = 0, dragging = false, moved = false;
+    const wheel = (event: WheelEvent) => {
+      if (row.scrollWidth <= row.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      const max = row.scrollWidth - row.clientWidth;
+      if ((event.deltaY < 0 && row.scrollLeft <= 0) || (event.deltaY > 0 && row.scrollLeft >= max - 1)) return;
+      event.preventDefault();
+      row.scrollLeft += event.deltaY;
+    };
+    const down = (event: PointerEvent) => {
+      if (event.pointerType !== "mouse" || row.scrollWidth <= row.clientWidth) return;
+      dragging = true; moved = false; startX = event.clientX; startScroll = row.scrollLeft;
+    };
+    const move = (event: PointerEvent) => {
+      if (!dragging) return;
+      const distance = event.clientX - startX;
+      if (Math.abs(distance) > 5) moved = true;
+      if (moved) row.scrollLeft = startScroll - distance;
+    };
+    const up = () => { dragging = false; };
+    const click = (event: MouseEvent) => { if (moved) { event.preventDefault(); event.stopPropagation(); moved = false; } };
+    row.addEventListener("wheel", wheel, { passive: false });
+    row.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    row.addEventListener("click", click, true);
+    return () => {
+      row.removeEventListener("wheel", wheel);
+      row.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      row.removeEventListener("click", click, true);
+    };
+  }, []);
   useEffect(() => {
     if (q.data) setPage((current) => Math.min(current, Math.max(0, Math.ceil(q.data.count / 20) - 1)));
   }, [q.data]);
@@ -183,7 +223,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
             {reportQueues.map(([id, name]) => <option key={id} value={id}>{name}{queueCounts.data ? ` (${queueCounts.data[id]})` : ""}</option>)}
           </select>
         </div>
-        <div className="queue-tabs" aria-label="Report queues">
+        <div className="queue-tabs" aria-label="Report queues" ref={queueTabs}>
           {reportQueues.map(([id, name, Icon]) => (
             <button key={id} aria-pressed={queue === id && (officeView || !status)} className={queue === id && (officeView || !status) ? "active" : ""}
               onClick={() => { setQueue(id); if (id === "active") setActiveCaseStage("ongoing"); setStatus(""); setPage(0); }}>
@@ -204,7 +244,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
           </div>
         </div>}
         <div className="report-search-row">
-          <label className="search-field"><Search size={18} aria-hidden="true" /><span className="sr-only">Search report title or full ID</span>
+          <label className="search-field staff-search-field"><span className="sr-only">Search report title or full ID</span>
             <input placeholder="Search report title or paste a full report ID" value={search} maxLength={200}
               onChange={(e) => { setSearch(e.target.value); setPage(0); }} /></label>
           <label className="sort-field"><ListFilter size={16} aria-hidden="true" /><span className="sr-only">Sort reports</span>
@@ -248,7 +288,27 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
         {!invalidDates && q.isSuccess && duplicateIds.length > 0 && (duplicateSummary.isPending || duplicateSummary.error) && <p className="duplicate-queue-status" role="status">{duplicateSummary.error ? "Duplicate indicators are unavailable. Open a report to retry its individual check." : "Checking this page for possible duplicates…"}</p>}
         {invalidDates ? <p className="error" role="alert">The end date must be on or after the start date.</p> : q.isPending ? (
           <div className="loading-stack" role="status" aria-label="Loading reports">{[1, 2, 3, 4].map((i) => <div className="skeleton" key={i} />)}</div>
-        ) : q.error ? <div className="error" role="alert"><p>{q.error.message}</p><button className="secondary" onClick={() => void q.refetch()}>Try again</button></div> : q.data.rows.length ? (
+        ) : q.error ? <div className="error" role="alert"><p>{q.error.message}</p><button className="secondary" onClick={() => void q.refetch()}>Try again</button></div> : q.data.rows.length ? (<>
+          <ul className="report-card-list" aria-label={`Authorized community reports, page ${page + 1}`}>{q.data.rows.map((r) => {
+            const category = refs.categories.find((c) => c.id === r.category_id)?.name || "Other";
+            const photoCount = listPhotos.data?.counts.get(r.id) ?? 0;
+            const barangayName = refs.barangays.find((b) => b.id === r.barangay_id)?.name || "Iligan City";
+            const duplicates = duplicateSummary.error ? 0 : possibleCounts.get(r.id) ?? 0;
+            return <li key={r.id}><button type="button" className="report-card" onClick={() => onOpenReport(r.id, queue)} aria-label={`Open report: ${r.title}`}>
+              <ReportThumb className="report-card-thumb" url={listPhotos.data?.urls.get(r.id)} categoryName={category}>
+                {hasReportCoordinates(r) && <span className="report-card-pin" title="Has a map pin"><MapPin size={12} aria-hidden="true" /></span>}
+              </ReportThumb>
+              <span className="report-card-body">
+                <span className="report-card-chips"><ReportCategoryLabel name={category} compact /><span className={`badge ${r.status}`}>{reportStatusLabel(r.status)}</span></span>
+                <strong className="report-card-title">{r.title}</strong>
+                <span className="report-card-meta">
+                  <span><CalendarDays size={13} aria-hidden="true" />{new Date(r.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" })} · {barangayName}{reportLocalAddress(r) ? ` · ${reportLocalAddress(r)}` : ""}</span>
+                  {photoCount > 0 && <span className="report-card-photos"><ImageIcon size={13} aria-hidden="true" />{photoCount} {photoCount === 1 ? "photo" : "photos"}</span>}
+                  {duplicates > 0 && <span className="report-card-duplicates"><Copy size={12} aria-hidden="true" />{duplicates} possible {duplicates === 1 ? "duplicate" : "duplicates"}</span>}
+                </span>
+              </span>
+            </button></li>;
+          })}</ul>
           <div className="table-scroll">
             <div className="reports-table-head" aria-hidden="true"><span>Report</span><span>Location &amp; category</span><span>Resident / reporter</span><span>Status</span><span>Assigned office</span><span>Received</span></div>
             <table className="reports-table">
@@ -260,9 +320,11 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
               const person = residents.data?.find((item) => item.report_id === r.id);
               const walkIn = r.submission_source === "walk_in";
               return <tr key={r.id} className="report-row-clickable" onClick={(event) => openReportFromRow(event, () => onOpenReport(r.id, queue))}>
-              <th scope="row"><button className="report-title" aria-label={`Open report: ${r.title}`} onClick={() => onOpenReport(r.id, queue)}><span>{r.title}</span><ArrowUpRight size={15} aria-hidden="true" /></button>
+              <th scope="row"><div className="report-table-cell">
+                <ReportThumb className="report-table-thumb" url={listPhotos.data?.urls.get(r.id)} categoryName={category} />
+                <div className="report-table-cell-copy"><button className="report-title" aria-label={`Open report: ${r.title}`} onClick={() => onOpenReport(r.id, queue)}><span>{r.title}</span><ArrowUpRight size={15} aria-hidden="true" /></button>
                 <small className="record-meta">{r.id.slice(0, 8).toUpperCase()}{r.severity && ` · Severity ${r.severity}/5`}{r.urgency && ` · Urgency ${r.urgency}/5`}</small>
-                {!duplicateSummary.error && (possibleCounts.get(r.id) ?? 0) > 0 && <button type="button" className="duplicate-queue-indicator" aria-label={`Review ${possibleCounts.get(r.id)} possible duplicates for ${r.title}`} onClick={() => onOpenReport(r.id, queue)}><Copy size={13} aria-hidden="true" /><span>Possible duplicates · {possibleCounts.get(r.id)}</span></button>}</th>
+                {!duplicateSummary.error && (possibleCounts.get(r.id) ?? 0) > 0 && <button type="button" className="duplicate-queue-indicator" aria-label={`Review ${possibleCounts.get(r.id)} possible duplicates for ${r.title}`} onClick={() => onOpenReport(r.id, queue)}><Copy size={13} aria-hidden="true" /><span>Possible duplicates · {possibleCounts.get(r.id)}</span></button>}</div></div></th>
               <td data-label="Location"><span className="report-location"><MapPin size={13} aria-hidden="true" /><strong>{refs.barangays.find((b) => b.id === r.barangay_id)?.name}</strong></span>
                 {reportLocalAddress(r) && <small className="record-meta">{reportLocalAddress(r)}</small>}
                 <ReportCategoryLabel name={category} compact className="report-category" /></td>
@@ -272,7 +334,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
             </tr>;
             })}</tbody>
           </table></div>
-        ) : <div className="empty-state"><ClipboardList size={32} /><h3>{queue === "active" && !status ? `No ${activeCaseStage} cases` : "No reports found"}</h3><p>{queue === "active" && !status && !(search || category || barangay || office || since || until)
+        </>) : <div className="empty-state"><ClipboardList size={32} /><h3>{queue === "active" && !status ? `No ${activeCaseStage} cases` : "No reports found"}</h3><p>{queue === "active" && !status && !(search || category || barangay || office || since || until)
           ? activeCaseStage === "ongoing" ? "Scheduled and in-progress cases in your authorized scope will appear here." : "Cases assigned to offices in your authorized scope will appear here."
           : filtered ? "Try a broader search or clear your filters." : "New reports in your jurisdiction will appear here."}</p>{filtered && <button className="secondary" onClick={clear}>Clear all filters</button>}</div>}
         <div className="pagination">
@@ -282,7 +344,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
         </div>
       </section>
       <p className="fine">Dates use Philippine time. Exports contain the current page only and exclude reporter identity, private descriptions and precise coordinates.</p>
-      {selected && <ReportDetail key={selected.id} report={selected} refs={refs} close={onCloseReport} onOpenLinked={(id) => onOpenReport(id, queue)} />}
+      {selected && <ReportDetail key={selected.id} report={selected} refs={refs} close={onCloseReport} onOpenLinked={(id) => onOpenReport(id, queue)} startOnProgress={!status && (queue === "active" || queue === "route" || (officeView && queue === "ready"))} />}
       {walkInOpen && access.profile.role === "barangay" && access.profile.barangay_id && <WalkInReport refs={refs} barangayId={access.profile.barangay_id} onClose={() => setWalkInOpen(false)} onCreated={(id) => { setWalkInOpen(false); onOpenReport(id, "review"); }} />}
     </>
   );
@@ -293,12 +355,15 @@ export function ReportDetail({
   close,
   onOpenLinked,
   readOnly = false,
+  startOnProgress = false,
 }: {
   report: Report;
   refs: References;
   close: () => void;
   onOpenLinked?: (id: string) => void;
   readOnly?: boolean;
+  /** Opened from Ready for action / Active cases: land on Status & progress when that tab is usable. */
+  startOnProgress?: boolean;
 }) {
   const qc = useQueryClient();
   const access = useAccess();
@@ -309,16 +374,20 @@ export function ReportDetail({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   type WorkspaceStep = "review" | "action" | "details" | "notes" | "timeline";
-  const [activeStep, setActiveStep] = useState<WorkspaceStep>(readOnly ? "details" : reviewPending ? "review" : "action");
+  const startStep: WorkspaceStep = startOnProgress && !readOnly && !reviewPending ? "action" : "details";
+  const [activeStep, setActiveStep] = useState<WorkspaceStep>(startStep);
+  const workspaceContent = useRef<HTMLDivElement>(null);
+  // Every report and every tab starts at the top of its section.
+  useEffect(() => { workspaceContent.current?.scrollTo({ top: 0 }); }, [activeStep, r.id]);
   const [actionMode, setActionMode] = useState<"status" | "progress">("status");
   // "Case timeline" is its own tab only when it cannot sit beside the step content (under 1280px).
   useEffect(() => {
     const wide = window.matchMedia("(min-width: 1280px)");
-    const leaveTimelineTab = () => { if (wide.matches) setActiveStep(step => step === "timeline" ? (readOnly ? "details" : reviewPending ? "review" : "action") : step); };
+    const leaveTimelineTab = () => { if (wide.matches) setActiveStep(step => step === "timeline" ? startStep : step); };
     leaveTimelineTab();
     wide.addEventListener("change", leaveTimelineTab);
     return () => wide.removeEventListener("change", leaveTimelineTab);
-  }, [readOnly, reviewPending]);
+  }, [startStep]);
   const [walkInPin, setWalkInPin] = useState<WalkInPin>(() => hasReportCoordinates(r) ? { latitude: r.latitude, longitude: r.longitude } : null);
   const [editingWalkInPin, setEditingWalkInPin] = useState(false);
   const [scheduledAt, setScheduledAt] = useState(() => r.status === "scheduled" ? "" : r.scheduled_at ? manilaDateTimeInput(r.scheduled_at) : defaultScheduleDateTimeInput());
@@ -666,7 +735,7 @@ export function ReportDetail({
 
   return (
     <Dialog title={r.title} description={category.label} descriptionMeta={<span className={`badge ${r.status} report-workspace-header-status`}>{r.status === "duplicate" ? "Linked duplicate" : reportStatusLabel(r.status)}</span>} icon={<CategoryIcon size={23} />} className="report-workspace-dialog" close={close}>
-      <div className="report-workspace-content">
+      <div className="report-workspace-content" ref={workspaceContent}>
         <section className="report-workspace-summary is-description" aria-label="Resident's description">
           <span className="report-workspace-summary-label">Resident&apos;s description</span>
           <p>{r.description}</p>
@@ -769,10 +838,17 @@ export function ReportDetail({
                     <img src={photo.url} alt={"Photo " + (index + 1) + " for " + r.title} loading="lazy" />
                   </a> : <div className="report-evidence-unavailable" key={photo.path}><ImageIcon size={22} /><span>Photo preview unavailable</span></div>)}
                   {q.data && q.data.photos.length === 0 && <div className="report-evidence-empty"><ImageIcon size={21} /><span>No supporting photos yet</span><small>Add a photo if it helps document this report.</small></div>}
-                  {canWrite && <label className={"report-evidence-add" + (busy ? " disabled" : "")}>
-                    <Upload size={24} /><strong>{busy ? "Uploading…" : "Add more photos"}</strong><small>JPG, PNG, or WebP · up to 5 MB each</small>
-                    <input type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Add supporting evidence photos" disabled={busy} onChange={event => { const files = Array.from(event.currentTarget.files || []); event.currentTarget.value = ""; void uploadEvidence(files); }} />
-                  </label>}
+                  {canWrite && <div className="report-evidence-actions">
+                    {access.profile.role === "barangay" && <label className={"report-evidence-add" + (busy ? " disabled" : "")}>
+                      <Camera size={22} aria-hidden="true" /><strong>{busy ? "Uploading…" : "Take a photo"}</strong><small>Use the camera</small>
+                      <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" aria-label="Capture a supporting report photo" disabled={busy} onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadEvidence([file]); }} />
+                    </label>}
+                    <label className={"report-evidence-add" + (busy ? " disabled" : "")}>
+                      <Upload size={22} aria-hidden="true" /><strong>{busy ? "Uploading…" : "Upload photos"}</strong><small>Choose from your device</small>
+                      <input type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Upload supporting report photos" disabled={busy} onChange={event => { const files = Array.from(event.currentTarget.files || []); event.currentTarget.value = ""; void uploadEvidence(files); }} />
+                    </label>
+                    <small className="report-evidence-limits">JPG, PNG, or WebP · up to 5 MB each</small>
+                  </div>}
                 </div>}
               </section>
               <section className="report-workspace-section report-community-context">

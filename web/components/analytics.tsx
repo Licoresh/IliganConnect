@@ -13,7 +13,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import dynamic from "next/dynamic";
-import { Activity, ArrowLeft, ArrowUpRight, BadgeCheck, CalendarDays, ChartNoAxesCombined, CheckCircle2, CircleAlert, Clock3, Download, FileText, MapPin, MapPinned, Printer, Search, UsersRound, type LucideIcon } from "lucide-react";
+import { Activity, ArrowLeft, ArrowUpRight, BadgeCheck, CalendarDays, ChartNoAxesCombined, CheckCircle2, CircleAlert, Clock3, Download, FileText, MapPin, MapPinned, Printer, UsersRound, type LucideIcon } from "lucide-react";
 import { downloadCsv, philippineDateBoundary } from "../lib/export";
 import { db, result } from "../lib/client";
 import { openReportFromRow } from "../lib/report-row";
@@ -254,7 +254,7 @@ export function Analytics({
       <section className="panel analytics-distribution section-gap">
         <div className="analytics-section-heading">
           <div className="overview-panel-title"><span className="overview-section-icon teal"><MapPinned size={18} aria-hidden="true" /></span><div><h2>Geographic distribution</h2><p className="overview-panel-subtitle">Compare reports, review barangay priorities, and open local details.</p></div></div>
-          <label className="analytics-search"><Search size={16} aria-hidden="true" /><span className="sr-only">Search barangay</span><input maxLength={200} type="search" placeholder="Search barangay…" value={barangaySearch} onChange={(event) => setBarangaySearch(event.target.value)} /></label>
+          <label className="analytics-search"><span className="sr-only">Search barangay</span><input maxLength={200} type="search" placeholder="Search barangay…" value={barangaySearch} onChange={(event) => setBarangaySearch(event.target.value)} /></label>
         </div>
         <div className="table-scroll"><table className="analytics-table">
           <caption className="sr-only">Report counts{showPriority ? " and priority scores" : ""} by barangay</caption>

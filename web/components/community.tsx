@@ -25,7 +25,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Search,
   Send,
   ShieldCheck,
   UserRound,
@@ -545,7 +544,6 @@ export function Community({
           <div className="consultations-filters">
             <label className="consultations-search">
               <span className="sr-only">Search consultations</span>
-              <Search size={17} aria-hidden="true" />
               <input maxLength={200}
                 placeholder="Search consultations..."
                 value={search}
@@ -643,7 +641,6 @@ export function Community({
           <div className="announcement-filters">
             <label className="announcement-search">
               <span className="sr-only">Search announcements</span>
-              <Search size={17} aria-hidden="true" />
               <input maxLength={200} placeholder="Search announcements..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
             </label>
             <label>
@@ -959,7 +956,7 @@ export function Community({
                       </div>
                     ) : (
                       <>
-                        <div className="consultation-edit-related-search"><Search size={17} aria-hidden="true" /><input maxLength={160} placeholder="Search report title or paste report ID" value={relatedReportSearch} onFocus={() => setShowRelatedReportOptions(true)} onChange={(event) => { setRelatedReport(""); setRelatedReportSearch(event.target.value); setShowRelatedReportOptions(true); }} aria-label={profile.role === "office" ? "Search reports in your assigned categories and barangays" : profile.role === "barangay" ? "Search reports in your assigned barangay" : "Search reports in the selected barangays"} aria-expanded={showRelatedReportOptions} aria-controls="consultation-related-report-options" autoComplete="off" />{relatedReportSearch && <button type="button" className="consultation-edit-clear" aria-label="Clear report search" onClick={() => { setRelatedReportSearch(""); setShowRelatedReportOptions(true); }}><X size={17} /></button>}</div>
+                        <div className="consultation-edit-related-search"><input maxLength={160} placeholder="Search report title or paste report ID" value={relatedReportSearch} onFocus={() => setShowRelatedReportOptions(true)} onChange={(event) => { setRelatedReport(""); setRelatedReportSearch(event.target.value); setShowRelatedReportOptions(true); }} aria-label={profile.role === "office" ? "Search reports in your assigned categories and barangays" : profile.role === "barangay" ? "Search reports in your assigned barangay" : "Search reports in the selected barangays"} aria-expanded={showRelatedReportOptions} aria-controls="consultation-related-report-options" autoComplete="off" />{relatedReportSearch && <button type="button" className="consultation-edit-clear" aria-label="Clear report search" onClick={() => { setRelatedReportSearch(""); setShowRelatedReportOptions(true); }}><X size={17} /></button>}</div>
                         {showRelatedReportOptions && <div className="consultation-related-report-options" id="consultation-related-report-options" role="listbox" aria-label="Available reports">
                           {!draftConsultBarangays.length ? <p>Choose a barangay first to find related reports.</p>
                             : relatedReports.isPending ? <p role="status">Loading reports…</p>
@@ -1232,7 +1229,6 @@ function MeetingRequestsView({
       <div className="meeting-filterbar" aria-label="Filter meeting requests">
         <label className="meeting-search">
           <span className="sr-only">Search meeting requests</span>
-          <Search size={17} aria-hidden="true" />
           <input maxLength={200} placeholder="Search meeting requests, offices, or keywords…" value={search} onChange={(event) => setSearch(event.target.value)} />
         </label>
         <label><span>Barangay</span><select value={barangay} onChange={(event) => setBarangay(event.target.value)}><option value="">All visible</option>{refs.barangays.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -1273,13 +1269,12 @@ function MeetingRequestsView({
                 return (
                   <article className="meeting-card report-row-clickable" key={row.id} onClick={(event) => { if (!(event.target as HTMLElement).closest("a, button")) onOpen(row.id); }}>
                     <div className="meeting-card-main">
-                      <div className="meeting-card-top"><span className={`meeting-status ${status.key}`}>{statusIcon(status.key)}{status.label}</span><time dateTime={row.created_at}>{formatDate(row.created_at)}</time></div>
+                      <div className="meeting-card-top"><span className="meeting-card-badges"><span className={`meeting-status ${status.key}`}>{statusIcon(status.key)}{status.label}</span>{pendingOfficeInvitation && <span className="meeting-invitation-status pending meeting-card-reply"><strong>Your office</strong><span>Reply needed</span></span>}</span><time dateTime={row.created_at}>{formatDate(row.created_at)}</time></div>
                       <h3>{row.title}</h3>
                       <p className="meeting-card-body">{row.body}</p>
                       <div className="meeting-card-meta"><span><MapPin size={15} />{barangayName}</span><span><CalendarDays size={15} />{schedule ? formatMeetingTimeRange(schedule.starts_at, schedule.ends_at) : `Requested ${formatDate(row.created_at)}`}</span></div>
                     </div>
                     <div className="meeting-card-details">
-                      {pendingOfficeInvitation && <span className="meeting-invitation-status pending meeting-card-reply"><strong>Your office</strong><span>Reply needed</span></span>}
                       <button className="meeting-review" onClick={() => onOpen(row.id)}><FileText size={16} /> {isOffice ? pendingOfficeInvitation ? "Respond to invitation" : "View meeting" : "Review & follow up"} <ChevronRight size={17} /></button>
                     </div>
                   </article>

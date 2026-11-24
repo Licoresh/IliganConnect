@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, RefreshCw, Search } from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
 import { Report, label, reportStatusLabel } from "@community/shared";
 import { db, result } from "../lib/client";
 import { useDebouncedValue } from "../lib/use-debounced-value";
@@ -52,7 +52,7 @@ export function OfficeCategoryReports({ refs }: { refs: References }) {
         <button className="secondary" type="button" disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw size={15} aria-hidden="true" />Refresh</button>
       </div>
       <div className="office-category-filters">
-        <label className="search-field"><Search size={17} aria-hidden="true" /><span className="sr-only">Search report titles</span><input value={search} maxLength={160} placeholder="Search report titles" onChange={(event) => { setSearch(event.target.value); setPage(0); }} /></label>
+        <label className="search-field staff-search-field"><span className="sr-only">Search report titles</span><input value={search} maxLength={160} placeholder="Search report titles" onChange={(event) => { setSearch(event.target.value); setPage(0); }} /></label>
         <label>Category<select value={category} onChange={(event) => { setCategory(event.target.value); setPage(0); }}><option value="">All permitted categories</option>{allowedCategories.map((item) => <option key={item.id} value={item.id}>{reportCategoryPresentation(item.name).label}</option>)}</select></label>
         <label>Barangay<select value={barangay} onChange={(event) => { setBarangay(event.target.value); setPage(0); }}><option value="">All permitted barangays</option>{allowedBarangays.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label>Status<select value={status} onChange={(event) => { setStatus(event.target.value); setPage(0); }}><option value="">All reviewed statuses</option>{barangayHandledStatuses.map((item) => <option key={item} value={item}>{reportStatusLabel(item)}</option>)}</select></label>

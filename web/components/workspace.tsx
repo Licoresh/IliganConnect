@@ -5,10 +5,8 @@ import { openReportFromRow } from "../lib/report-row";
 import Image from "next/image";
 import appConfig from "../../app/app.json";
 import {
-  Activity,
   Search,
   RefreshCw,
-  ArrowRight,
   ShieldCheck,
   ArrowUpRight,
   Building2,
@@ -34,16 +32,15 @@ import {
   CircleCheck,
   TriangleAlert,
   CalendarDays,
-  MessageCircle,
   Eye,
   EyeOff,
   MoreHorizontal,
 } from "lucide-react";
 import { db, result, configured } from "../lib/client";
-import { Profile, Report, Lookup, label, hasReportCoordinates } from "@community/shared";
+import { Profile, Report, Lookup, label } from "@community/shared";
 import dynamic from "next/dynamic";
 import { Community } from "./community";
-import { Analytics, Charts, AnalyticsData } from "./analytics";
+import { Analytics, AnalyticsData } from "./analytics";
 import { Administration } from "./administration";
 import { BarangayResidents } from "./residents-management";
 import { SettingsPanel } from "./settings";
@@ -53,15 +50,14 @@ import { AccessContext, useAccess } from "./access-context";
 import {
   StaffContext,
   roleNames,
-  canPrioritize,
   canOpenSection,
   permissionFingerprint,
 } from "../lib/access";
 import { NotificationCenter } from "./notification-center";
 import { readWorkspaceLocation, shouldResetWorkspace, workspaceLocationUrl, type WorkspaceLocation } from "../lib/workspace-location";
-import { barangayAreaKm2, barangayMapKey, iliganBarangayBoundaries } from "../../app/lib/barangay-map";
-import { pointInPolygon } from "../lib/map-geometry";
 import { ReportCategoryLabel } from "./report-category";
+import { ReportThumb, useReportListPhotos } from "./report-photos";
+import { reportStatusLabel } from "@community/shared";
 const IssueMap = dynamic(() => import("./issue-map"), {
   ssr: false,
   loading: () => <p className="empty">Loading geographic workspace…</p>,
@@ -861,18 +857,10 @@ function Overview({
     queryKey: ["overview"],
     refetchInterval: 60000,
     queryFn: async () => {
-      const densityQuery = access.profile.role === "barangay" && access.profile.barangay_id
-        ? result<Pick<Report, "latitude" | "longitude" | "status" | "verified_at">[]>(
-            db!.from("reports")
-              .select("latitude,longitude,status,verified_at")
-              .eq("barangay_id", access.profile.barangay_id)
-              .order("created_at", { ascending: false }),
-          ).catch(() => null)
-        : Promise.resolve(null);
-      const [analytics, recent, taskResult, meetings, announcements, densityReports] = await Promise.all([
+      const [analytics, recent, taskResult, meetings, announcements] = await Promise.all([
         result<AnalyticsData>(db!.rpc("geographic_analytics")),
         result<Report[]>(
-          db!.from("reports").select("*").order("created_at", { ascending: false }).limit(10),
+          db!.from("reports").select("*").order("created_at", { ascending: false }).limit(6),
         ),
         (async () => {
           const { data, count, error } = await db!.from("reports").select("*", { count: "exact" })
@@ -886,7 +874,6 @@ function Overview({
         result<{ id: string; title: string; kind: string; publish_at: string; barangay_id: string | null; organization_id: string | null }[]>(
           db!.from("announcements").select("id,title,kind,publish_at,barangay_id,organization_id").eq("status", "published").lte("publish_at", new Date().toISOString()).order("publish_at", { ascending: false }).limit(5),
         ),
-        densityQuery,
       ]);
       const tasks = taskResult.rows;
       const history = tasks.length
@@ -894,19 +881,21 @@ function Overview({
             db!.from("report_status_history").select("report_id,created_at").in("report_id", tasks.map((report) => report.id)).eq("new_status", "assigned").order("created_at", { ascending: false }),
           )
         : [];
+      const schedules = meetings.length
+        ? await result<{ request_id: string; starts_at: string }[]>(db!.from("meetings").select("request_id,starts_at").in("request_id", meetings.map((meeting) => meeting.id))).catch(() => [])
+        : [];
+      const meetingStarts = Object.fromEntries(schedules.map((item) => [item.request_id, item.starts_at]));
       const assignedAt: Record<string, string> = {};
       for (const event of history) assignedAt[event.report_id] ??= event.created_at;
-      return { analytics, recent, tasks, taskCount: taskResult.count, meetings, announcements, assignedAt, densityReports };
+      return { analytics, recent, tasks, taskCount: taskResult.count, meetings, announcements, assignedAt, meetingStarts };
     },
   });
 
+  const overviewPhotos = useReportListPhotos(q.data ? [...new Set([...q.data.recent, ...q.data.tasks].map((report) => report.id))] : []);
   if (q.isPending) return (
     <div className="overview-loading" role="status" aria-label="Loading your dashboard">
       <div className="metrics overview-metrics">{[1, 2, 3, 4, 5, 6].map((n) => <div key={n} className="skeleton metric" />)}</div>
-      <div className="overview-geography-skeleton"><div className="skeleton overview-map-skeleton" /><div className="skeleton overview-steps-skeleton" /></div>
       <div className="overview-lower-skeleton"><div className="skeleton overview-list-skeleton" /><div className="skeleton overview-list-skeleton" /></div>
-      <div className="skeleton overview-wide-skeleton" />
-      <div className="overview-lower-skeleton"><div className="skeleton overview-chart-skeleton" /><div className="skeleton overview-chart-skeleton" /></div>
       <div className="overview-lower-skeleton"><div className="skeleton overview-list-skeleton" /><div className="skeleton overview-list-skeleton" /></div>
     </div>
   );
@@ -919,20 +908,6 @@ function Overview({
 
   const data = q.data;
   const counts = data.analytics.counts;
-  const barangayName = refs.barangays.find((b) => b.id === access.profile.barangay_id)?.name;
-  const barangayBoundary = access.profile.role === "barangay" && barangayName
-    ? iliganBarangayBoundaries.find((feature) => barangayMapKey(feature.properties.adm4_en) === barangayMapKey(barangayName)) ?? null
-    : null;
-  const barangayArea = barangayBoundary ? barangayAreaKm2(barangayBoundary) : 0;
-  const activeDensityReports = data.densityReports?.filter((report) => report.status !== "rejected" && report.status !== "duplicate") ?? [];
-  const coordinateDensityReports = activeDensityReports.filter(hasReportCoordinates);
-  const densityWithoutPins = activeDensityReports.length - coordinateDensityReports.length;
-  const mappedDensityReports = barangayBoundary
-    ? coordinateDensityReports.filter((report) => pointInPolygon([report.longitude, report.latitude], barangayBoundary.geometry))
-    : [];
-  const densityOutsideCount = coordinateDensityReports.length - mappedDensityReports.length;
-  const unresolvedDensityCount = mappedDensityReports.filter((report) => report.verified_at && !["resolved", "rejected", "duplicate"].includes(report.status)).length;
-  const reportDensity = barangayArea > 0 ? activeDensityReports.length / barangayArea : null;
   const formatDate = (value: string, options: Intl.DateTimeFormatOptions = { dateStyle: "medium" }) =>
     new Intl.DateTimeFormat("en-PH", { ...options, timeZone: "Asia/Manila" }).format(new Date(value));
   const metricCards = [
@@ -943,10 +918,6 @@ function Overview({
     { key: "resolved", title: "Resolved", note: "Marked as resolved", Icon: CircleCheck, tone: "green" },
     { key: "unresolved", title: "Unresolved verified", note: "Verified and not yet resolved", Icon: TriangleAlert, tone: "red" },
   ] as const;
-  const topBarangays = [...data.analytics.barangays].filter((item) => item.unresolved > 0)
-    .sort((a, b) => b.unresolved - a.unresolved).slice(0, 10);
-  const attentionMax = Math.max(1, ...topBarangays.map((item) => item.unresolved));
-
   return (
     <div className="overview">
       <div className="dashboard-brief overview-scope">
@@ -966,40 +937,22 @@ function Overview({
         ))}
       </div>
 
-      <div className="dashboard-geography overview-geography">
-        <section className="panel dashboard-map overview-map-panel">
-          <div className="panel-heading overview-panel-heading">
-            <div><p className="eyebrow">YOUR GEOGRAPHIC WORKSPACE</p><h2>Issue mapping &amp; heatmap</h2><p className="overview-panel-subtitle">Explore reported concerns and identify patterns in your authorized area.</p></div>
-            <button className="secondary" onClick={() => onNavigate("Issue Mapping & Heatmap")}>Open full workspace <ArrowUpRight size={16} /></button>
-          </div>
-          <IssueMap refs={refs} compact overview initialMode="heat" initialShowBoundary initialBarangay={access.profile.role === "barangay" ? access.profile.barangay_id || "" : ""} />
-        </section>
-
-        <aside className="panel attention-panel overview-steps">
-          <div className="overview-steps-heading"><span className="overview-section-icon mint"><ChartNoAxesCombined size={17} /></span><div><p className="eyebrow">NEXT STEPS</p><h2>Where to focus</h2></div></div><p className="muted">A practical starting point for your team.</p>
-          <button className="overview-step" onClick={() => onNavigate("Issue reports", "", "review")}>
-            <span className="overview-step-icon amber"><Clock3 size={18} /></span><span><strong>Review incoming reports</strong><small>Check new submissions and confirm the concern</small></span><b>{counts.review ?? 0}</b><ArrowRight size={15} />
-          </button>
-          <button className="overview-step" onClick={() => onNavigate("Issue reports", "", "active")}>
-            <span className="overview-step-icon blue"><ClipboardList size={18} /></span><span><strong>Follow up assigned work</strong><small>Move open cases toward resolution</small></span><ArrowRight size={15} />
-          </button>
-          <button className="overview-step" onClick={() => onNavigate("Geographic analytics")}>
-            <span className="overview-step-icon teal"><Activity size={18} /></span><span><strong>Assess recurring concerns</strong><small>Candidates for human review</small></span><b>{counts.recurring ?? 0}</b><ArrowRight size={15} />
-          </button>
-          <button className="overview-step" onClick={() => onNavigate("Consultations")}>
-            <span className="overview-step-icon mint"><MessageCircle size={18} /></span><span><strong>Plan community engagement</strong><small>Coordinate consultations and meetings</small></span><ArrowRight size={15} />
-          </button>
-          <button className="overview-step" onClick={() => onNavigate("Geographic analytics")}>
-            <span className="overview-step-icon violet"><MapPinned size={18} /></span><span><strong>{canPrioritize(access) ? "Review barangay priorities" : "Review geographic patterns"}</strong><small>{canPrioritize(access) ? "Compare report counts and advisory scores" : "Explore patterns in your permitted area"}</small></span><ArrowRight size={15} />
-          </button>
-          <div className="assessment-note"><Activity size={17} /><p>Report frequency reflects participation, not confirmed problem prevalence. Human review informs every priority.</p></div>
-        </aside>
-      </div>
-
       <div className="two-col overview-reporting">
         <section className="panel overview-panel">
           <div className="panel-heading overview-panel-heading"><div className="overview-panel-title"><span className="overview-section-icon blue"><FileText size={17} /></span><div><h2>Recent reports</h2><p className="overview-panel-subtitle">Latest submissions visible in your scope</p></div></div><button className="text-button" onClick={() => onNavigate("Issue reports")}>View all reports <ArrowUpRight size={15} /></button></div>
-          {data.recent.length ? <div className="table-scroll overview-table-wrap"><table className="overview-table overview-recent-table">
+          {data.recent.length ? <><ul className="report-card-list overview-report-cards" aria-label="Most recent reports in your authorized scope">{data.recent.map((report) => {
+            const category = refs.categories.find((item) => item.id === report.category_id)?.name || "Other";
+            const barangay = refs.barangays.find((item) => item.id === report.barangay_id)?.name || "Iligan City";
+            const photoCount = overviewPhotos.data?.counts.get(report.id) ?? 0;
+            return <li key={report.id}><button type="button" className="report-card" onClick={() => onNavigate("Issue reports", report.id)} aria-label={`Open report: ${report.title}`}>
+              <ReportThumb className="report-card-thumb" url={overviewPhotos.data?.urls.get(report.id)} categoryName={category} />
+              <span className="report-card-body">
+                <span className="report-card-chips"><ReportCategoryLabel name={category} compact /><span className={`badge ${report.status}`}>{reportStatusLabel(report.status)}</span></span>
+                <strong className="report-card-title">{report.title}</strong>
+                <span className="report-card-meta"><span><CalendarDays size={13} aria-hidden="true" />{formatDate(report.created_at)} · {barangay}</span>{photoCount > 0 && <span className="report-card-photos">{photoCount} {photoCount === 1 ? "photo" : "photos"}</span>}</span>
+              </span>
+            </button></li>;
+          })}</ul><div className="table-scroll overview-table-wrap"><table className="overview-table overview-recent-table">
             <caption className="sr-only">Most recent reports in your authorized scope</caption>
             <thead><tr><th scope="col">#</th><th scope="col">Title</th><th scope="col">Category</th><th scope="col">Date</th><th scope="col">Status</th></tr></thead>
             <tbody>{data.recent.map((report) => {
@@ -1007,49 +960,16 @@ function Overview({
               const barangay = refs.barangays.find((item) => item.id === report.barangay_id)?.name || "Iligan City";
               return <tr key={report.id} className="report-row-clickable" onClick={(event) => openReportFromRow(event, () => onNavigate("Issue reports", report.id))}>
                 <td data-label="#"><span className="overview-report-id">#{report.id.slice(0, 4).toUpperCase()}</span></td>
-                <td data-label="Title"><div className="overview-report-title-cell"><span className="overview-report-file"><FileText size={15} aria-hidden="true" /></span><span className="overview-report-copy"><button className="overview-report-link" title={report.title} onClick={() => onNavigate("Issue reports", report.id)}>{report.title}</button><small>{barangay} · {formatDate(report.created_at)}</small></span></div></td>
+                <td data-label="Title"><div className="overview-report-title-cell"><ReportThumb className="overview-report-thumb" url={overviewPhotos.data?.urls.get(report.id)} categoryName={category} /><span className="overview-report-copy"><button className="overview-report-link" title={report.title} onClick={() => onNavigate("Issue reports", report.id)}>{report.title}</button><small>{barangay} · {formatDate(report.created_at)}</small></span></div></td>
                 <td data-label="Category"><ReportCategoryLabel name={category} compact className="overview-category" /></td>
                 <td data-label="Date" className="overview-date">{formatDate(report.created_at)}</td>
                 <td data-label="Status"><span className={`badge ${report.status}`}>{label(report.status)}</span></td>
               </tr>;
             })}</tbody>
-          </table></div> : <div className="overview-empty"><FileText size={20} /><strong>No reports yet</strong><span>Resident submissions will appear here.</span></div>}
+          </table></div></> : <div className="overview-empty"><FileText size={20} /><strong>No reports yet</strong><span>Resident submissions will appear here.</span></div>}
         </section>
 
         <div className="overview-reporting-aside">
-        {access.profile.role === "barangay" ? <section className="panel overview-panel overview-density">
-          <div className="panel-heading overview-panel-heading"><div className="overview-panel-title"><span className="overview-section-icon mint"><MapPinned size={17} /></span><div><h2>Local report density</h2><p className="overview-panel-subtitle">Reports assigned to {barangayName || "your barangay"}</p></div></div></div>
-          {!access.profile.barangay_id ? <div className="overview-density-unavailable" role="status"><CircleAlert size={18} /><span>This staff account has no assigned barangay, so report density is unavailable.</span></div>
-            : data.densityReports === null ? <div className="overview-density-unavailable" role="status"><CircleAlert size={18} /><span>Report locations couldn’t load. Refresh the dashboard to try again.</span></div>
-            : !barangayBoundary || reportDensity === null ? <div className="overview-density-unavailable" role="status"><MapPinned size={18} /><span>A mapped boundary isn’t available for this barangay, so density can’t be calculated.</span></div>
-              : <>
-                <div className="overview-density-primary"><div><span className="overview-density-label">ASSIGNED REPORTS PER SQUARE KILOMETER</span><strong>{reportDensity.toFixed(1)}</strong><span className="overview-density-unit">reports / km²</span></div><div className="overview-density-area"><span>Mapped area</span><strong>{barangayArea.toFixed(2)} km²</strong></div></div>
-                <div className="overview-density-stats" aria-label="Report totals for this barangay">
-                  <div><span>Assigned reports</span><strong>{activeDensityReports.length.toLocaleString("en-PH")}</strong></div>
-                  <div><span>Inside boundary</span><strong>{mappedDensityReports.length.toLocaleString("en-PH")}</strong></div>
-                  <div><span>Verified unresolved</span><strong>{unresolvedDensityCount.toLocaleString("en-PH")}</strong></div>
-                </div>
-                {densityOutsideCount > 0 ? <div className="overview-density-warning" role="status"><CircleAlert size={17} /><p><strong>{densityOutsideCount} assigned {densityOutsideCount === 1 ? "report is" : "reports are"} outside the mapped boundary.</strong><span>They remain in this barangay’s assigned total but won’t appear on the map until their locations are corrected.</span></p><button className="secondary" onClick={() => onNavigate("Issue reports")}>Review locations <ArrowRight size={14} /></button></div>
-                  : coordinateDensityReports.length > 0 && <p className="overview-density-ok"><BadgeCheck size={15} />All mapped report locations are inside {barangayName || "your barangay"}.</p>}
-                {densityWithoutPins > 0 && <p className="overview-fine">{densityWithoutPins} {densityWithoutPins === 1 ? "report has a manual address" : "reports have manual addresses"} without map pins. Their Purok, Zone and details are available in the report workspace.</p>}
-                <p className="overview-fine">Rejected and duplicate reports are excluded. This assigned-area ratio shows report volume, not issue severity.</p>
-                {activeDensityReports.length >= 1000 && <p className="overview-density-limit">The report list reached its 1,000-row limit; density may be understated.</p>}
-              </>}
-          <button className="secondary overview-attention-action" onClick={() => onNavigate("Issue reports")}>Open barangay reports <ArrowUpRight size={15} /></button>
-        </section> : <section className="panel overview-panel overview-attention">
-          <div className="panel-heading overview-panel-heading"><div className="overview-panel-title"><span className="overview-section-icon mint"><ChartNoAxesCombined size={17} /></span><div><h2>Barangay attention</h2><p className="overview-panel-subtitle">Verified, unresolved issues</p></div></div></div>
-          {topBarangays.length ? <div className="overview-attention-list">{topBarangays.map((barangay) => (
-            <div className="overview-attention-row" key={barangay.id}>
-              <div><span>{barangay.name}</span><strong>{barangay.unresolved}</strong></div>
-              <div className="overview-attention-track" role="img" aria-label={`${barangay.unresolved} verified unresolved reports`}><span style={{ width: `${(barangay.unresolved / attentionMax) * 100}%` }} /></div>
-            </div>
-          ))}</div> : <div className="overview-empty compact"><BadgeCheck size={19} /><strong>No verified issues to review</strong><span>There are no unresolved verified reports in your scope.</span></div>}
-          <p className="overview-fine">{counts.recurring ?? 0} recurrence candidates need human review. Report counts do not establish severity.</p>
-          <button className="secondary overview-attention-action" onClick={() => onNavigate("Geographic analytics")}>Review assessment factors <ArrowUpRight size={15} /></button>
-        </section>}
-        </div>
-      </div>
-
         <section className="panel overview-panel overview-assigned">
           <div className="panel-heading overview-panel-heading"><div className="overview-panel-title"><span className="overview-section-icon blue"><Users size={17} /></span><div><h2>Assigned work</h2><p className="overview-panel-subtitle">Oldest reports needing follow-through</p></div></div><button className="text-button" onClick={() => onNavigate("Issue reports", "", "active")}>View all ({data.taskCount}) <ArrowUpRight size={15} /></button></div>
           {data.tasks.length ? <div className="overview-assigned-list" aria-label={`Oldest ${data.tasks.length} of ${data.taskCount} assigned, scheduled, and in-progress reports`}>{data.tasks.map((report) => {
@@ -1057,21 +977,23 @@ function Overview({
             const organization = refs.organizations.find((org) => org.id === report.organization_id)?.name || "Assigned office";
             const assignedDate = data.assignedAt[report.id] ? formatDate(data.assignedAt[report.id]) : "Assignment date not recorded";
             return <button key={report.id} className="overview-assigned-item" onClick={() => onNavigate("Issue reports", report.id)} aria-label={`Open ${report.title}, assigned to ${organization}. ${label(report.status)}.`}>
-              <span className="overview-report-file"><FileText size={15} aria-hidden="true" /></span>
+              <ReportThumb className="overview-report-thumb" url={overviewPhotos.data?.urls.get(report.id)} categoryName={refs.categories.find((item) => item.id === report.category_id)?.name || "Other"} />
               <span className="overview-assigned-copy"><strong title={report.title}>{report.title}</strong><small>{barangay} · {organization} · {assignedDate}</small></span>
               <span className={`badge ${report.status}`}>{label(report.status)}</span><ChevronRight size={15} aria-hidden="true" />
             </button>;
           })}</div> : <div className="overview-empty compact"><ClipboardList size={19} /><strong>No assigned work</strong><span>No assigned, scheduled, or in-progress reports are available in your authorized scope.</span></div>}
         </section>
-
-      <Charts data={data.analytics} />
+        </div>
+      </div>
 
       <div className="two-col overview-community-panels">
         <section className="panel overview-panel">
           <div className="panel-heading overview-panel-heading"><div className="overview-panel-title"><span className="overview-section-icon violet"><CalendarDays size={17} /></span><div><h2>Meeting requests</h2><p className="overview-panel-subtitle">Community requests and their current status</p></div></div><button className="text-button" onClick={() => onNavigate("Meeting requests")}>View all <ArrowUpRight size={15} /></button></div>
           {data.meetings.length ? <div className="overview-community-list">{data.meetings.map((meeting) => (
             <button key={meeting.id} className="overview-community-row" onClick={() => onNavigate("Meeting requests", meeting.id)}>
-              <span className="overview-community-icon"><CalendarDays size={17} /></span><span className="overview-community-copy"><strong>{meeting.title}</strong><small>{refs.barangays.find((item) => item.id === meeting.barangay_id)?.name || "Iligan City"} · {formatDate(meeting.created_at)}</small></span><span className={`badge overview-community-status ${meeting.status}`}>{label(meeting.status)}</span><ArrowUpRight size={14} />
+              {data.meetingStarts[meeting.id]
+                ? <span className="meeting-date-tile overview-meeting-date" aria-label={`Scheduled ${formatDate(data.meetingStarts[meeting.id])}`}><strong>{new Date(data.meetingStarts[meeting.id]).toLocaleDateString("en-PH", { day: "2-digit", timeZone: "Asia/Manila" })}</strong><small>{new Date(data.meetingStarts[meeting.id]).toLocaleDateString("en-PH", { month: "short", timeZone: "Asia/Manila" }).toUpperCase()}</small></span>
+                : <span className="overview-community-icon"><CalendarDays size={17} aria-hidden="true" /></span>}<span className="overview-community-copy"><strong>{meeting.title}</strong><small>{refs.barangays.find((item) => item.id === meeting.barangay_id)?.name || "Iligan City"} · {formatDate(meeting.created_at)}</small></span><span className={`badge overview-community-status ${meeting.status}`}>{label(meeting.status)}</span><ArrowUpRight size={14} />
             </button>
           ))}</div> : <div className="overview-empty compact"><CalendarDays size={19} /><strong>No meeting requests yet</strong><span>New requests in your scope will appear here.</span></div>}
         </section>

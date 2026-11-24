@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, ArrowUpRight, BadgeCheck, BarChart3, CheckCircle2, ChevronRight, CircleAlert, Cog, FileText, Flame, Layers3, List, MapPin, MapPinned, RefreshCw, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Activity, AlertTriangle, ArrowUpRight, BadgeCheck, BarChart3, CheckCircle2, ChevronDown, ChevronRight, CalendarDays, CircleAlert, Cog, Crosshair, FileText, Flame, Layers3, List, MapPin, MapPinned, RefreshCw, RotateCcw, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
 import { db, result } from "../lib/client";
 import { openReportFromRow } from "../lib/report-row";
 import { BARANGAY_GIS_CATEGORY_ZOOM, BARANGAY_TOTAL_ZOOM, INDIVIDUAL_REPORT_PIN_ZOOM, offsetMapCoordinate, separateNearbyMapPoints, Report, statuses, label, hasReportCoordinates } from "@community/shared";
@@ -26,6 +26,7 @@ import { pointInPolygon } from "../lib/map-geometry";
 import { reportHeatCells, reportHeatCellsPerBarangay } from "../lib/report-map-data";
 import { reportCategoryPresentation, reportCategoryPresentationForKey, ReportCategoryLabel, type CategoryKey } from "./report-category";
 import { reportLocalAddress } from "../lib/report-location";
+import { ReportThumb, useReportListPhotos } from "./report-photos";
 
 const categoryKeys: CategoryKey[] = ["streetlights", "roads", "drainage", "garbage", "wires", "signs", "other"];
 const markerKinds = Object.fromEntries(categoryKeys.map((key) => [key, reportCategoryPresentationForKey(key)])) as Record<CategoryKey, ReturnType<typeof reportCategoryPresentationForKey>>;
@@ -223,6 +224,10 @@ export default function IssueMap({
     [showHeat, setShowHeat] = useState(true),
     [base, setBase] = useState<"map" | "terrain" | "satellite">("satellite"),
     [baseMenuOpen, setBaseMenuOpen] = useState(false),
+    [layersOpen, setLayersOpen] = useState(false),
+    [pinSheetId, setPinSheetId] = useState<string | null>(null),
+    [cellSheet, setCellSheet] = useState<{ count: number; color: string } | null>(null),
+    [filtersOpen, setFiltersOpen] = useState(false),
     [barangayMetric, setBarangayMetric] = useState<"count" | "density">("count"),
     [showSavedLocations, setShowSavedLocations] = useState(false),
     [officeMapScope, setOfficeMapScope] = useState<"ready" | "category">("ready"),
@@ -888,6 +893,13 @@ export default function IssueMap({
         const feature = event.features?.[0];
         if (!feature) return;
         const count = Number(feature.properties?.count);
+        if (window.matchMedia("(max-width: 767px)").matches) {
+          activeMapPopup.current?.remove();
+          setSelectedMapPin(m, null);
+          setPinSheetId(null);
+          setCellSheet({ count, color: String(feature.properties?.color || "#0b8279") });
+          return;
+        }
         const card = document.createElement("article");
         card.className = "map-popup-card";
         const { header, handle } = createPopupHeader("HOTSPOT · 250 M CELL");
@@ -952,6 +964,14 @@ export default function IssueMap({
         const f = e.features?.[0];
         if (!f || f.geometry.type !== "Point") return;
         m.easeTo({ center: e.lngLat, zoom: Math.max(m.getZoom(), 14), duration: 350 });
+        // Phones match the resident app: highlight the pin and show a summary card under the map instead of a popup.
+        if (window.matchMedia("(max-width: 767px)").matches) {
+          activeMapPopup.current?.remove();
+          setSelectedMapPin(m, String(f.properties.id));
+          setCellSheet(null);
+          setPinSheetId(String(f.properties.id));
+          return;
+        }
         const node = document.createElement("article");
         node.className = "map-popup-card";
         const { header, handle } = createPopupHeader("COMMUNITY REPORT");
@@ -1041,7 +1061,8 @@ export default function IssueMap({
   }, [mode, ready]);
   useEffect(() => {
     const current = map.current;
-    if (!ready || !current || !current.isStyleLoaded()) return;
+    // Layers exist once ready; isStyleLoaded() is false while tiles stream, which skipped initial visibility.
+    if (!ready || !current) return;
     const showReportLayers = mode === "map" || showIndividualBarangayPins;
     const setVisibility = (id: string, visible: boolean) => {
       if (current.getLayer(id)) current.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
@@ -1147,7 +1168,7 @@ export default function IssueMap({
     : refs.categories;
   const mapStatusOptions = statuses.filter((item) => !["rejected", "duplicate"].includes(item));
   const selectedBarangayCount = reportCountsByBarangay[barangayMapKey(selectedBarangayName)] ?? 0;
-  const gisMapCaption = selectedBarangayGis
+  const gisMapStatus = selectedBarangayGis
     ? category
       ? gis.isPending ? "Loading category total…" : `${selectedBarangayName} · ${selectedBarangayCount} ${reportCategoryPresentation(selectedCategoryName || "Other").label} reports`
       : showBarangayCategoryBreakdown
@@ -1165,7 +1186,17 @@ export default function IssueMap({
     </button>
     {(["map", "terrain", "satellite"] as const).map((value) => <button type="button" key={value} aria-pressed={base === value} className={base === value ? "active" : ""} onClick={() => { setBase(value); setBaseMenuOpen(false); }}>{value[0].toUpperCase() + value.slice(1)}</button>)}
   </div>;
-  const gisMapControls = <div className="gis-background-picker">{backgroundControls}<div className="map-gis-caption" role="status">{selectedBarangayGis ? gisMapCaption : gis.isPending ? "Loading barangay counts…" : gis.error ? "Barangay counts unavailable" : gisMapCaption}</div></div>;
+  const resetMapView = () => {
+    if (canChangeBarangay && mapScopeId) { selectBarangay(""); return; }
+    map.current?.fitBounds(
+      mapScopeFeature
+        ? boundsForBoundary(mapScopeFeature)
+        : [[ILIGAN_MAP_BOUNDS.southWest.longitude, ILIGAN_MAP_BOUNDS.southWest.latitude], [ILIGAN_MAP_BOUNDS.northEast.longitude, ILIGAN_MAP_BOUNDS.northEast.latitude]],
+      { padding: mapScopeFeature ? (compact ? 32 : 52) : 28, maxZoom: mapScopeFeature ? mapFitMaxZoom : undefined, duration: 360 },
+    );
+  };
+  const gisMapControls = <div className="gis-background-picker">{backgroundControls}</div>;
+  const gisMapCaption = <div className="map-gis-caption" role="status">{selectedBarangayGis ? gisMapStatus : gis.isPending ? "Loading barangay counts…" : gis.error ? "Barangay counts unavailable" : gisMapStatus}</div>;
   const selectedBarangayLayerControls = selectedBarangayGis && <div className="overview-map-layer-switches gis-selected-layers" aria-label="Selected barangay map layers">
     {[{ label: "Report pins", value: showMarkers, change: () => setShowMarkers((current) => !current) }, { label: "Heatmap", value: showHeat, change: () => setShowHeat((current) => !current) }].map((toggle) => <button type="button" key={toggle.label} aria-pressed={toggle.value} onClick={toggle.change}><span className={`overview-switch${toggle.value ? " on" : ""}`} aria-hidden="true"><i /></span>{toggle.label}</button>)}
   </div>;
@@ -1185,6 +1216,57 @@ export default function IssueMap({
         ? q.isFetching ? `Loading ${selectedBarangayName} reports…` : `${selectedBarangayCount} matching reports · ${mapReports.length} mapped reports · ${selectedBarangayName}`
         : gis.isPending ? "Loading barangay totals…" : gis.error ? "Barangay totals unavailable" : `${Object.values(reportCountsByBarangay).reduce((sum, count) => sum + count, 0)} permitted reports · totals by assigned barangay`
       : q.isFetching ? "Loading reports…" : `${mapReports.length} ${officeView ? officeMapScope === "ready" ? "ready for action" : "category reports" : showSavedLocations ? "saved locations" : "mapped reports"}${outOfScopeMapReports ? ` · ${outOfScopeMapReports} need location review` : ""}`;
+  const pinSheetReport = pinSheetId ? mapReports.find((report) => report.id === pinSheetId) : undefined;
+  const pinSheetPhoto = useQuery({
+    queryKey: ["map-pin-photo", pinSheetId],
+    enabled: !!pinSheetId,
+    staleTime: 50 * 60_000,
+    queryFn: async () => {
+      const files = await result<{ path: string }[]>(db!.from("report_attachments").select("path")
+        .eq("report_id", pinSheetId!).is("action_id", null).order("created_at", { ascending: true }).limit(1));
+      if (!files.length) return null;
+      const { data, error } = await db!.storage.from("report-evidence").createSignedUrl(files[0].path, 3600);
+      return error ? null : data?.signedUrl ?? null;
+    },
+  });
+  const [failedPinPhoto, setFailedPinPhoto] = useState("");
+  const listedPhotos = useReportListPhotos(listedReports.map((report) => report.id));
+  const closePinSheet = () => { setPinSheetId(null); if (map.current) setSelectedMapPin(map.current, null); };
+  const pinSheet = pinSheetReport && (() => {
+    const categoryName = refs.categories.find((item) => item.id === pinSheetReport.category_id)?.name || "Other";
+    const category = reportCategoryPresentation(categoryName);
+    const barangayName = refs.barangays.find((item) => item.id === pinSheetReport.barangay_id)?.name || "Iligan City";
+    const local = reportLocalAddress(pinSheetReport);
+    return <article className="map-pin-sheet" style={{ borderLeftColor: category.foreground }} aria-label={`Selected report: ${pinSheetReport.title}`}>
+      <div className="map-pin-sheet-body">
+        {pinSheetPhoto.data && failedPinPhoto !== pinSheetPhoto.data
+          // eslint-disable-next-line @next/next/no-img-element -- short-lived signed storage URL
+          ? <img className="map-pin-sheet-thumb map-pin-sheet-photo" src={pinSheetPhoto.data} alt={`${category.label} report photo`} onError={() => setFailedPinPhoto(pinSheetPhoto.data || "")} />
+          : <span className={`map-pin-sheet-thumb${pinSheetPhoto.isFetching ? " is-loading" : ""}`} style={{ background: category.background, color: category.foreground }} aria-hidden="true"><svg viewBox="0 0 24 24" dangerouslySetInnerHTML={{ __html: category.glyph }} /></span>}
+        <div className="map-pin-sheet-copy">
+          <div className="map-pin-sheet-chips"><ReportCategoryLabel compact name={categoryName} /><span className={`badge ${pinSheetReport.status}`}>{label(pinSheetReport.status)}</span></div>
+          <strong>{pinSheetReport.title}</strong>
+          <small><MapPin size={13} aria-hidden="true" />{local ? `${barangayName} · ${local}` : barangayName}</small>
+          <small><CalendarDays size={13} aria-hidden="true" />{new Date(pinSheetReport.created_at).toLocaleDateString("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" })}</small>
+        </div>
+        <button type="button" className="map-pin-sheet-close" aria-label="Close selected report" onClick={closePinSheet}><X size={18} aria-hidden="true" /></button>
+      </div>
+      <button type="button" className="map-pin-sheet-open" onClick={() => setSelectedId(pinSheetReport.id)}>View report details<ChevronRight size={16} aria-hidden="true" /></button>
+    </article>;
+  })();
+  const cellSheetCard = mode === "map" && cellSheet && <article className="map-pin-sheet" style={{ borderLeftColor: cellSheet.color }} aria-label={`Hotspot with ${cellSheet.count} matching reports`}>
+    <div className="map-pin-sheet-body">
+      <span className="map-pin-sheet-thumb" style={{ background: `${cellSheet.color}22`, color: cellSheet.color }} aria-hidden="true"><Flame size={30} /></span>
+      <div className="map-pin-sheet-copy">
+        <div className="map-pin-sheet-chips"><span className="badge">Hotspot · 250 m square</span></div>
+        <strong>{cellSheet.count} {cellSheet.count === 1 ? "matching report" : "matching reports"}</strong>
+        <small className="map-pin-sheet-note">Count reflects the filters and reports loaded in this map view.</small>
+      </div>
+      <button type="button" className="map-pin-sheet-close" aria-label="Close hotspot details" onClick={() => setCellSheet(null)}><X size={18} aria-hidden="true" /></button>
+    </div>
+  </article>;
+  const layersOnCount = [showMarkers, showHeat, showBoundary].filter(Boolean).length;
+  const layerHeading = <div className="map-layer-heading"><button type="button" className="map-layer-heading-toggle" aria-expanded={layersOpen} onClick={() => setLayersOpen((open) => !open)}><Layers3 size={15} aria-hidden="true" /><span>Map layers</span><small>{layersOnCount === 3 ? "All on" : layersOnCount ? `${layersOnCount} on` : "All off"}</small><ChevronDown size={16} className="map-layer-chevron" aria-hidden="true" /></button></div>;
   const mapLayerToggles = [{ label: "Report pins", value: showMarkers, change: () => setShowMarkers((current) => !current) }, { label: "Heatmap layer", value: showHeat, change: () => setShowHeat((current) => !current) }, { label: "Barangay boundary", value: showBoundary, change: () => setShowBoundary((current) => !current) }].map((toggle) => <button type="button" key={toggle.label} aria-pressed={toggle.value} onClick={toggle.change}><span>{toggle.label}</span><span className={`overview-switch${toggle.value ? " on" : ""}`} aria-hidden="true"><i /></span></button>);
   return (
     <div className={`issue-map${compact ? " compact" : ""}${overview ? " overview-map" : ""}`}>
@@ -1205,8 +1287,12 @@ export default function IssueMap({
             </select>
           </label> : <span><strong>Your geographic coverage</strong><small>{coverageLabel}</small></span>}
         </section>
-        <form className="overview-map-filter" onSubmit={(event) => event.preventDefault()}>
-          <strong><SlidersHorizontal size={15} aria-hidden="true" />Filter geographic data</strong>
+        <form className={`overview-map-filter${filtersOpen ? " is-open" : ""}`} onSubmit={(event) => event.preventDefault()}>
+          <div className="overview-map-filter-head">
+            <strong><SlidersHorizontal size={15} aria-hidden="true" />Filter geographic data</strong>
+            <button type="button" className="overview-map-filter-toggle" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((open) => !open)}><SlidersHorizontal size={16} aria-hidden="true" /><span>Filter reports</span><ChevronDown size={16} className="overview-map-filter-chevron" aria-hidden="true" /></button>
+            <button type="button" className="text-button overview-map-filter-clear" disabled={!overviewCategory && !overviewState && overviewDateRange === "all"} onClick={() => { setOverviewCategory(""); setOverviewState(""); setOverviewDateRange("all"); setOverviewSince(""); setOverviewUntil(""); }}><RotateCcw size={14} aria-hidden="true" />Clear all</button>
+          </div>
           <div className="overview-map-filter-fields">
             <label>Category<select value={overviewCategory} onChange={(event) => setOverviewCategory(event.target.value)}><option value="">{officeView ? "All permitted categories" : "All categories"}</option>{officeMapCategories.map((item) => <option key={item.id} value={item.id}>{reportCategoryPresentation(item.name).label}</option>)}</select></label>
             {(!officeView || officeMapScope === "category") && <label>Status<select value={overviewState} onChange={(event) => setOverviewState(event.target.value)}><option value="">All statuses</option>{mapStatusOptions.map((status) => <option key={status} value={status}>{label(status)}</option>)}</select></label>}
@@ -1250,19 +1336,12 @@ export default function IssueMap({
           {mapResultCount}
         </span>
         <div className="map-page-actions">
-          <button type="button" className="secondary" onClick={() => {
-            if (canChangeBarangay && mapScopeId) { selectBarangay(""); return; }
-            map.current?.fitBounds(
-            mapScopeFeature
-              ? boundsForBoundary(mapScopeFeature)
-              : [[ILIGAN_MAP_BOUNDS.southWest.longitude, ILIGAN_MAP_BOUNDS.southWest.latitude], [ILIGAN_MAP_BOUNDS.northEast.longitude, ILIGAN_MAP_BOUNDS.northEast.latitude]],
-             { padding: mapScopeFeature ? (compact ? 32 : 52) : 28, maxZoom: mapScopeFeature ? mapFitMaxZoom : undefined, duration: 360 },
-          ); }}>Reset map</button>
-          {mode === "map" && <button type="button" className="secondary" disabled={!mapReports.length} onClick={() => {
+          <button type="button" className="text-button map-toolbar-link" aria-label="Reset map" onClick={resetMapView}><RotateCcw size={15} aria-hidden="true" />Reset<span className="map-toolbar-extra"> map</span></button>
+          {mode === "map" && <button type="button" className="text-button map-toolbar-link" aria-label="Fit results" disabled={!mapReports.length} onClick={() => {
             const resultBounds = new maplibregl.LngLatBounds();
             mapReports.forEach((report) => resultBounds.extend([report.longitude, report.latitude]));
             map.current?.fitBounds(resultBounds, { padding: 45, maxZoom: 16, duration: 360 });
-          }}>Fit results</button>}
+          }}><Crosshair size={15} aria-hidden="true" />Fit<span className="map-toolbar-extra"> results</span></button>}
         </div>
       </div>
       </>}
@@ -1277,7 +1356,10 @@ export default function IssueMap({
       {q.data?.length === 1000 && <p className="notice" role="status">Pins and the report list are limited to 1,000 matching reports. Narrow the filters for detail. Barangay GIS totals count all permitted matches.</p>}
       {overview ? <div className="overview-map-stage">
         <div ref={container} className={`map${mode === "list" || (mode === "map" && tileError) ? " hidden" : ""}`} aria-label={mode === "barangays" ? selectedBarangayGis ? `${selectedBarangayName} report pins and whole-barangay shading` : "Barangay report count map" : "Iligan issue map"} />
+        {mode !== "list" && pinSheet}
+        {cellSheetCard}
         {mode === "barangays" && gisMapControls}
+        {mode === "barangays" && gisMapCaption}
         {mode === "barangays" && selectedBarangayLayerControls}
         {mode === "barangays" && selectedBarangayHeatLegend}
         {mode === "map" && tileError && <section className="overview-map-failure" role="alert" aria-live="polite">
@@ -1286,7 +1368,8 @@ export default function IssueMap({
         </section>}
         {mode === "map" && !tileError && <>
           {backgroundControls}
-          <div className="overview-map-layer-switches" aria-label="Map layers">
+          <div className={`overview-map-layer-switches${layersOpen ? "" : " is-collapsed"}`} role="group" aria-label="Map layers">
+            {layerHeading}
             {[{ label: "Show pins", value: showMarkers, change: () => setShowMarkers((current) => !current) }, { label: "Heatmap", value: showHeat, change: () => setShowHeat((current) => !current) }, { label: "Barangay boundary", value: showBoundary, change: () => setShowBoundary((current) => !current) }].map((toggle) => <button type="button" key={toggle.label} aria-pressed={toggle.value} onClick={toggle.change}><span className={`overview-switch${toggle.value ? " on" : ""}`} aria-hidden="true"><i /></span>{toggle.label}</button>)}
           </div>
           {showHeat && <div className="overview-map-density" aria-label="Matching reports per 250 meter grid cell">
@@ -1295,10 +1378,13 @@ export default function IssueMap({
         </>}
       </div> : <div className={`map-page-layout${mode === "map" ? " has-side" : ""}`}>
         <div className="map-page-main">
-          {mode === "map" && <div className="map-page-layer-bar" role="group" aria-label="Map layers">{mapLayerToggles}</div>}
+          {mode === "map" && <div className={`map-page-layer-bar${layersOpen ? "" : " is-collapsed"}`} role="group" aria-label="Map layers">{layerHeading}{mapLayerToggles}</div>}
           <div className="overview-map-stage map-page-stage">
             <div ref={container} className={`map${mode === "list" ? " hidden" : ""}`} aria-label={mode === "barangays" ? selectedBarangayGis ? `${selectedBarangayName} report pins and whole-barangay shading` : "Barangay report count map" : "Iligan issue map"} />
+            {pinSheet}
+            {cellSheetCard}
             {mode === "barangays" && gisMapControls}
+            {mode === "barangays" && gisMapCaption}
             {mode === "barangays" && selectedBarangayLayerControls}
             {mode === "barangays" && selectedBarangayHeatLegend}
             {mode === "map" && <>
@@ -1381,7 +1467,24 @@ export default function IssueMap({
             <div><p className="eyebrow">{selectedBarangayName ? `REPORTS ASSIGNED TO ${selectedBarangayName.toUpperCase()}` : "REPORTS IN THIS MAP VIEW"}</p><h2 ref={reportListHeading} tabIndex={-1}>{viewReports.length} {viewReports.length === 1 ? "report" : "reports"}</h2></div>
             {selectedBarangayName && <span className="badge">{selectedBarangayName}</span>}
           </div>
-          {q.isFetching && !q.data ? <p className="empty">Loading reports…</p> : viewReports.length ? <div className="table-scroll"><table className="reports-table">
+          {q.isFetching && !q.data ? <p className="empty">Loading reports…</p> : viewReports.length ? <><ul className="report-card-list" aria-label={selectedBarangayName ? `Reports assigned to ${selectedBarangayName}` : "Reports matching the current geographic view"}>{listedReports.map((r) => {
+            const categoryName = refs.categories.find((item) => item.id === r.category_id)?.name || "Other";
+            const locationName = refs.barangays.find((item) => item.id === r.barangay_id)?.name || "Location pending";
+            const photoCount = listedPhotos.data?.counts.get(r.id) ?? 0;
+            return <li key={r.id}><button type="button" className="report-card" onClick={() => setSelectedId(r.id)} aria-label={`Open report: ${r.title}`}>
+              <ReportThumb className="report-card-thumb" url={listedPhotos.data?.urls.get(r.id)} categoryName={categoryName}>
+                {hasReportCoordinates(r) && <span className="report-card-pin" title="Has a map pin"><MapPin size={12} aria-hidden="true" /></span>}
+              </ReportThumb>
+              <span className="report-card-body">
+                <span className="report-card-chips"><ReportCategoryLabel name={categoryName} compact /><span className={`badge ${r.status}`}>{label(r.status)}</span></span>
+                <strong className="report-card-title">{r.title}</strong>
+                <span className="report-card-meta">
+                  <span><CalendarDays size={13} aria-hidden="true" />{new Date(r.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" })} · {locationName}{reportLocalAddress(r) ? ` · ${reportLocalAddress(r)}` : ""}</span>
+                  {photoCount > 0 && <span className="report-card-photos">{photoCount} {photoCount === 1 ? "photo" : "photos"}</span>}
+                </span>
+              </span>
+            </button></li>;
+          })}</ul><div className="table-scroll"><table className="reports-table">
             <caption className="sr-only">{selectedBarangayName ? `Reports assigned to ${selectedBarangayName}` : "Reports matching the current geographic view"}</caption>
             <thead><tr><th scope="col">Report</th><th scope="col">Location &amp; category</th><th scope="col">Status</th><th scope="col">Assigned office</th><th scope="col">Received</th></tr></thead>
             <tbody>{listedReports.map((r) => {
@@ -1389,8 +1492,8 @@ export default function IssueMap({
               const locationName = refs.barangays.find((item) => item.id === r.barangay_id)?.name || "Location pending";
               const officeName = refs.organizations.find((item) => item.id === r.organization_id)?.name || "Awaiting assignment";
               return <tr key={r.id} className="report-row-clickable" onClick={(event) => openReportFromRow(event, () => setSelectedId(r.id))}>
-                <th scope="row"><button className="report-title" aria-label={`Open report: ${r.title}`} onClick={() => setSelectedId(r.id)}><span>{r.title}</span><ArrowUpRight size={15} aria-hidden="true" /></button>
-                  <small className="record-meta">{r.id.slice(0, 8).toUpperCase()}{r.severity && ` · Severity ${r.severity}/5`}</small></th>
+                <th scope="row"><div className="report-table-cell"><ReportThumb className="report-table-thumb" url={listedPhotos.data?.urls.get(r.id)} categoryName={categoryName} /><div className="report-table-cell-copy"><button className="report-title" aria-label={`Open report: ${r.title}`} onClick={() => setSelectedId(r.id)}><span>{r.title}</span><ArrowUpRight size={15} aria-hidden="true" /></button>
+                  <small className="record-meta">{r.id.slice(0, 8).toUpperCase()}{r.severity && ` · Severity ${r.severity}/5`}</small></div></div></th>
                 <td data-label="Location"><span className="report-location"><MapPin size={13} aria-hidden="true" /><strong>{locationName}</strong></span>
                   {reportLocalAddress(r) && <small className="record-meta">{reportLocalAddress(r)}</small>}
                   {!hasReportCoordinates(r) && <small className="record-meta">Manual address · no map pin</small>}
@@ -1400,7 +1503,7 @@ export default function IssueMap({
                 <td className="report-received" data-label="Received"><time dateTime={r.created_at}>{new Date(r.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" })}</time><button className="report-open" aria-label={`Open report: ${r.title}`} onClick={() => setSelectedId(r.id)}><ArrowUpRight size={15} aria-hidden="true" /></button></td>
               </tr>;
             })}</tbody>
-          </table></div> : <p className="empty">No reports match this map view and filter.</p>}
+          </table></div></> : <p className="empty">No reports match this map view and filter.</p>}
           {viewReports.length > 20 && <nav className="map-list-pagination" aria-label="Map report pages">
             <span role="status">Showing {currentReportPage * 20 + 1}–{Math.min((currentReportPage + 1) * 20, viewReports.length)} of {viewReports.length}</span>
             <div><button type="button" className="secondary" disabled={!currentReportPage || q.isFetching} onClick={() => changeReportPage(currentReportPage - 1)}>Previous</button>

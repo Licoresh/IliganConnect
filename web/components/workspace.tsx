@@ -924,7 +924,7 @@ function Overview({
         <div className="overview-scope-copy"><span className="overview-scope-icon"><ShieldCheck size={17} /></span><span>Authorized records</span></div>
         <button className="text-button overview-updated" disabled={q.isFetching} onClick={() => void q.refetch()} aria-label={q.isFetching ? "Refreshing dashboard data" : `Refresh dashboard. Last updated ${formatDate(new Date(q.dataUpdatedAt).toISOString(), { dateStyle: "medium", timeStyle: "short" })}`}>
           <RefreshCw size={14} className={q.isFetching ? "refreshing" : ""} />
-          {q.isFetching ? "Refreshing…" : `Last updated · ${formatDate(new Date(q.dataUpdatedAt).toISOString(), { dateStyle: "medium", timeStyle: "short" })}`}
+          {q.isFetching ? "Refreshing…" : <><span className="overview-updated-label">Last updated · </span>{formatDate(new Date(q.dataUpdatedAt).toISOString(), { dateStyle: "medium", timeStyle: "short" })}</>}
         </button>
       </div>
 

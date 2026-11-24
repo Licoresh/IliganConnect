@@ -6756,3 +6756,11 @@ body:has(.maplibregl-pseudo-fullscreen) { overflow: hidden; }
 .shell[data-role] main#main .meeting-card-badges { align-items: center; }
 .shell[data-role] main#main .meeting-card-badges > :is(.meeting-status, .meeting-card-reply) { box-sizing: border-box; min-height: 26px; align-self: center; line-height: 1; }
 .shell[data-role] main#main .meeting-card-badges > .meeting-card-reply { gap: 5px; padding: 4px 10px; border-radius: 999px; }
+
+/* Overview scope bar: "Authorized records" and the refresh time share one line */
+.shell[data-role] main#main .overview > .overview-scope { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; }
+.shell[data-role] main#main .overview > .overview-scope .overview-scope-copy { flex: 0 1 auto; min-width: 0; white-space: nowrap; }
+.shell[data-role] main#main .overview > .overview-scope .overview-updated { flex: 0 1 auto; width: auto; min-width: 0; max-width: none; margin: 0 0 0 auto; padding-inline: 0; white-space: nowrap; }
+@media (max-width: 767px) {
+  .shell[data-role] main#main .overview > .overview-scope .overview-updated-label { display: none; }
+}

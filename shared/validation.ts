@@ -4,7 +4,7 @@ const decimal = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
 
 export const SHORT_REASON_LIMIT = 500;
 export const MIN_PASSWORD_LENGTH = 15;
-export const MIN_REGISTRATION_PASSWORD_LENGTH = 8;
+export const MIN_REGISTRATION_PASSWORD_LENGTH = MIN_PASSWORD_LENGTH;
 export const EMAIL_OTP_LENGTH = 8;
 export const EMAIL_OTP_EXPIRY_SECONDS = 3600;
 export const EMAIL_RESEND_INTERVAL_SECONDS = 60;

@@ -53,14 +53,17 @@ const Explore = memo(ExploreScreen);
 const Community = memo(CommunityScreen);
 if (Platform.OS === "web") WebBrowser.maybeCompleteAuthSession();
 function formatAuthError(error: unknown, step: "sign-in" | "registration" | "verification" | "resend" | "recovery" | "password" = "sign-in") {
-  const detail = error instanceof Error ? error.message.toLowerCase() : "";
+  const fields = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const detail = [fields.message, fields.code].filter((value): value is string => typeof value === "string").join(" ").toLowerCase();
   if (step === "sign-in" && /invalid login credentials|invalid credentials|email or password/.test(detail)) return "Email or password is incorrect.";
   if (step === "sign-in" && /email not confirmed|email is not confirmed/.test(detail)) return "Confirm your email address before signing in.";
-  if (step === "registration" && /email.*already|user already (registered|exists)|email_exists|user_already_exists/.test(detail)) return "Email already taken. Sign in or use a different email address.";
+  if (step === "registration" && /email.*(already|exists|taken|registered)|user.*already (registered|exists)|email_exists|user_already_exists/.test(detail)) return "Email already taken. Sign in or use a different email address.";
+  const passwordMinimum = /password.{0,80}?(?:at least|minimum(?: of)?)\s*(\d+)\s*characters?/.exec(detail)?.[1];
+  if (step === "registration" && (passwordMinimum || detail.includes("weak_password"))) return `Use a password with at least ${passwordMinimum || MIN_REGISTRATION_PASSWORD_LENGTH} characters.`;
   if (detail.includes("terms")) return "New resident accounts must be created with email after accepting the current Terms and Conditions. Existing social accounts can still sign in.";
   if (detail.includes("rate limit") || detail.includes("too many requests")) return "Too many attempts. Wait a few minutes before trying again.";
   if (detail.includes("network") || detail.includes("fetch")) return "We could not reach the sign-in service. Check your connection and retry.";
-  if (step === "registration" && /smtp|mailer|send.*email|email.*send|deliver.*email/.test(detail)) return "We could not send your verification email. Please try again later. If this continues, contact support.";
+  if ((step === "registration" || step === "resend") && /smtp|mailer|send.*email|email.*send|deliver.*email/.test(detail)) return "We could not send your verification email. Please try again later. If this continues, contact support.";
   if (step === "registration") return "We could not create your account. Check your details and try again.";
   if (step === "verification") return "That code is invalid or expired. Check the email or request a new code.";
   if (step === "resend") return "We could not send a new code just now. Wait a moment, then try again.";
@@ -1517,8 +1520,8 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                 }}
                 scrollEventThrottle={80}
               >
-                <Text style={[s.body, { fontSize: 14 }]}>Please read these terms before registering. They explain how to use the reporting and community features responsibly.</Text>
-                {RESIDENT_TERMS.map((section) => <View key={section.title} style={{ gap: 5 }}><Text style={[s.fieldLabel, { fontSize: 14 }]}>{section.title}</Text><Text style={[s.body, { fontSize: 13, lineHeight: 20 }]}>{section.body}</Text></View>)}
+                <Text style={[s.body, { fontSize: 14, textAlign: "justify" }]}>Please read these terms before registering. They explain how to use the reporting and community features responsibly.</Text>
+                {RESIDENT_TERMS.map((section) => <View key={section.title} style={{ gap: 5 }}><Text style={[s.fieldLabel, { fontSize: 14 }]}>{section.title}</Text><Text style={[s.body, { fontSize: 13, lineHeight: 20, textAlign: "justify" }]}>{section.body}</Text></View>)}
               </ScrollView>
               <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: "white", gap: 8 }}>
                 {!termsReachedEnd && <Text style={s.small}>Scroll through the terms to continue.</Text>}

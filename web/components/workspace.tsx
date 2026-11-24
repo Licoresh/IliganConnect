@@ -93,6 +93,9 @@ const nav = [
   ["Settings", Settings],
 ] as const;
 const appVersion = appConfig.expo.version;
+function titleCaseHeading(value: string) {
+  return value.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
 function writeWorkspaceLocation(location: WorkspaceLocation, replace = false) {
   window.history[replace ? "replaceState" : "pushState"](
     null,
@@ -121,6 +124,7 @@ export default function Workspace() {
     [recordTarget, setRecordTarget] = useState({ id: "", revision: 0 }),
     [recovery, setRecovery] = useState(false);
   const qc = useQueryClient();
+  const previousSection = useRef(section);
   const identity = useRef<string | null>(null),
     permissionStamp = useRef("");
   const menuButton = useRef<HTMLButtonElement>(null),
@@ -216,6 +220,11 @@ export default function Workspace() {
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
   }, []);
+  useEffect(() => {
+    if (previousSection.current === section) return;
+    previousSection.current = section;
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [section]);
   useEffect(() => {
     if (focusPageTitle.current) {
       focusPageTitle.current = false;
@@ -651,11 +660,11 @@ export default function Workspace() {
                   <div className="overview-heading-copy">
                     <p className="eyebrow">REPORTING &amp; COORDINATION</p>
                     <h1 ref={pageTitle} tabIndex={-1} className="overview-heading-title">
-                      {profile.data.role === "barangay"
+                      {titleCaseHeading(profile.data.role === "barangay"
                         ? `${jurisdiction} dashboard`
                         : profile.data.role === "admin"
                           ? "Iligan City dashboard"
-                          : `${context.organizations[0]?.name || "Office"} dashboard`}
+                          : `${context.organizations[0]?.name || "Office"} dashboard`)}
                     </h1>
                     <p className="overview-heading-subtitle">Local concerns, shared priorities. Your community at a glance.</p>
                   </div>
@@ -663,13 +672,13 @@ export default function Workspace() {
               ) : visibleSection === "Issue Mapping & Heatmap" ? <>
                 <div className="overview-heading-copy">
                   <p className="eyebrow">REPORTING &amp; COORDINATION</p>
-                  <h1 ref={pageTitle} tabIndex={-1} className="overview-heading-title">Issue mapping &amp; heatmap</h1>
+                  <h1 ref={pageTitle} tabIndex={-1} className="overview-heading-title">Issue Mapping &amp; Heatmap</h1>
                   <p className="overview-heading-subtitle">Explore reported concerns and identify patterns in your authorized area.</p>
                 </div>
               </> : <>
                 <div>
                   <p className="eyebrow">{visibleSection === "Settings" ? "ACCOUNT" : visibleSection === "Consultations" ? "COMMUNITY ENGAGEMENT" : "REPORTING & COORDINATION"}</p>
-                  <h1 ref={pageTitle} tabIndex={-1}>{visibleSection}</h1>
+                  <h1 ref={pageTitle} tabIndex={-1}>{titleCaseHeading(visibleSection)}</h1>
                   <p>{({
                     "Issue reports": "Review evidence, route responsibility and keep each case moving.",
                     "Category reports": "Read barangay-managed reports in your approved categories and coverage.",

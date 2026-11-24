@@ -92,8 +92,8 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
         base().in("status", ["submitted", "under_review"]),
         base().eq("status", "verified"),
         base().in("status", ["assigned", "scheduled", "in_progress"]),
-        base().in("status", ["scheduled", "in_progress"]),
-        base().eq("status", "assigned"),
+        base().in("status", ["scheduled", "in_progress"]).is("organization_id", null),
+        base().in("status", ["assigned", "scheduled", "in_progress"]).not("organization_id", "is", null),
         base().eq("status", "resolved"),
       ]);
       const failed = responses.find((response) => response.error);
@@ -113,14 +113,16 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
           ? query.in("organization_id", officeOrganizationIds)
           : query.eq("id", "00000000-0000-0000-0000-000000000000");
         query = queue === "resolved" ? query.eq("status", "resolved") : query.in("status", ["assigned", "scheduled", "in_progress"]);
-        if (status) query = query.eq("status", status);
-      } else if (status) query = query.eq("status", status);
-      else if (queue === "review") query = query.in("status", ["submitted", "under_review"]);
-      else if (queue === "route") query = query.eq("status", "verified");
-      else if (queue === "active") query = activeCaseStage === "forwarded"
-        ? query.eq("status", "assigned")
-        : query.in("status", ["scheduled", "in_progress"]);
-      else if (queue === "resolved") query = query.eq("status", "resolved");
+      } else {
+        if (queue === "review") query = query.in("status", ["submitted", "under_review"]);
+        else if (queue === "route") query = query.eq("status", "verified");
+        else if (queue === "active") query = query.in("status", ["assigned", "scheduled", "in_progress"]);
+        else if (queue === "resolved") query = query.eq("status", "resolved");
+        if (queue === "active") query = activeCaseStage === "forwarded"
+          ? query.not("organization_id", "is", null)
+          : query.is("organization_id", null);
+      }
+      if (status) query = query.eq("status", status);
       if (term) query = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(term)
         ? query.eq("id", term) : query.ilike("title", `%${term.replace(/[\\%_]/g, "\\$&")}%`);
       if (category) query = query.eq("category_id", category);
@@ -194,7 +196,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
           <div className="active-case-stages-copy"><strong>Active cases</strong><span>Choose the current handoff stage.</span></div>
           <div className="active-case-stage-tabs" role="group" aria-label="Filter active cases">
             <button type="button" aria-pressed={activeCaseStage === "ongoing"} className={activeCaseStage === "ongoing" ? "active" : ""} onClick={() => { setActiveCaseStage("ongoing"); setPage(0); }}>
-              <span>Ongoing</span><small>Scheduled or in progress</small><b>{queueCounts.data?.ongoing ?? "—"}</b>
+              <span>Ongoing</span><small>Barangay team · scheduled or in progress</small><b>{queueCounts.data?.ongoing ?? "—"}</b>
             </button>
             <button type="button" aria-pressed={activeCaseStage === "forwarded"} className={activeCaseStage === "forwarded" ? "active" : ""} onClick={() => { setActiveCaseStage("forwarded"); setPage(0); }}>
               <span>Forwarded</span><small>Assigned to an office</small><b>{queueCounts.data?.forwarded ?? "—"}</b>
@@ -306,9 +308,17 @@ export function ReportDetail({
   const [status, setStatus] = useState<string>(r.status === "verified" && !r.organization_id && ["admin", "barangay"].includes(access.profile.role) ? "scheduled" : transitions[r.status][0]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  type WorkspaceStep = "review" | "action" | "details" | "notes";
+  type WorkspaceStep = "review" | "action" | "details" | "notes" | "timeline";
   const [activeStep, setActiveStep] = useState<WorkspaceStep>(readOnly ? "details" : reviewPending ? "review" : "action");
   const [actionMode, setActionMode] = useState<"status" | "progress">("status");
+  // "Case timeline" is its own tab only when it cannot sit beside the step content (under 1280px).
+  useEffect(() => {
+    const wide = window.matchMedia("(min-width: 1280px)");
+    const leaveTimelineTab = () => { if (wide.matches) setActiveStep(step => step === "timeline" ? (readOnly ? "details" : reviewPending ? "review" : "action") : step); };
+    leaveTimelineTab();
+    wide.addEventListener("change", leaveTimelineTab);
+    return () => wide.removeEventListener("change", leaveTimelineTab);
+  }, [readOnly, reviewPending]);
   const [walkInPin, setWalkInPin] = useState<WalkInPin>(() => hasReportCoordinates(r) ? { latitude: r.latitude, longitude: r.longitude } : null);
   const [editingWalkInPin, setEditingWalkInPin] = useState(false);
   const [scheduledAt, setScheduledAt] = useState(() => r.status === "scheduled" ? "" : r.scheduled_at ? manilaDateTimeInput(r.scheduled_at) : defaultScheduleDateTimeInput());
@@ -524,10 +534,10 @@ export function ReportDetail({
       { id: "notes" as const, title: "Private notes", detail: "Staff-only context", icon: LockKeyhole, state: "available", disabled: false },
     ] : []),
   ];
-  const activeStepMeta = workspaceSteps.find(step => step.id === activeStep) || workspaceSteps[0];
   const currentStatusTitle = r.status === "in_progress" ? "Ongoing" : reportStatusLabel(r.status);
   const historyPanel = <aside className="report-workspace-history" aria-labelledby="report-history-title">
     <div className="report-workspace-history-heading"><History size={19} aria-hidden="true" /><div><h3 id="report-history-title">Case timeline</h3><p>Current status and recorded activity</p></div></div>
+    <div className="report-history-summary">
     <div className="report-current-case-status" role="status" aria-label={`Current case status: ${currentStatusTitle}`}>
       <div><span>Current status</span><strong className={`report-current-status-value status-${r.status}`}>{currentStatusTitle}</strong></div>
       <p>{reportStatusDescription(r.status)}</p>
@@ -535,8 +545,9 @@ export function ReportDetail({
     </div>
     {!reviewPending && <div className="report-review-attribution">
       <span className="report-review-attribution-icon"><Check size={16} aria-hidden="true" /></span>
-      <div><strong>{reviewRecord?.actor_name ? "Reviewed by " + reviewRecord.actor_name : "Review decision recorded"}</strong><small>Barangay {barangayName}</small></div>
+      <div><strong>{reviewRecord?.actor_name ? "Reviewed by " + reviewRecord.actor_name : "Review decision recorded"}</strong>{!(reviewRecord?.actor_name || "").toLowerCase().includes((barangayName || "").toLowerCase()) && <small>Barangay {barangayName}</small>}</div>
     </div>}
+    </div>
     <div className="report-workspace-history-subheading"><h4>Status history</h4><span>{history.length} {history.length === 1 ? "update" : "updates"}</span></div>
     {q.isPending ? <p className="report-workspace-muted" role="status">Loading status history…</p> : history.length ? <ol className="report-history-list">{history.map(event => {
       const state = event.new_status;
@@ -654,22 +665,18 @@ export function ReportDetail({
   </section> : null;
 
   return (
-    <Dialog title="Report workspace" description={`${r.id.slice(0, 8).toUpperCase()} · ${category.label}`} descriptionMeta={<span className={`badge ${r.status} report-workspace-header-status`}>{r.status === "duplicate" ? "Linked duplicate" : reportStatusLabel(r.status)}</span>} icon={<CategoryIcon size={23} />} className="report-workspace-dialog" close={close}>
+    <Dialog title={r.title} description={category.label} descriptionMeta={<span className={`badge ${r.status} report-workspace-header-status`}>{r.status === "duplicate" ? "Linked duplicate" : reportStatusLabel(r.status)}</span>} icon={<CategoryIcon size={23} />} className="report-workspace-dialog" close={close}>
       <div className="report-workspace-content">
-        <section className="report-workspace-summary">
-          <span className="report-workspace-category-icon" style={{ background: category.background, color: category.foreground }}><CategoryIcon size={25} /></span>
-          <div className="report-workspace-summary-copy">
-            <small className="mono">{r.id}</small>
-            <h3>{r.title}</h3>
-            <div className="report-workspace-chips"><ReportCategoryLabel name={categoryName} /></div>
-          </div>
+        <section className="report-workspace-summary is-description" aria-label="Resident's description">
+          <span className="report-workspace-summary-label">Resident&apos;s description</span>
           <p>{r.description}</p>
+          <small className="mono">Report ID {r.id}</small>
         </section>
 
         {(q.error || error) && <p role="alert" className="error">{error || q.error?.message}</p>}
         {uploadMessage && <p className="report-upload-success" role="status">{uploadMessage}</p>}
 
-        <div className="report-workspace-layout">
+        <div className="report-workspace-layout" data-timeline={activeStep === "timeline" ? "open" : undefined}>
           <nav className="report-workspace-nav" aria-label="Report workspace steps">
             <p className="report-workspace-nav-label">Workspace</p>
             {workspaceSteps.map((step) => {
@@ -682,12 +689,14 @@ export function ReportDetail({
                 {step.state !== "available" && <span className={"report-workspace-step-state " + step.state}>{step.state === "complete" ? "Done" : "Needs review"}</span>}
               </button>;
             })}
+            <button type="button" className={"report-workspace-step report-workspace-timeline-tab" + (activeStep === "timeline" ? " active" : "")}
+              aria-current={activeStep === "timeline" ? "step" : undefined} onClick={() => setActiveStep("timeline")}>
+              <span className="report-workspace-step-icon"><History size={17} aria-hidden="true" /></span>
+              <span className="report-workspace-step-copy"><strong>Case timeline</strong><small>Status and activity</small></span>
+            </button>
           </nav>
 
           <main className="report-workspace-main" aria-live="polite">
-            <div className="report-workspace-main-heading">
-              <div><span className="mono">REPORT WORKSPACE</span><h3>{activeStepMeta.title}</h3><p>{activeStepMeta.detail}</p></div>
-            </div>
 
             {activeStep === "review" && <>
               {!reviewPending && <section className="report-workspace-section report-review-result">

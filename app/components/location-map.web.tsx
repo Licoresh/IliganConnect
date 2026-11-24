@@ -16,7 +16,8 @@ function centerOnReport(map: maplibre.Map, point: Point) {
     duration: 380,
   });
 }
-function enablePopupDragging(map: maplibre.Map, popup: maplibre.Popup, handle: HTMLButtonElement) {
+// The whole preview card is the drag surface; its buttons and links still click normally.
+function enablePopupDragging(map: maplibre.Map, popup: maplibre.Popup, handle: HTMLElement) {
   let drag: { pointerId: number; x: number; y: number; origin: { x: number; y: number } } | null = null;
   let restoreMapPan = false;
   const moveTo = (x: number, y: number) => {
@@ -35,6 +36,7 @@ function enablePopupDragging(map: maplibre.Map, popup: maplibre.Popup, handle: H
   };
   handle.addEventListener("pointerdown", (event) => {
     if (!event.isPrimary || event.button !== 0) return;
+    if ((event.target as Element | null)?.closest("button, a, input, select, textarea, label")) return;
     const location = popup.getLngLat();
     if (!location) return;
     event.preventDefault();
@@ -61,6 +63,7 @@ function enablePopupDragging(map: maplibre.Map, popup: maplibre.Popup, handle: H
   handle.addEventListener("pointercancel", finish);
   handle.addEventListener("lostpointercapture", finish);
   handle.addEventListener("keydown", (event) => {
+    if (event.target !== handle) return;
     const delta = event.shiftKey ? 24 : 12;
     const direction: Record<string, [number, number]> = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] };
     const movement = direction[event.key];
@@ -409,15 +412,10 @@ export default function LocationMap({
           status.style.cssText = `flex:none;padding:4px 7px;border-radius:12px;background:${statusTone.background};color:${statusTone.foreground};font-size:9px;font-weight:700;white-space:nowrap`;
           top.append(status);
         }
-        let dragHandle: HTMLButtonElement | undefined;
+        let dragHandle: HTMLElement | undefined;
         if (!isUser && reportPopupBehavior === "draggable") {
-          dragHandle = document.createElement("button");
-          dragHandle.className = "report-pin-card__drag-handle";
-          dragHandle.type = "button";
-          dragHandle.setAttribute("aria-label", "Move report preview");
-          dragHandle.title = "Drag to move · use arrow keys";
-          dragHandle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h.01M12 5h.01M16 5h.01M8 12h.01M12 12h.01M16 12h.01M8 19h.01M12 19h.01M16 19h.01"/></svg>';
-          top.append(dragHandle);
+          dragHandle = card;
+          card.tabIndex = 0;
           card.classList.add("report-pin-card--draggable");
         }
         top.append(close);
@@ -602,7 +600,11 @@ export default function LocationMap({
         .report-pin-popup .maplibregl-popup-content{padding:0;border-radius:18px;box-shadow:none}
         .report-pin-card__close{margin-left:auto;min-width:48px;min-height:48px;border:0;border-radius:50%;background:#eef5f3;color:#12343d;font-size:24px;cursor:pointer}
         .report-pin-card--draggable .report-pin-card__drag-handle{display:grid;flex:none;width:36px;height:36px;margin-left:auto;padding:8px;place-items:center;border:0;border-radius:10px;background:#e5f6f2;color:#08756b;cursor:grab;touch-action:none}
-        .report-pin-card--draggable .report-pin-card__close{margin-left:0}
+        .report-pin-card--draggable .report-pin-card__close{margin-left:auto}
+        .report-pin-card--draggable{cursor:grab;touch-action:none;user-select:none}
+        .report-pin-card--draggable.is-dragging{cursor:grabbing}
+        .report-pin-card--draggable :is(button,a){cursor:pointer}
+        .report-pin-card--draggable:focus-visible{outline:3px solid #f5b840;outline-offset:2px}
         .report-pin-card__drag-handle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}
         .report-pin-card__drag-handle.is-dragging{cursor:grabbing;background:#d6f0e9}
       `}</style>

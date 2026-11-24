@@ -13,7 +13,8 @@ export function SaveToast() {
       const next = (event as CustomEvent<SaveFeedback>).detail;
       setFeedback(next);
       clearTimeout(timer);
-      timer = setTimeout(() => setFeedback(null), next.kind === "error" ? 6000 : 3600);
+      // Errors stay until dismissed so a failed save is never missed.
+      if (next.kind !== "error") timer = setTimeout(() => setFeedback(null), 4000);
     };
     window.addEventListener(SAVE_FEEDBACK_EVENT, receive);
     return () => { clearTimeout(timer); window.removeEventListener(SAVE_FEEDBACK_EVENT, receive); };

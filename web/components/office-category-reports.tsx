@@ -48,7 +48,7 @@ export function OfficeCategoryReports({ refs }: { refs: References }) {
   return <>
     <section className="office-category-reports panel">
       <div className="office-category-intro">
-        <div><strong>Barangay-managed reports</strong><p>Read-only reports reviewed and retained by the barangay, limited to your organization’s approved categories and coverage.</p></div>
+        <span className="office-category-readonly">Read-only</span>
         <button className="secondary" type="button" disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw size={15} aria-hidden="true" />Refresh</button>
       </div>
       <div className="office-category-filters">
@@ -67,7 +67,7 @@ export function OfficeCategoryReports({ refs }: { refs: References }) {
                 const categoryName = refs.categories.find((item) => item.id === report.category_id)?.name || "Other";
                 const barangayName = refs.barangays.find((item) => item.id === report.barangay_id)?.name || "Iligan City";
                 return <tr key={report.id} className="report-row-clickable" onClick={() => setSelected(report)}>
-                  <th scope="row"><button className="report-title" onClick={() => setSelected(report)}><span>{report.title}</span><ChevronRight size={15} aria-hidden="true" /></button>{report.public_summary && <small className="office-category-summary">{report.public_summary}</small>}<small className="mono">{report.id.slice(0, 8).toUpperCase()}</small></th>
+                  <th scope="row"><button className="report-title" onClick={() => setSelected(report)}><span>{report.title}</span><ChevronRight size={15} aria-hidden="true" /></button>{report.public_summary && report.public_summary.trim().toLowerCase() !== report.title.trim().toLowerCase() && <small className="office-category-summary">{report.public_summary}</small>}<small className="mono">{report.id.slice(0, 8).toUpperCase()}</small></th>
                   <td data-label="Location & category"><span className="office-category-location">{barangayName}</span><ReportCategoryLabel compact name={categoryName} className="report-category" /></td>
                   <td data-label="Status"><span className={`badge ${report.status}`}>{label(report.status)}</span></td>
                   <td data-label="Assessment">{report.severity == null && report.urgency == null ? "—" : `Severity ${report.severity ?? "—"}/5 · Urgency ${report.urgency ?? "—"}/5`}</td>

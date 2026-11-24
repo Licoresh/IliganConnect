@@ -4121,6 +4121,253 @@ main#main, main#main.overview-main, main#main.reports-main { width: 100%; max-wi
   .settings-field small, .settings-card-heading p, .settings-access-heading p { font-size: 12px; }
 }
 
+/* Staff tablet rail and phone navigation. Desktop and Resident Portal are not targeted. */
+.staff-bottom-nav,
+.staff-more-dialog { display: none; }
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .shell[data-role] { display: block; min-height: 100dvh; }
+  .shell[data-role] > .sidebar {
+    visibility: visible;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 112px;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    padding: 18px 8px 12px;
+    transform: none;
+    box-shadow: 3px 0 18px #09273814;
+  }
+  .shell[data-role] > .sidebar .drawer-close,
+  .shell[data-role] > .sidebar .brand span,
+  .shell[data-role] > .sidebar .workspace-edition,
+  .shell[data-role] > .sidebar .nav-caption,
+  .shell[data-role] > .sidebar .sidebar-footer,
+  .shell[data-role] > .sidebar .sidebar-version { display: none; }
+  .shell[data-role] > .sidebar .brand { justify-content: center; margin-bottom: 8px; }
+  .shell[data-role] > .sidebar .brand img { width: 38px; height: 38px; }
+  .shell[data-role] > .sidebar nav { min-height: 0; flex: 1 1 auto; gap: 12px; padding: 5px 0; }
+  .shell[data-role] > .sidebar .nav-group { gap: 4px; margin: 0; }
+  .shell[data-role] > .sidebar .nav-group button {
+    display: grid;
+    min-height: 58px;
+    align-content: center;
+    justify-items: center;
+    gap: 4px;
+    padding: 6px 3px;
+    border-radius: 10px;
+    text-align: center;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+  .shell[data-role] > .sidebar .nav-group button span { max-width: 100%; font-size: 0; line-height: 1.2; }
+  .shell[data-role] > .sidebar .nav-group button span::after {
+    content: attr(data-compact-label);
+    display: block;
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+  .shell[data-role] > .sidebar .nav-group button svg { width: 19px; height: 19px; }
+  .shell[data-role] > .content { width: calc(100% - 112px); margin-left: 112px; }
+  .shell[data-role] > .content .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 64px;
+    padding-inline: 20px;
+  }
+  .shell[data-role] > .content .mobile-menu,
+  .shell[data-role] > .scrim { display: none; }
+  .shell[data-role] > .content main#main { padding: 22px 20px 34px; }
+  .shell[data-role] > .content .page-heading { align-items: flex-start; margin-bottom: 18px; }
+  .shell[data-role] > .content .page-heading h1 { font-size: clamp(25px, 3.2vw, 32px); }
+  .shell[data-role] > .content .overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .shell[data-role] > .content .overview-metric { min-height: 100px; padding: 14px; }
+  .shell[data-role] > .content .overview-metric-copy small { line-height: 1.35; }
+  .shell[data-role] > .content .dashboard-geography { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .shell[data-role] > .content .meeting-layout { grid-template-columns: minmax(0, 1fr); }
+  .shell[data-role] > .content .meeting-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .shell[data-role] > .content .organization-panel,
+  .shell[data-role] > .content .panel { padding: 17px; }
+}
+
+@media (min-width: 840px) and (max-width: 1023px) {
+  .shell[data-role] > .content .overview-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .shell[data-role] > .content .dashboard-geography { grid-template-columns: minmax(0, 1.15fr) minmax(220px, .85fr); }
+  .shell[data-role] > .content .overview-reporting { grid-template-columns: minmax(0, 1.35fr) minmax(205px, .8fr); }
+}
+
+@media (max-width: 767px) {
+  .shell[data-role] {
+    display: block;
+    min-height: 100dvh;
+    padding-bottom: 0;
+  }
+  .shell[data-role] > .sidebar,
+  .shell[data-role] > .scrim,
+  .shell[data-role] > .content .mobile-menu { display: none; }
+  .shell[data-role] > .content { width: 100%; min-width: 0; margin: 0; }
+  .shell[data-role] > .content .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 62px;
+    height: auto;
+    padding: max(8px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) 8px max(14px, env(safe-area-inset-left, 0px));
+    background: #fff;
+  }
+  .shell[data-role] > .content .workspace-identity { gap: 8px; }
+  .shell[data-role] > .content .workspace-identity > svg { display: none; }
+  .shell[data-role] > .content .workspace-identity strong { max-width: 54vw; font-size: 13px; }
+  .shell[data-role] > .content .workspace-identity small { font-size: 11px; line-height: 1.25; }
+  .shell[data-role] > .content .topbar-actions { gap: 4px; }
+  .shell[data-role] > .content .topbar .workspace-search,
+  .shell[data-role] > .content .topbar .icon-button,
+  .shell[data-role] > .content .topbar .profile-menu > summary { width: 40px; min-width: 40px; min-height: 44px; height: 44px; padding: 0; justify-content: center; }
+  .shell[data-role] > .content .workspace-search > span,
+  .shell[data-role] > .content .profile-name,
+  .shell[data-role] > .content .profile-menu summary > svg { display: none; }
+  .shell[data-role] > .content .topbar .avatar { width: 32px; height: 32px; }
+  .shell[data-role] > .content main#main,
+  .shell[data-role] > .content main#main.overview-main,
+  .shell[data-role] > .content main#main.reports-main {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: calc(100dvh - 62px);
+    padding: 20px max(14px, env(safe-area-inset-right, 0px)) calc(84px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px));
+  }
+  .shell[data-role] > .content main#main > .page-heading { align-items: flex-start; gap: 8px 12px; margin-bottom: 15px; }
+  .shell[data-role] > .content main#main > .page-heading h1 { font-size: clamp(24px, 6.5vw, 29px); line-height: 1.18; text-wrap: balance; }
+  .shell[data-role] > .content main#main > .page-heading p:last-child { font-size: 14px; line-height: 1.5; }
+  .shell[data-role] > .content main#main > .page-heading .eyebrow { margin-bottom: 6px; }
+  .shell[data-role] > .content .overview { display: flex; flex-direction: column; gap: 13px; }
+  .shell[data-role] > .content .overview-geography,
+  .shell[data-role] > .content .overview-reporting,
+  .shell[data-role] > .content .overview-reporting-aside { display: contents; }
+  .shell[data-role] > .content .overview-scope { order: 0; margin: 0; padding: 10px 11px; }
+  .shell[data-role] > .content .overview-metrics { order: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+  .shell[data-role] > .content .overview-metric { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: start; gap: 8px; min-height: 0; padding: 12px 10px; border-radius: 11px; }
+  .shell[data-role] > .content .overview-metric-icon { width: 30px; height: 30px; }
+  .shell[data-role] > .content .overview-metric-copy { min-width: 0; }
+  .shell[data-role] > .content .overview-metric-title { font-size: 12px; line-height: 1.3; }
+  .shell[data-role] > .content .overview-metric-copy strong { margin: 4px 0 2px; font-size: 22px; }
+  .shell[data-role] > .content .overview-metric-copy small { font-size: 11px; line-height: 1.3; }
+  .shell[data-role] > .content .overview-steps { order: 2; }
+  .shell[data-role] > .content .overview-assigned { order: 3; }
+  .shell[data-role] > .content .overview-reporting > .overview-panel { order: 4; }
+  .shell[data-role] > .content .overview-map-panel { order: 5; }
+  .shell[data-role] > .content .overview-reporting-aside > * { order: 6; }
+  .shell[data-role] > .content .overview .charts { order: 7; }
+  .shell[data-role] > .content .overview-community-panels { order: 8; }
+  .shell[data-role] > .content .dashboard-geography { display: contents; }
+  .shell[data-role] > .content .overview-map-panel { padding: 13px; }
+  .shell[data-role] > .content .overview-map-panel .map { height: 280px; min-height: 240px; }
+  .shell[data-role] > .content .overview-assigned-list,
+  .shell[data-role] > .content .overview-community-list { gap: 0; }
+  .shell[data-role] > .content :is(.overview-assigned-item, .overview-community-row) { min-height: 64px; gap: 9px; padding: 10px 0; }
+  .shell[data-role] > .content :is(.overview-assigned-copy strong, .overview-community-copy strong) { font-size: 13px; }
+  .shell[data-role] > .content :is(.overview-assigned-copy small, .overview-community-copy small) { font-size: 11px; }
+  .shell[data-role] > .content .panel { padding: 15px; border-radius: 12px; }
+  .shell[data-role] > .content .panel-heading { align-items: flex-start; gap: 10px; }
+  .shell[data-role] > .content .panel-heading h2 { font-size: 16px; }
+  .shell[data-role] > .content .report-workspace,
+  .shell[data-role] > .content .office-category-reports,
+  .shell[data-role] > .content .analytics-section,
+  .shell[data-role] > .content .consultation-grid,
+  .shell[data-role] > .content .announcement-grid,
+  .shell[data-role] > .content .meeting-layout,
+  .shell[data-role] > .content .organization-workspace { min-width: 0; }
+  .shell[data-role] > .content .report-search-row { gap: 9px; padding: 14px 13px; }
+  .shell[data-role] > .content .report-filter-panel { margin-inline: 12px; }
+  .shell[data-role] > .content .report-workspace .results-heading { padding-inline: 13px; }
+  .shell[data-role] > .content .report-workspace .pagination { padding-inline: 13px; }
+  .shell[data-role] > .content .report-filter-panel .toolbar,
+  .shell[data-role] > .content .office-category-filters,
+  .shell[data-role] > .content .announcement-filters,
+  .shell[data-role] > .content .consultation-filters { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .shell[data-role] > .content .report-filter-panel .toolbar > label:has(> input[type=date]) { grid-column: auto; }
+  .shell[data-role] > .content .meeting-rail { grid-template-columns: minmax(0, 1fr); }
+  .shell[data-role] > .content .organization-navigation { overflow-x: auto; overscroll-behavior-x: contain; }
+  .shell[data-role] > .content .organization-navigation button { flex: 0 0 auto; min-height: 48px; padding-inline: 13px; }
+  .shell[data-role] > .content > footer { padding-inline: 14px; }
+  .staff-bottom-nav {
+    position: fixed;
+    z-index: 35;
+    inset: auto 0 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 3px;
+    padding: 7px max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+    border-top: 1px solid var(--line);
+    background: #fff;
+    box-shadow: 0 -5px 18px #153b4b0c;
+  }
+  .staff-bottom-nav button {
+    display: grid;
+    min-width: 0;
+    min-height: 50px;
+    align-content: center;
+    justify-items: center;
+    gap: 2px;
+    padding: 3px 1px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    font-size: clamp(11px, 3vw, 12px);
+    line-height: 1.2;
+    box-shadow: none;
+  }
+  .staff-bottom-nav button.active { background: var(--brand-soft); color: var(--brand); font-weight: 700; }
+  .staff-bottom-nav button svg { width: 19px; height: 19px; }
+  .staff-more-dialog {
+    position: fixed;
+    inset: auto 0 0;
+    display: none;
+    flex-direction: column;
+    width: 100%;
+    max-width: none;
+    height: min(82vh, 720px);
+    height: min(82dvh, 720px);
+    max-height: calc(100vh - max(12px, env(safe-area-inset-top, 0px)));
+    max-height: calc(100dvh - max(12px, env(safe-area-inset-top, 0px)));
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    z-index: 60;
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    border-radius: 18px 18px 0 0;
+    background: #fff;
+    color: var(--ink);
+    box-shadow: 0 -14px 36px #102d3b28;
+  }
+  .staff-more-dialog[open] { display: flex; }
+  .staff-more-dialog::backdrop { background: #102d3b70; }
+  .staff-more-header { position: relative; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); background: #fff; }
+  .staff-more-header > div > span { display: block; color: var(--muted); font-size: 12px; }
+  .staff-more-header h2 { margin: 2px 0 0; font-size: 20px; }
+  .staff-more-header button { width: 44px; min-width: 44px; min-height: 44px; padding: 0; }
+  .staff-more-groups { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 17px; padding: 12px 16px max(20px, env(safe-area-inset-bottom, 0px)); overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
+  .staff-more-groups section { display: grid; gap: 4px; }
+  .staff-more-groups h3 { margin: 0 0 4px; color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+  .staff-more-groups button { display: grid; grid-template-columns: 28px minmax(0, 1fr) 20px; align-items: center; gap: 10px; min-height: 52px; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: #fff; color: var(--ink); text-align: left; box-shadow: none; }
+  .staff-more-groups button.active { border-color: var(--brand-line); background: var(--brand-soft); color: var(--brand); font-weight: 700; }
+  .staff-more-groups button svg { color: var(--brand); }
+  .shell[data-role] > .content > footer { display: none; }
+}
+
+@media (max-width: 359px) {
+  .shell[data-role] > .content .workspace-identity strong { max-width: 48vw; }
+  .staff-bottom-nav { gap: 1px; padding-inline: 5px; }
+  .staff-bottom-nav button { font-size: 11px; }
+  .shell[data-role] > .content .overview-metric { grid-template-columns: minmax(0, 1fr); }
+  .shell[data-role] > .content .overview-metric-icon { display: none; }
+}
+
 /* Reflow complete content groups instead of shrinking the desktop composition. */
 @container issue-workspace (max-width: 620px) {
   .overview-map-filter { gap: 10px; padding: 0; }
@@ -5312,3 +5559,936 @@ main#main .issue-map .overview-map-base button { min-width: 44px; min-height: 34
 input:is([type="checkbox"], [type="radio"]) { min-height: 0; }
 input:is([type="checkbox"], [type="radio"]):focus { outline: 0; box-shadow: none; }
 label:has(input:is([type="checkbox"], [type="radio"]):focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Staff phone: Issue reports as a native-style record list (ref: docs/design/staff-overhaul/reports-reference.html).
+   Scoped to the staff shell on phones and tablets; desktop and Resident Portal are untouched. */
+@media (max-width: 1023px) {
+  .shell[data-role] main#main .report-workspace.panel { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  .shell[data-role] main#main .report-workspace .mobile-report-queue { display: none; }
+  .shell[data-role] main#main .report-workspace .queue-tabs {
+    display: flex; gap: 6px; box-sizing: border-box; width: calc(100% + 2 * max(14px, env(safe-area-inset-left, 0px))); max-width: none; margin: 0 calc(-1 * max(14px, env(safe-area-inset-left, 0px))); padding: 0 max(14px, env(safe-area-inset-left, 0px)) 10px;
+    border: 0; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; scroll-padding-inline: max(14px, env(safe-area-inset-left, 0px));
+  }
+  .shell[data-role] main#main .report-workspace .queue-tabs::-webkit-scrollbar { display: none; }
+  .shell[data-role] main#main .report-workspace .queue-tabs button {
+    flex: 0 0 auto; min-height: 40px; gap: 6px; padding: 0 13px; border: 1px solid var(--line); border-radius: 999px;
+    background: #fff; color: var(--muted); font-size: 13px; font-weight: 550; scroll-snap-align: start;
+  }
+  .shell[data-role] main#main .report-workspace .queue-tabs button > svg { display: none; }
+  .shell[data-role] main#main .report-workspace .queue-tabs button.active { border-color: var(--ink); background: var(--ink); color: #fff; }
+  .shell[data-role] main#main .report-workspace .queue-tabs button.active .queue-count { background: #ffffff2b; color: #fff; }
+  .shell[data-role] main#main .report-workspace .report-search-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0 0 8px; }
+  .shell[data-role] main#main .report-workspace .report-search-row :is(input, select) { min-height: 46px; border-radius: 12px; font-size: 16px; }
+  .shell[data-role] main#main .report-workspace .sort-field { width: 100%; }
+
+  /* Filters become a bottom sheet while open; the summary row is the sheet header and close control. */
+  .shell[data-role] main#main .report-workspace .report-filter-panel { margin: 0 0 8px; border-radius: 12px; background: #fff; }
+  .shell[data-role] main#main .report-workspace .report-filter-panel summary { min-height: 46px; font-size: 14px; }
+  .shell[data-role] main#main .report-workspace .report-filter-panel[open] {
+    position: fixed; z-index: 50; inset: auto 0 0; max-height: 86dvh; margin: 0; overflow-y: auto; overscroll-behavior: contain;
+    border: 0; border-radius: 18px 18px 0 0; background: #fff; box-shadow: 0 0 0 100vmax #102d3b66, 0 -12px 36px #102d3b33;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .shell[data-role] main#main .report-workspace .report-filter-panel[open] summary {
+    position: sticky; top: 0; z-index: 1; min-height: 58px; padding: 14px 16px; border-bottom: 1px solid var(--line);
+    background: #fff; font-size: 17px;
+  }
+  .shell[data-role] main#main .report-workspace .report-filter-panel[open] summary::after { content: "Done"; color: var(--brand); font-size: 15px; font-weight: 650; }
+  .shell[data-role] main#main .report-workspace .report-filter-panel[open] summary .filter-chevron { display: none; }
+  .shell[data-role] main#main .report-workspace .report-filter-panel[open] .toolbar { gap: 12px; padding: 14px 16px 22px; }
+  .shell[data-role] main#main .report-workspace .report-filter-panel[open] .toolbar :is(select, input) { min-height: 48px; border-radius: 12px; font-size: 16px; }
+
+  .shell[data-role] main#main .report-workspace .results-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-height: 0; margin: 2px 0 10px; padding: 0; }
+  .shell[data-role] main#main .report-workspace .results-heading .inline-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+  .shell[data-role] main#main .report-workspace .results-heading .inline-actions button { flex: 1 1 0; min-width: max-content; min-height: 42px; padding: 0 12px; font-size: 13px; }
+
+  /* Record list */
+  .shell[data-role] main#main .report-workspace .table-scroll { overflow: visible; width: calc(100% + 2 * max(14px, env(safe-area-inset-left, 0px))); max-width: none; margin: 0 calc(-1 * max(14px, env(safe-area-inset-left, 0px))); border-block: 1px solid var(--line); background: #fff; }
+  .shell[data-role] main#main .report-workspace .reports-table-head { display: none; }
+  .shell[data-role] main#main .report-workspace .reports-table colgroup { display: none; }
+  .shell[data-role] main#main .report-workspace .reports-table tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title status" "where status" "when status";
+    gap: 3px 12px; margin: 0; padding: 13px 16px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: #fff; box-shadow: none;
+  }
+  .shell[data-role] main#main .report-workspace .reports-table tbody { display: block; gap: 0; }
+  .shell[data-role] main#main .report-workspace .reports-table tr:first-child { border-top: 0; }
+  .shell[data-role] main#main .report-workspace .reports-table tr:active { background: var(--brand-soft); }
+  .shell[data-role] main#main .report-workspace .reports-table :is(th, td) { width: auto; padding: 0; border: 0; background: transparent; }
+  .shell[data-role] main#main .report-workspace .reports-table td::before { display: none; }
+  .shell[data-role] main#main .report-workspace .reports-table th { grid-area: title; min-width: 0; }
+  .shell[data-role] main#main .report-workspace .reports-table th .report-title { display: block; min-height: 0; height: auto; padding: 0; border: 0; background: none; font-size: 15px; font-weight: 650; line-height: 1.3; text-align: left; }
+  .shell[data-role] main#main .report-workspace .reports-table th .report-title svg { display: none; }
+  .shell[data-role] main#main .report-workspace .reports-table th > .record-meta { margin-top: 2px; font-size: 11.5px; }
+  .shell[data-role] main#main .report-workspace .reports-table th .duplicate-queue-indicator { margin-top: 5px; }
+  .shell[data-role] main#main .report-workspace .reports-table td[data-label="Location"] { grid-area: where; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 12.5px; color: var(--muted); }
+  .shell[data-role] main#main .report-workspace .reports-table td[data-label="Location"] .report-location strong { font-weight: 600; color: var(--ink); }
+  .shell[data-role] main#main .report-workspace .reports-table td[data-label="Location"] > .record-meta { margin: 0; }
+  .shell[data-role] main#main .report-workspace .reports-table td[data-label="Status"] { grid-area: status; align-self: center; }
+  .shell[data-role] main#main .report-workspace .reports-table td[data-label="Status"] .badge { white-space: nowrap; }
+  .shell[data-role] main#main .report-workspace .reports-table td:is([data-label="Resident"], [data-label="Reporter"], [data-label="Office"]) { display: none; }
+  .shell[data-role] main#main .report-workspace .reports-table td.report-received { grid-area: when; position: static; display: block; font-size: 12px; color: var(--muted); }
+  .shell[data-role] main#main .report-workspace .reports-table td.report-received .report-open { display: none; }
+  .shell[data-role] main#main .report-workspace .pagination { gap: 8px; padding: 14px 0 0; }
+  .shell[data-role] main#main .report-workspace .pagination button { min-height: 44px; }
+}
+
+/* Staff phone: task dialogs open as bottom sheets instead of floating desktop cards.
+   The report workspace and notification center keep their existing full-screen phone layout. */
+@media (max-width: 767px) {
+  .shell[data-role] dialog.modal[open]:not(.report-workspace-dialog):not(.notification-center-dialog) {
+    inset: auto 0 0; width: 100%; max-width: none; max-height: calc(100dvh - max(28px, env(safe-area-inset-top, 0px)));
+    margin: 0; border: 0; border-radius: 20px 20px 0 0; box-shadow: 0 -16px 44px #102d3b38;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .shell[data-role] dialog.modal[open]:not(.report-workspace-dialog):not(.notification-center-dialog)::before {
+    content: ""; display: block; flex: 0 0 auto; width: 40px; height: 4px; margin: 8px auto 0; border-radius: 9px; background: #cfdadd;
+  }
+  .shell[data-role] dialog.modal::backdrop { background: #102d3b70; }
+  /* Sticky form actions sit flush with the sheet edge; the scroller padding below them no longer shows content. */
+  .shell[data-role] dialog.modal[open] .community-edit-actions { background: #fff; box-shadow: 0 -1px 0 var(--line), 0 24px 0 #fff; }
+}
+
+/* Feedback toasts: one visual system for success and error; shape + icon + text, not color alone.
+   Phones (bottom nav up to 767px) lift the toast above the nav and safe area. */
+.save-toast { grid-template-columns: 30px minmax(0, 1fr) 32px; gap: 10px; min-height: 54px; padding: 9px 9px 9px 11px; border: 1px solid var(--line); border-left: 4px solid #1c8a5a; border-radius: 12px; color: var(--ink); font-size: 13.5px; font-weight: 600; line-height: 1.4; box-shadow: 0 10px 30px #102d3b24; }
+.save-toast > svg { box-sizing: content-box; width: 18px; height: 18px; padding: 6px; border-radius: 9px; background: #e5f5ec; color: #1c7a50; }
+.save-toast.error { border-color: var(--line); border-left-color: #c2413c; color: var(--ink); }
+.save-toast.error > svg { background: #fdecea; color: #b23a35; }
+.save-toast > button { width: 32px; height: 32px; color: var(--muted); }
+@media (max-width: 767px) {
+  .save-toast-region { right: 12px; left: 12px; width: auto; bottom: calc(78px + env(safe-area-inset-bottom, 0px)); }
+  .save-toast-region.is-modal-save-toast { right: auto; bottom: auto; left: 50%; width: calc(100vw - 24px); }
+}
+
+/* Staff phone Overview: work first (focus, attention, assigned, recent), map and charts after.
+   Metrics become a compact 3-column summary; recent reports become a plain record list. */
+@media (max-width: 767px) {
+  .shell[data-role] main#main .overview-scope { padding: 9px 12px; }
+  .shell[data-role] main#main .overview-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+  .shell[data-role] main#main .overview-metric { display: flex; flex-direction: column; justify-content: flex-start; gap: 0; min-height: 0; padding: 11px 10px 12px; border: 0; border-radius: 0; box-shadow: none; background: #fff; }
+  .shell[data-role] main#main .overview-metric:nth-child(n+4) { border-top: 1px solid var(--line); }
+  .shell[data-role] main#main .overview-metric:not(:nth-child(3n+1)) { border-left: 1px solid var(--line) !important; }
+  .shell[data-role] main#main .overview-metric-icon,
+  .shell[data-role] main#main .overview-metric-copy small { display: none !important; }
+  .shell[data-role] main#main .overview-metric-copy { display: flex; flex-direction: column-reverse; }
+  .shell[data-role] main#main .overview-metric-copy strong { margin: 0 0 2px; font-size: 22px; line-height: 1.1; }
+  .shell[data-role] main#main .overview-metric-title { color: var(--muted); font-size: 11.5px; font-weight: 550; line-height: 1.25; }
+  .shell[data-role] main#main .overview-steps { order: 2; }
+  .shell[data-role] main#main .overview-attention { order: 3; }
+  .shell[data-role] main#main .overview-assigned { order: 3; }
+  .shell[data-role] main#main .overview-reporting > .overview-panel { order: 4; }
+  .shell[data-role] main#main .overview-map-panel { order: 5; }
+
+  .shell[data-role] main#main .overview-recent-table, .shell[data-role] main#main .overview-recent-table tbody { display: block; }
+  .shell[data-role] main#main .overview-recent-table thead { display: none; }
+  .shell[data-role] main#main .overview-recent-table tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title status" "cat status";
+    gap: 4px 12px; margin: 0; padding: 12px 14px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none;
+  }
+  .shell[data-role] main#main .overview-recent-table tr:first-child { border-top: 0; }
+  .shell[data-role] main#main .overview-recent-table td { padding: 0; border: 0; }
+  .shell[data-role] main#main .overview-recent-table td::before { display: none; }
+  .shell[data-role] main#main .overview-recent-table td:is([data-label="#"], .overview-date) { display: none; }
+  .shell[data-role] main#main .overview-recent-table td[data-label="Title"] { grid-area: title; min-width: 0; }
+  .shell[data-role] main#main .overview-recent-table td[data-label="Category"] { grid-area: cat; }
+  .shell[data-role] main#main .overview-recent-table td[data-label="Status"] { grid-area: status; align-self: center; }
+  .shell[data-role] main#main .overview-recent-table .overview-report-file { display: none; }
+  .shell[data-role] main#main .overview-recent-table .overview-report-title-cell { display: block; }
+  .shell[data-role] main#main .overview-recent-table .overview-report-link { min-height: 0; padding: 0; font-size: 14.5px; font-weight: 650; text-align: left; }
+  .shell[data-role] main#main .overview-recent-table .overview-report-copy small { display: block; margin-top: 1px; font-size: 12px; }
+}
+
+/* Staff phone Map page: compact the scope, filter and view controls above the map so it appears sooner.
+   Only the surrounding page chrome is styled; the map, its controls, pins, legend and panels are untouched. */
+@media (max-width: 767px) {
+  .shell[data-role] main#main .issue-map > .map-authorized-area { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; }
+  .shell[data-role] main#main .issue-map > .map-authorized-area .overview-scope-copy { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 0 8px; min-width: 0; font-size: 12px; line-height: 1.35; }
+  .shell[data-role] main#main .issue-map > .map-authorized-area .overview-scope-icon { grid-row: span 2; }
+  .shell[data-role] main#main .issue-map > .map-authorized-area .overview-scope-divider { display: none; }
+  .shell[data-role] main#main .issue-map > .map-authorized-area .overview-scope-copy > strong { font-size: 12.5px; }
+  .shell[data-role] main#main .issue-map > .map-authorized-area .overview-scope-copy > span:last-child { color: var(--muted); }
+  /* Icon-only on phones; the button keeps its accessible name "Refresh geographic data". */
+  .shell[data-role] main#main .issue-map > .map-authorized-area .overview-updated { width: 44px; min-width: 44px; min-height: 44px; margin: 0; padding: 0; justify-content: center; font-size: 0; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools { gap: 8px; margin-top: 10px; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-tool-icon { display: none; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-coverage { display: block; padding: 0; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-filter > strong { display: none; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-filter-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 8px; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-filter-fields > label { font-size: 12px; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-filter-fields button { grid-column: auto; min-height: 46px; }
+  .shell[data-role] main#main .issue-map > .map-page-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 10px 0; }
+  .shell[data-role] main#main .issue-map > .map-page-toolbar .overview-map-view-tabs { min-width: 0; margin: 0; }
+  .shell[data-role] main#main .issue-map > .map-page-toolbar .overview-map-view-tabs button { min-height: 42px; padding-inline: 8px; font-size: 13px; }
+  .shell[data-role] main#main .issue-map > .map-page-toolbar .map-page-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+  .shell[data-role] main#main .issue-map > .map-page-toolbar .map-page-actions button { min-width: 0; min-height: 42px; padding-inline: 10px; font-size: 13px; }
+  .shell[data-role] main#main .issue-map > .map-page-toolbar > :not(.overview-map-view-tabs):not(.map-page-actions) { display: none; }
+}
+
+/* Staff phone Analytics: compact filters and KPIs; barangay distribution as records with sort chips. */
+@media (max-width: 767px) {
+  .shell[data-role] main#main .analytics-filter-card { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; padding: 12px; }
+  .shell[data-role] main#main .analytics-filter-card > label { min-width: 0; grid-column: auto; font-size: 12px; }
+  .shell[data-role] main#main .analytics-filter-card .analytics-filter-actions { grid-column: 1 / -1; }
+  .shell[data-role] main#main .analytics-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+  .shell[data-role] main#main .analytics-kpi { display: block; min-height: 0; padding: 11px 10px 12px; border: 0; border-radius: 0; box-shadow: none; background: #fff; }
+  .shell[data-role] main#main .analytics-kpi:nth-child(n+4) { border-top: 1px solid var(--line); }
+  .shell[data-role] main#main .analytics-kpi:not(:nth-child(3n+1)) { border-left: 1px solid var(--line); }
+  .shell[data-role] main#main .analytics-kpi-icon, .shell[data-role] main#main .analytics-kpi small { display: none !important; }
+  .shell[data-role] main#main .analytics-kpi > div { display: flex; flex-direction: column-reverse; }
+  .shell[data-role] main#main .analytics-kpi strong { margin: 0 0 2px; font-size: 22px; line-height: 1.1; }
+  .shell[data-role] main#main .analytics-kpi-title { color: var(--muted); font-size: 11.5px; font-weight: 550; line-height: 1.25; }
+}
+@media (max-width: 1023px) {
+  .shell[data-role] main#main .analytics-distribution .table-scroll { overflow: visible; border: 0; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table), .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody { display: block; width: 100%; min-width: 0; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) thead { display: block; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) thead tr { display: flex; gap: 6px; padding: 0 0 10px; overflow-x: auto; scrollbar-width: none; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) thead th { flex: 0 0 auto; padding: 0; border: 0; background: none; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) thead th:last-child { display: none; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) thead th > :is(button, span) { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 12.5px; letter-spacing: 0; text-transform: none; white-space: nowrap; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 3px 10px; align-items: center; padding: 11px 0; border-top: 1px solid var(--line);
+  }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody :is(th, td) { padding: 0; border: 0; text-align: left; white-space: normal; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody th { grid-column: 1 / 3; grid-row: 1; position: static; background: none; font-size: 15px; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td.analytics-priority-cell { grid-column: 3; grid-row: 1; text-align: right; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td.analytics-priority-cell small { display: block; font-size: 11px; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:nth-of-type(-n+4) { display: inline-flex; gap: 4px; align-items: baseline; font-size: 12.5px; color: var(--muted); }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:nth-of-type(1) { grid-column: 1; grid-row: 2; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:nth-of-type(2) { grid-column: 2; grid-row: 2; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:nth-of-type(3) { grid-column: 1; grid-row: 3; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:nth-of-type(4) { grid-column: 2; grid-row: 3; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:nth-of-type(1)::before { content: "Received"; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:nth-of-type(2)::before { content: "Verified"; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:nth-of-type(3)::before { content: "Unresolved"; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:nth-of-type(4)::before { content: "Recurrence"; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:last-child { grid-column: 3; grid-row: 2 / 4; justify-self: end; }
+  .shell[data-role] main#main .analytics-table:not(.analytics-active-table) tbody td:last-child button { min-height: 40px; padding: 0 10px; font-size: 12.5px; white-space: nowrap; }
+}
+
+/* Staff phone Meetings: five status counts in one compact strip; long descriptions clamp to two lines on the list. */
+@media (max-width: 767px) {
+  .shell[data-role] main#main .meeting-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+  .shell[data-role] main#main .meeting-metric { display: block; grid-column: auto !important; min-height: 0; padding: 10px 7px 11px; border: 0; border-radius: 0; box-shadow: none; background: #fff; }
+  .shell[data-role] main#main .meeting-metric + .meeting-metric { border-left: 1px solid var(--line); }
+  .shell[data-role] main#main .meeting-metric-icon, .shell[data-role] main#main .meeting-metric small { display: none !important; }
+  .shell[data-role] main#main .meeting-metric > div { display: flex; flex-direction: column-reverse; align-items: flex-start; }
+  .shell[data-role] main#main .meeting-metric strong { margin: 0 0 2px; font-size: 20px; line-height: 1.1; }
+  .shell[data-role] main#main .meeting-metric span:not(.meeting-metric-icon) { color: var(--muted); font-size: 11px; font-weight: 550; line-height: 1.2; }
+  .shell[data-role] main#main .meeting-card-body > p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+}
+
+/* Staff phone Administration: section switcher as scrollable chips; section headings as one compact row. */
+@media (max-width: 767px) {
+  .shell[data-role] main#main .organization-navigation {
+    display: flex; gap: 6px; box-sizing: border-box; width: calc(100% + 2 * max(14px, env(safe-area-inset-left, 0px))); max-width: none;
+    margin: 0 calc(-1 * max(14px, env(safe-area-inset-left, 0px))) 12px; padding: 0 max(14px, env(safe-area-inset-left, 0px)) 2px;
+    border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow-x: auto; scrollbar-width: none;
+    scroll-padding-inline: max(14px, env(safe-area-inset-left, 0px));
+  }
+  .shell[data-role] main#main .organization-navigation::-webkit-scrollbar { display: none; }
+  .shell[data-role] main#main .organization-navigation button {
+    flex: 0 0 auto; min-height: 40px; padding: 0 13px; border: 1px solid var(--line); border-radius: 999px;
+    background: #fff; color: var(--muted); font-size: 13px; font-weight: 550; box-shadow: none;
+  }
+  .shell[data-role] main#main .organization-navigation button svg { width: 15px; height: 15px; }
+  .shell[data-role] main#main .organization-navigation button:is(.active, [aria-pressed="true"], [aria-selected="true"]) { border-color: var(--ink); background: var(--ink); color: #fff; }
+  .shell[data-role] main#main .organization-section-heading:has(> .organization-section-icon) { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: start; gap: 10px; }
+  .shell[data-role] main#main .organization-section-heading .organization-section-icon { width: 34px; height: 34px; margin: 0; }
+  .shell[data-role] main#main .organization-section-heading h2 { margin: 0; font-size: 17px; }
+  .shell[data-role] main#main .organization-workspace > .organization-panel { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+}
+
+/* Unsaved-changes confirmation, shown inside any task dialog on Escape or close.
+   Destructive action is red and worded; the safe choice is first and focused. */
+.dialog-discard { position: absolute; z-index: 30; inset: 0; display: grid; place-items: center; padding: 20px; background: #102d3b5c; animation: save-toast-in 140ms ease-out; }
+.dialog-discard-card { display: grid; justify-items: start; gap: 6px; width: min(400px, 100%); padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 20px 50px #102d3b40; }
+.dialog-discard-icon { display: grid; width: 38px; height: 38px; place-items: center; margin-bottom: 4px; border-radius: 11px; background: #fdecea; color: #b23a35; }
+.dialog-discard-card h3 { margin: 0; color: var(--ink); font-size: 17px; }
+.dialog-discard-card p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.dialog-discard-actions { display: flex; justify-content: flex-end; gap: 8px; width: 100%; margin-top: 12px; }
+.dialog-discard-actions button { min-height: 42px; padding: 0 15px; border-radius: 10px; font-weight: 650; }
+.dialog-discard-actions button.danger { border: 1px solid #b23a35; background: #b23a35; color: #fff; }
+.dialog-discard-actions button.danger:hover:not(:disabled) { background: #9a302c; }
+@media (max-width: 767px) {
+  .dialog-discard { align-items: end; padding: 0; }
+  .dialog-discard-card { width: 100%; padding: 18px 16px max(18px, env(safe-area-inset-bottom, 0px)); border: 0; border-radius: 18px 18px 0 0; }
+  .dialog-discard-actions { display: grid; grid-template-columns: 1fr; }
+  .dialog-discard-actions button { min-height: 48px; }
+  .dialog-discard-actions button.danger { order: 2; }
+}
+
+/* Staff phones: the sidebar is replaced by the bottom nav, so the avatar menu (Account settings, Sign out) stays in the top bar. */
+@media (max-width: 767px) {
+  .shell[data-role] > .content .topbar .profile-menu { display: block; position: relative; }
+  .shell[data-role] > .content .topbar .profile-menu[open] > :not(summary) { position: absolute; z-index: 40; top: calc(100% + 6px); right: 0; min-width: 210px; }
+}
+@media (max-width: 767px) {
+  .shell[data-role] > .content .topbar .profile-menu[open] :is(button, a) { justify-content: flex-start; min-height: 46px; text-align: left; }
+  .shell[data-role] > .content .topbar .profile-menu[open] :is(button, a):last-child { border-top: 1px solid var(--line); color: #b23a35; }
+}
+
+/* Report workspace: the report title is the dialog title; the summary is the resident's own description. */
+.report-workspace-dialog .community-dialog-title h2 { font-size: 19px; line-height: 1.3; overflow-wrap: anywhere; }
+.report-workspace-summary.is-description { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 13px 16px; border: 1px solid var(--line); border-left: 3px solid var(--brand); border-radius: 12px; background: #f8fbfb; }
+.report-workspace-summary.is-description .report-workspace-summary-label { color: var(--muted); font-size: 11.5px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.report-workspace-summary.is-description p { margin: 0; color: var(--ink); font-size: 14.5px; line-height: 1.55; white-space: pre-line; }
+.report-workspace-summary.is-description small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+
+/* Phones and tablets: steps become a 4-up segmented control that stays visible while the step content scrolls. */
+@media (max-width: 1023px) {
+  .report-workspace-dialog .community-dialog-title h2 { font-size: 17px; }
+  .report-workspace-dialog .report-workspace-nav {
+    position: sticky; top: -14px; z-index: 3; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px;
+    margin: 0 -14px; padding: 8px 10px; overflow: visible; border-bottom: 1px solid var(--line); background: #fff;
+  }
+  .report-workspace-dialog .report-workspace-nav-label { display: none; }
+  .report-workspace-dialog .report-workspace-step {
+    position: relative; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; align-content: center; gap: 3px; min-width: 0; width: auto; min-height: 58px; flex: initial;
+    padding: 6px 2px; border: 0; border-radius: 10px; background: transparent; box-shadow: none; text-align: center;
+  }
+  .report-workspace-dialog .report-workspace-step.active { background: var(--brand-soft); color: var(--brand); }
+  .report-workspace-dialog .report-workspace-step-icon { width: 26px; height: 26px; }
+  .report-workspace-dialog .report-workspace-step-copy small { display: none; }
+  .report-workspace-dialog .report-workspace-step-copy strong { display: block; font-size: 11.5px; line-height: 1.2; }
+  .report-workspace-dialog .report-workspace-step-state { position: absolute; top: 5px; right: 12%; width: 8px; height: 8px; min-width: 0; padding: 0; overflow: hidden; border-radius: 50%; font-size: 0; }
+  .report-workspace-dialog .report-workspace-step-state.required { background: #c2413c; }
+  .report-workspace-dialog .report-workspace-step-state.complete { background: #1c8a5a; }
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  .report-workspace-dialog .report-workspace-nav { top: 0; margin: 0; border-radius: 12px; border: 1px solid var(--line); }
+}
+
+/* Staff tablet: the record list sits inside the content column instead of bleeding to the screen edge. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .shell[data-role] main#main .report-workspace .queue-tabs { width: 100%; margin: 0; padding: 0 0 10px; scroll-padding-inline: 0; }
+  .shell[data-role] main#main .report-workspace .report-search-row { grid-template-columns: minmax(0, 1fr) 240px; }
+  .shell[data-role] main#main .report-workspace .table-scroll { width: 100%; margin: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .shell[data-role] main#main .report-workspace .reports-table tr { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "title status when" "where status when"; gap: 3px 18px; padding: 13px 18px; }
+  .shell[data-role] main#main .report-workspace .reports-table td.report-received { align-self: center; text-align: right; }
+  .shell[data-role] main#main .report-workspace .results-heading { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .shell[data-role] main#main .report-workspace .results-heading .inline-actions { width: auto; }
+  .shell[data-role] main#main .report-workspace .report-filter-panel[open] { left: 50%; right: auto; width: min(640px, 100%); transform: translateX(-50%); }
+  .shell[data-role] main#main .report-workspace .report-filter-panel[open] .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Staff desktop Reports: one toolbar row (search, sort, actions) under the queue tabs; readable column headers; denser rows. */
+@media (min-width: 1024px) {
+  .shell[data-role] main#main > .page-heading h1 { font-size: 28px; letter-spacing: -.01em; }
+  .shell[data-role] main#main .report-workspace { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: row dense; align-items: center; }
+  .shell[data-role] main#main .report-workspace > * { grid-column: 1 / -1; }
+  .shell[data-role] main#main .report-workspace > .report-search-row { grid-column: 1; padding-bottom: 12px; }
+  .shell[data-role] main#main .report-workspace > .results-heading { grid-column: 2; margin: 0; padding: 0 20px 12px 0; flex-wrap: nowrap; gap: 10px; }
+  .shell[data-role] main#main .report-workspace > .results-heading p { max-width: 150px; white-space: normal; line-height: 1.3; }
+  .shell[data-role] main#main .report-workspace > .report-search-row { min-width: 380px; }
+  .shell[data-role] main#main .report-workspace > .report-filter-panel { margin-top: 0; }
+  .shell[data-role] main#main .reports-table-head { font-size: 11px; letter-spacing: .03em; color: #5a7183; }
+  .shell[data-role] main#main .reports-table tbody :is(th, td) { padding-block: 12px; }
+}
+
+/* Staff desktop dialogs: one header pattern, forms sized to their content, notifications as a right-side panel. */
+@media (min-width: 1024px) {
+  .shell[data-role] dialog.modal .community-dialog-heading { grid-template-columns: 40px minmax(0, 1fr) auto 40px; gap: 12px; padding: 16px 22px; background: #fff; }
+  .shell[data-role] dialog.modal .community-dialog-heading:not(:has(.community-dialog-header-meta)) { grid-template-columns: 40px minmax(0, 1fr) 40px; }
+  .shell[data-role] dialog.modal .community-dialog-icon { width: 40px; height: 40px; border-radius: 11px; }
+  .shell[data-role] dialog.modal .community-dialog-icon svg { width: 20px; height: 20px; }
+  .shell[data-role] dialog.modal .community-dialog-title h2 { font-size: 19px; line-height: 1.3; }
+  .shell[data-role] dialog.modal .community-dialog-title p { font-size: 13px; }
+  .shell[data-role] dialog.modal .community-dialog-close { width: 40px; height: 40px; min-height: 40px; border-color: transparent; background: transparent; box-shadow: none; }
+  .shell[data-role] dialog.modal .community-dialog-close:hover { background: var(--soft, #f1f5f6); }
+  .shell[data-role] dialog.modal::backdrop { background: #0d2a3866; }
+  .shell[data-role] .modal.consultation-edit-dialog { width: min(780px, calc(100vw - 48px)); }
+
+  .shell[data-role] .modal.notification-center-dialog[open] {
+    inset: 0 0 0 auto; width: min(560px, 100vw); height: 100dvh; max-height: 100dvh; margin: 0;
+    border: 0; border-left: 1px solid var(--line); border-radius: 18px 0 0 18px; box-shadow: -18px 0 50px #102d3b2e;
+    animation: notification-panel-in 180ms ease-out;
+  }
+  .shell[data-role] .notification-center-dialog .community-dialog-heading { padding: 18px 22px; }
+}
+@keyframes notification-panel-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (min-width: 1024px) {
+  .shell[data-role] .notification-center-dialog .notification-controls { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 22px; }
+  .shell[data-role] .notification-center-dialog .notification-tabs { flex-wrap: nowrap; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .shell[data-role] .notification-center-dialog .notification-tabs button { flex: 0 0 auto; white-space: nowrap; }
+  .shell[data-role] .notification-center-dialog .notification-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+}
+@media (min-width: 1024px) {
+  .shell[data-role] .notification-center-dialog .notification-item { min-height: 0; padding: 12px 14px; border-radius: 12px; }
+  .shell[data-role] .notification-center-dialog .notification-item-main { grid-template-columns: 40px minmax(0, 1fr); gap: 12px; }
+}
+
+/* Staff inline feedback: one alert pattern. Shape + icon + text communicate the type, not color alone. */
+.shell[data-role] :is(p, div).error:not(.save-toast):not(.meeting-feedback):not(.overview-map > .error),
+.shell[data-role] :is(p, div).notice {
+  position: relative; display: block; margin: 0 0 14px; padding: 12px 14px 12px 44px;
+  border: 1px solid; border-left-width: 4px; border-radius: 10px; color: var(--ink); font-size: 13.5px; line-height: 1.5;
+  background-repeat: no-repeat; background-position: 14px 12px; background-size: 18px 18px;
+}
+.shell[data-role] :is(p, div).error:not(.save-toast):not(.meeting-feedback):not(.overview-map > .error) {
+  border-color: #f1c9c6; border-left-color: #c2413c; background-color: #fff6f5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b23a35' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v4M12 16h.01'/%3E%3C/svg%3E");
+}
+.shell[data-role] :is(p, div).notice {
+  border-color: #cfe2e6; border-left-color: #2a7d92; background-color: #f4fafb;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232a7d92' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4M12 8h.01'/%3E%3C/svg%3E");
+}
+.shell[data-role] :is(p, div):is(.error, .notice) > p { margin: 0; font-size: inherit; }
+.shell[data-role] :is(p, div):is(.error, .notice) > button { margin-top: 8px; min-height: 38px; }
+.shell[data-role] p:is(.error, .notice) > button { margin: 0 0 0 10px; }
+
+/* Loading: skeletons shimmer instead of pulsing flat grey; empty states share spacing and tone. */
+.shell[data-role] .skeleton { min-height: 64px; border-radius: 10px; background: linear-gradient(90deg, #edf2f3 0%, #f7fafa 40%, #edf2f3 80%) 0 0 / 300% 100%; animation: staff-shimmer 1.4s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .shell[data-role] .skeleton { animation: none; } }
+@keyframes staff-shimmer { from { background-position: 100% 0; } to { background-position: -50% 0; } }
+.shell[data-role] .empty-state { gap: 6px; padding: 48px 24px; }
+.shell[data-role] .empty-state > svg { box-sizing: content-box; width: 26px; height: 26px; margin-bottom: 8px; padding: 12px; border-radius: 14px; background: var(--brand-soft); }
+.shell[data-role] .empty-state h3 { margin: 0; font-size: 16px; }
+.shell[data-role] .empty-state p { max-width: 42ch; margin: 0 0 8px; line-height: 1.5; }
+.shell[data-role] p.empty { color: var(--muted); font-size: 13.5px; text-align: center; }
+@media (min-width: 1024px) {
+  .shell[data-role] main#main .report-workspace > :is(.notice, .error, .duplicate-queue-status, .loading-stack) { margin-inline: 20px; }
+}
+
+/* Staff tablet dialogs share the desktop header pattern (sizes stay touch-friendly). */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .shell[data-role] dialog.modal .community-dialog-heading { grid-template-columns: 40px minmax(0, 1fr) 44px; gap: 12px; padding: 16px 20px; background: #fff; }
+  .shell[data-role] dialog.modal .community-dialog-heading:has(.community-dialog-header-meta) { grid-template-columns: 40px minmax(0, 1fr) auto 44px; }
+  .shell[data-role] dialog.modal .community-dialog-icon { width: 40px; height: 40px; border-radius: 11px; }
+  .shell[data-role] dialog.modal .community-dialog-title h2 { font-size: 18px; line-height: 1.3; }
+  .shell[data-role] dialog.modal .community-dialog-close { width: 44px; height: 44px; min-height: 44px; border-color: transparent; background: transparent; box-shadow: none; }
+}
+
+/* Staff phone: resident directories (Admin and Barangay) as a compact read-only record list. */
+@media (max-width: 1023px) {
+  .shell[data-role] main#main .resident-management .table-scroll { overflow: visible; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+  .shell[data-role] main#main .resident-management table, .shell[data-role] main#main .resident-management tbody { display: block; width: 100%; min-width: 0; }
+  .shell[data-role] main#main .resident-management thead { display: none; }
+  .shell[data-role] main#main .resident-management tbody tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; margin: 0; padding: 12px 14px;
+    border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none;
+  }
+  .shell[data-role] main#main .resident-management tbody tr:first-child { border-top: 0; }
+  .shell[data-role] main#main .resident-management tbody :is(th, td) { padding: 0; border: 0; text-align: left; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+  .shell[data-role] main#main .resident-management tbody td::before { display: inline; content: attr(data-label) " · "; margin: 0; font-size: inherit; letter-spacing: 0; text-transform: none; color: var(--muted); }
+  .shell[data-role] main#main .resident-management tbody th { grid-column: 1; position: static; background: none; color: var(--ink); font-size: 15px; font-weight: 650; letter-spacing: 0; text-transform: none; }
+  .shell[data-role] main#main .resident-management tbody td { grid-column: 1; }
+  .shell[data-role] main#main .resident-management tbody td[data-label="Account status"] { grid-column: 2; grid-row: 1; align-self: start; padding: 2px 9px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  .shell[data-role] main#main .resident-management tbody td[data-label="Account status"]::before { display: none; }
+}
+.shell[data-role] main#main .office-category-intro { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+.shell[data-role] .office-category-readonly { padding: 3px 10px; border-radius: 999px; background: #eef2f4; color: #47606d; font-size: 12px; font-weight: 600; }
+
+/* Staff tablet Overview: same priority order as phones — work lists before the map and charts. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .shell[data-role] main#main .overview { display: flex; flex-direction: column; gap: 14px; }
+  .shell[data-role] main#main :is(.overview-geography, .overview-reporting, .overview-reporting-aside, .dashboard-geography) { display: contents; }
+  .shell[data-role] main#main .overview-scope { order: 0; margin: 0; }
+  .shell[data-role] main#main .overview-metrics { order: 1; margin: 0; }
+  .shell[data-role] main#main :is(.overview-steps, .overview-attention, .overview-assigned) { order: 2; }
+  .shell[data-role] main#main .overview-reporting > .overview-panel { order: 3; }
+  .shell[data-role] main#main .overview-map-panel { order: 4; }
+  .shell[data-role] main#main .overview .charts { order: 5; }
+  .shell[data-role] main#main .overview-community-panels { order: 6; }
+}
+
+/* Staff desktop: meeting cards use the same full-width 3-column grid and card size as consultation cards. */
+@media (min-width: 1024px) {
+  .shell[data-role] main#main .meeting-layout { grid-template-columns: minmax(0, 1fr); }
+  .shell[data-role] main#main .meeting-layout > .meeting-rail { order: -1; }
+  .shell[data-role] main#main :is(.meeting-request-grid, .consultation-grid):not(.is-list) { gap: 12px; }
+}
+@media (min-width: 1024px) {
+  .shell[data-role] main#main .meeting-request-grid:not(.is-list) .meeting-card-body { -webkit-line-clamp: 2; }
+}
+
+/* Staff phone/tablet Overview is a single column: every panel spans the full width
+   (the desktop grid's align-self:start otherwise shrinks the map and focus panels to their content). */
+@media (max-width: 1023px) {
+  .shell[data-role] main#main .overview > *,
+  .shell[data-role] main#main .overview :is(.overview-geography, .overview-reporting, .overview-reporting-aside, .dashboard-geography) > * { align-self: stretch; width: auto; max-width: none; }
+}
+
+/* Staff phone/tablet: "Reports in this map view" as the same compact record list as Issue reports. */
+@media (max-width: 1023px) {
+  .shell[data-role] main#main .map-report-list .table-scroll { overflow: visible; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+  .shell[data-role] main#main .map-report-list :is(table, tbody) { display: block; width: 100%; min-width: 0; table-layout: auto; }
+  .shell[data-role] main#main .map-report-list thead { display: none; }
+  .shell[data-role] main#main .map-report-list tbody { gap: 0; }
+  .shell[data-role] main#main .map-report-list tbody tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title status" "where when";
+    gap: 4px 12px; margin: 0; padding: 12px 14px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: #fff; box-shadow: none;
+  }
+  .shell[data-role] main#main .map-report-list tbody tr:first-child { border-top: 0; }
+  .shell[data-role] main#main .map-report-list tbody :is(th, td) { width: auto; padding: 0; border: 0; background: none; }
+  .shell[data-role] main#main .map-report-list tbody td::before { display: none; }
+  .shell[data-role] main#main .map-report-list tbody th { grid-area: title; min-width: 0; position: static; }
+  .shell[data-role] main#main .map-report-list tbody th .report-title { display: block; min-height: 0; padding: 0; border: 0; background: none; color: var(--ink); font-size: 15px; font-weight: 650; line-height: 1.3; text-align: left; }
+  .shell[data-role] main#main .map-report-list tbody th .report-title svg { display: none; }
+  .shell[data-role] main#main .map-report-list tbody th .record-meta { display: none; }
+  .shell[data-role] main#main .map-report-list tbody td[data-label="Location"] { grid-area: where; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; font-size: 12.5px; color: var(--muted); }
+  .shell[data-role] main#main .map-report-list tbody td[data-label="Location"] .report-location strong { font-weight: 600; color: var(--ink); }
+  .shell[data-role] main#main .map-report-list tbody td[data-label="Location"] > .record-meta { margin: 0; }
+  .shell[data-role] main#main .map-report-list tbody td[data-label="Status"] { grid-area: status; align-self: start; justify-self: end; }
+  .shell[data-role] main#main .map-report-list tbody td[data-label="Status"] .badge { white-space: nowrap; }
+  .shell[data-role] main#main .map-report-list tbody td[data-label="Office"] { display: none; }
+  .shell[data-role] main#main .map-report-list tbody td.report-received { grid-area: when; position: static; display: block; align-self: center; justify-self: end; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .shell[data-role] main#main .map-report-list tbody td.report-received .report-open { display: none; }
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  .shell[data-role] main#main .map-report-list tbody td[data-label="Office"] { display: block; grid-area: office; font-size: 12.5px; color: var(--muted); }
+  .shell[data-role] main#main .map-report-list tbody tr { grid-template-columns: minmax(0, 1fr) 170px auto; grid-template-areas: "title office status" "where office when"; }
+}
+@media (max-width: 1023px) {
+  .shell[data-role] main#main .resident-management tbody td[data-label="Profile"] { grid-column: 2; grid-row: 2 / span 3; align-self: end; }
+  .shell[data-role] main#main .resident-management tbody td[data-label="Profile"]::before { display: none; }
+  .shell[data-role] main#main .resident-management tbody td[data-label="Profile"] button { min-height: 40px; padding: 0 14px; }
+}
+
+/* Staff phone/tablet: Category reports (Office) and analytics active reports as compact record lists. */
+@media (max-width: 1023px) {
+  .shell[data-role] main#main :is(.office-category-reports, .analytics-detail-map-card, .analytics-page) .table-scroll:has(> :is(.office-category-table, .analytics-active-table)) { overflow: visible; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) { display: block; width: 100%; min-width: 0; table-layout: auto; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) thead,
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) colgroup { display: none; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody { display: block; gap: 0; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title status" "where when" "extra when";
+    gap: 3px 12px; margin: 0; padding: 12px 14px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: #fff; box-shadow: none;
+  }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody tr:first-child { border-top: 0; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody :is(th, td) { width: auto; padding: 0; border: 0; background: none; text-align: left; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody td::before { display: none; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody th { grid-area: title; min-width: 0; position: static; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody th :is(.report-title, .analytics-report-open) { display: block; min-height: 0; padding: 0; border: 0; background: none; color: var(--ink); font-size: 15px; font-weight: 650; line-height: 1.3; text-align: left; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody th .report-title svg { display: none; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody th small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody td:is([data-label="Location & category"], [data-label="Category"]) { grid-area: where; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 12.5px; color: var(--muted); }
+  .shell[data-role] main#main .office-category-table tbody .office-category-location { font-weight: 600; color: var(--ink); }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody td[data-label="Status"] { grid-area: status; justify-self: end; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody td[data-label="Status"] .badge { white-space: nowrap; }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody td:is([data-label="Assessment"], [data-label="Assigned office"]) { grid-area: extra; font-size: 12px; color: var(--muted); }
+  .shell[data-role] main#main :is(.office-category-table, .analytics-active-table) tbody td:is([data-label="Received"], [data-label="Date reported"]) { grid-area: when; align-self: end; justify-self: end; font-size: 12px; color: var(--muted); white-space: nowrap; }
+}
+
+/* Staff phone/tablet filters: share a row whenever they fit (each choice at least ~150px), search keeps a full row. */
+@media (max-width: 1023px) {
+  .shell[data-role] main#main :is(.office-category-filters, .consultations-filters, .announcement-filters, .meeting-filterbar, .resident-filters, .analytics-filter-card, .overview-map-filter-fields) {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px;
+  }
+  .shell[data-role] main#main :is(.office-category-filters, .consultations-filters, .announcement-filters, .meeting-filterbar, .resident-filters, .analytics-filter-card, .overview-map-filter-fields) > label {
+    flex: 1 1 150px; min-width: 0; grid-column: auto;
+  }
+  .shell[data-role] main#main :is(.office-category-filters, .consultations-filters, .announcement-filters, .meeting-filterbar, .resident-filters) > label:is(.search-field, .consultations-search, .announcement-search, .meeting-search, :has(> input[type="search"])) {
+    flex: 1 1 100%;
+  }
+  .shell[data-role] main#main :is(.office-category-filters, .consultations-filters, .announcement-filters, .meeting-filterbar, .resident-filters, .analytics-filter-card, .overview-map-filter-fields) :is(select, input:not([type="checkbox"]):not([type="radio"])) { width: 100%; min-width: 0; }
+  .shell[data-role] main#main .analytics-filter-card > .analytics-filter-actions { flex: 1 1 100%; }
+  /* Map: coverage and the filter choices share one row on tablets. */
+  .shell[data-role] main#main .issue-map > .overview-map-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools > .overview-map-coverage { flex: 1 1 150px; min-width: 0; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools > .overview-map-filter { flex: 2 1 310px; min-width: 0; }
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  /* Tablet: search on its own row, every choice on one row beneath it. */
+  .shell[data-role] main#main :is(.office-category-filters, .consultations-filters, .announcement-filters, .meeting-filterbar, .resident-filters, .analytics-filter-card) > label:not(.search-field):not(.consultations-search):not(.announcement-search):not(.meeting-search):not(:has(> input[type="search"])) { flex: 1 1 120px; }
+  /* Tablet rail: icon and label centred in the full button width. */
+  .shell[data-role] > .sidebar .nav-group button { grid-template-columns: minmax(0, 1fr); justify-items: center; width: 100%; }
+  .shell[data-role] > .sidebar .nav-group button span { justify-self: stretch; text-align: center; }
+}
+
+/* Staff tablet: meeting and consultation cards share one size (same grid, same height), as on desktop. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .shell[data-role] main#main :is(.meeting-request-grid, .consultation-grid):not(.is-list) { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 12px; }
+  .shell[data-role] main#main .meeting-request-grid:not(.is-list) .meeting-card-body { -webkit-line-clamp: 2; }
+}
+
+/* Staff app: reserve the scrollbar's space so content width is identical on short and long pages. */
+html:has(.shell[data-role]) { scrollbar-gutter: stable; }
+
+/* Staff Meetings (all sizes): Upcoming meetings sits above the request cards. Cards are compact summaries; full details open in the modal. */
+.shell[data-role] main#main .meeting-layout { grid-template-columns: minmax(0, 1fr); }
+.shell[data-role] main#main .meeting-layout > .meeting-rail { order: -1; }
+.shell[data-role] main#main .meeting-card.report-row-clickable { cursor: pointer; }
+.shell[data-role] main#main .meeting-card.report-row-clickable:hover { border-color: #c7e0dc; }
+.shell[data-role] main#main .meeting-card-reply { align-self: flex-start; }
+
+/* Consultation cards: same compact summary as meeting cards (no stretched blank space). */
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-description { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-issuers { display: flex; gap: 6px; min-width: 0; white-space: nowrap; }
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-issuers span { overflow: hidden; text-overflow: ellipsis; }
+
+/* Upcoming meetings: one slim full-width strip above the cards — heading inline, meetings as rows beside it. */
+.shell[data-role] main#main .meeting-rail { display: block; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 14px; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel .meeting-rail-heading { flex: 0 0 auto; margin: 0; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel .meeting-rail-icon { flex-basis: 30px; width: 30px; height: 30px; border-radius: 9px; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel .meeting-rail-heading h3 { font-size: 14px; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel .meeting-rail-heading p { display: none; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel > :is(.meeting-upcoming, .meeting-rail-empty, .meeting-rail-error) { flex: 1 1 260px; min-width: 0; margin: 0; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel > .meeting-upcoming { border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+
+/* Consultation card actions stay on one line; "Open discussion" is a compact primary button. */
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-card-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; }
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-card-actions > button { flex: 0 0 auto; min-height: 36px; height: 36px; padding: 0 10px; border-radius: 9px; font-size: 12.5px; white-space: nowrap; }
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-card-actions > .consultation-discussion { flex: 1 1 auto; min-width: 0; justify-content: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; }
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-card-actions > .consultation-discussion svg { flex: 0 0 auto; width: 14px; height: 14px; }
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-card-actions > button.secondary { padding: 0 8px; }
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-card-actions { gap: 5px; }
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-card-actions > .consultation-discussion { padding: 0 9px; }
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-card-actions > button { font-size: 12px; }
+.shell[data-role] main#main .consultation-grid:not(.is-list) .consultation-card-actions > .consultation-discussion { gap: 4px; padding: 0 8px; }
+
+/* Staff KPI rows (tablet and up): wrap as many as fit; the last row stretches to fill, so no empty grid cell is left. */
+@media (min-width: 768px) {
+  .shell[data-role] main#main :is(.meeting-metrics, .analytics-kpis, .overview-metrics) { display: flex; flex-wrap: wrap; gap: 10px; }
+  .shell[data-role] main#main :is(.meeting-metrics, .analytics-kpis, .overview-metrics) > * { flex: 1 1 180px; min-width: 0; grid-column: auto !important; }
+}
+@media (min-width: 1024px) {
+  .shell[data-role] main#main :is(.meeting-metrics, .analytics-kpis, .overview-metrics) > * { flex-basis: 150px; }
+}
+
+/* Meeting and consultation cards: identical height, set to the taller natural summary (minimal spare space). */
+.shell[data-role] main#main .meeting-request-grid:not(.is-list) .meeting-review { margin-top: auto; }
+@media (min-width: 768px) and (max-width: 1023px) {
+  .shell[data-role] main#main :is(.meeting-request-grid, .consultation-grid):not(.is-list) > :is(.meeting-card, .consultation-card) { min-height: 272px; }
+}
+@media (min-width: 1024px) {
+  .shell[data-role] main#main :is(.meeting-request-grid, .consultation-grid):not(.is-list) > :is(.meeting-card, .consultation-card) { min-height: 248px; }
+}
+
+/* Report workspace (desktop): steps become a sticky tab bar across the top; the form gets the width;
+   the case timeline is a plain right column; the dialog has a single scroll area. */
+@media (min-width: 1024px) {
+  .report-workspace-dialog .report-workspace-layout { grid-template-columns: minmax(0, 1fr) 320px; grid-template-areas: "nav nav" "main history"; align-items: start; gap: 18px 22px; }
+  .report-workspace-dialog .report-workspace-nav {
+    grid-area: nav; position: sticky; top: -1px; z-index: 4; display: flex; gap: 4px; margin: 0; padding: 6px 0 0;
+    border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: #fff; box-shadow: none;
+  }
+  .report-workspace-dialog .report-workspace-nav-label { display: none; }
+  .report-workspace-dialog .report-workspace-step {
+    position: relative; display: flex; align-items: center; gap: 8px; width: auto; min-height: 46px; padding: 8px 14px 10px;
+    border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; box-shadow: none;
+  }
+  .report-workspace-dialog .report-workspace-step:hover:not(:disabled) { background: var(--brand-soft); }
+  .report-workspace-dialog .report-workspace-step.active { border-bottom-color: var(--brand); background: transparent; color: var(--brand); }
+  .report-workspace-dialog .report-workspace-step-icon { width: 24px; height: 24px; }
+  .report-workspace-dialog .report-workspace-step-copy small { display: none; }
+  .report-workspace-dialog .report-workspace-step-copy strong { font-size: 13.5px; }
+  .report-workspace-dialog .report-workspace-step-state { position: static; margin-left: 2px; width: 8px; height: 8px; min-width: 0; padding: 0; overflow: hidden; border-radius: 50%; font-size: 0; }
+  .report-workspace-dialog .report-workspace-step-state.required { background: #c2413c; }
+  .report-workspace-dialog .report-workspace-step-state.complete { background: #1c8a5a; }
+  .report-workspace-dialog .report-workspace-main { grid-area: main; min-width: 0; }
+  .report-workspace-dialog .report-workspace-history { grid-area: history; max-height: none; overflow: visible; }
+  .report-workspace-dialog .report-workspace-section { border-color: #e6eef0; box-shadow: none; }
+}
+
+/* Report workspace: the case timeline sits beside the step content only when both fit (≥1280px).
+   Narrower, "Case timeline" is its own tab in the step bar and shows full width only there. */
+.report-workspace-dialog .report-workspace-timeline-tab { display: none; }
+@media (max-width: 1279px) {
+  .report-workspace-dialog .report-workspace-timeline-tab { display: flex; }
+  .report-workspace-dialog .report-workspace-layout:not([data-timeline="open"]) > .report-workspace-history { display: none; }
+  .report-workspace-dialog .report-workspace-layout[data-timeline="open"] > .report-workspace-main { display: none; }
+  .report-workspace-dialog .report-workspace-layout[data-timeline="open"] > .report-workspace-history {
+    grid-area: auto; grid-column: 1 / -1; position: static; max-height: none; overflow: visible; padding: 16px; border-radius: 14px;
+  }
+}
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .report-workspace-dialog .report-workspace-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "nav" "main" "history"; }
+}
+@media (max-width: 1023px) {
+  .report-workspace-dialog .report-workspace-timeline-tab { display: grid; }
+}
+.report-workspace-dialog .report-history-summary { display: grid; gap: 12px; min-width: 0; }
+
+/* Case timeline tab: status banner on top, then one clean vertical timeline (no card-in-card, no repeated heading). */
+@media (max-width: 1279px) {
+  .report-workspace-dialog .report-workspace-layout[data-timeline="open"] > .report-workspace-history { display: block; padding: 4px 0 0; border: 0; border-radius: 0; background: transparent; }
+  .report-workspace-dialog [data-timeline="open"] .report-workspace-history-heading { display: none; }
+  .report-workspace-dialog [data-timeline="open"] .report-history-summary {
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: #f7fbfa;
+  }
+  .report-workspace-dialog [data-timeline="open"] .report-current-case-status { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; background: none; }
+  .report-workspace-dialog [data-timeline="open"] .report-current-case-status > div { display: flex; align-items: center; gap: 10px; }
+  .report-workspace-dialog [data-timeline="open"] .report-current-case-status > div > span { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .report-workspace-dialog [data-timeline="open"] .report-current-status-value { padding: 3px 11px; border-radius: 999px; background: #e5effd; font-size: 13px; }
+  .report-workspace-dialog [data-timeline="open"] .report-current-case-status p { margin: 0; color: var(--ink); font-size: 13.5px; line-height: 1.55; }
+  .report-workspace-dialog [data-timeline="open"] .report-current-schedule { justify-self: start; padding: 5px 10px; border-radius: 8px; background: #fff; border: 1px solid var(--line); font-size: 12.5px; font-weight: 650; }
+  .report-workspace-dialog [data-timeline="open"] .report-review-attribution { display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
+  .report-workspace-dialog [data-timeline="open"] .report-workspace-history-subheading { display: flex; align-items: baseline; justify-content: space-between; margin: 20px 0 6px; }
+  .report-workspace-dialog [data-timeline="open"] .report-workspace-history-subheading h4 { margin: 0; font-size: 15px; letter-spacing: 0; text-transform: none; }
+  .report-workspace-dialog [data-timeline="open"] .report-workspace-history-subheading span { color: var(--muted); font-size: 12.5px; }
+  .report-workspace-dialog [data-timeline="open"] .report-history-list { margin: 0; padding: 0; }
+  .report-workspace-dialog [data-timeline="open"] .report-history-event { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 2px 16px; padding: 12px 0 12px 36px; }
+  .report-workspace-dialog [data-timeline="open"] .report-history-event > div { grid-column: 1; }
+  .report-workspace-dialog [data-timeline="open"] .report-history-event > time { grid-column: 2; grid-row: 1; }
+  .report-workspace-dialog [data-timeline="open"] .report-history-event > div { display: grid; gap: 2px; min-width: 0; }
+  .report-workspace-dialog [data-timeline="open"] .report-history-event strong { font-size: 14px; }
+  .report-workspace-dialog [data-timeline="open"] .report-history-event small { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .report-workspace-dialog [data-timeline="open"] .report-history-event time { color: var(--muted); font-size: 12px; white-space: nowrap; }
+}
+@media (max-width: 560px) {
+  .report-workspace-dialog [data-timeline="open"] .report-history-event { grid-template-columns: minmax(0, 1fr); }
+  .report-workspace-dialog [data-timeline="open"] .report-history-event > time { grid-column: 1; grid-row: auto; }
+}
+
+/* Report workspace: one heading style for every section in every step (no size jumps between steps). */
+.report-workspace-dialog .report-workspace-main h3,
+.report-workspace-dialog .report-workspace-section-heading h3 { margin: 0; color: var(--ink); font-size: 16px; font-weight: 700; line-height: 1.3; letter-spacing: -0.005em; }
+.report-workspace-dialog .report-workspace-section-heading { display: flex; align-items: flex-start; gap: 10px; }
+.report-workspace-dialog .report-workspace-section-heading p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.report-workspace-dialog .report-workspace-section-heading > svg { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 1px; color: var(--brand); }
+.report-workspace-dialog .report-workspace-section-heading > .report-action-heading-icon { display: grid; flex: 0 0 auto; width: 20px; height: 20px; margin-top: 1px; place-items: center; border: 0; border-radius: 0; background: none; color: var(--brand); }
+.report-workspace-dialog .report-workspace-section-heading > .report-action-heading-icon svg { width: 20px; height: 20px; }
+@media (max-width: 1279px) {
+  .report-workspace-dialog [data-timeline="open"] .report-history-event > .report-history-icon { top: 13px; left: 1px; }
+}
+
+/* Resident's description: compact strip sized like the rest of the dialog content. */
+.report-workspace-dialog .report-workspace-summary.is-description {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label id" "text text";
+  gap: 4px 12px; padding: 10px 14px; border-left-width: 3px; border-radius: 10px;
+}
+.report-workspace-dialog .report-workspace-summary.is-description .report-workspace-summary-label { grid-area: label; font-size: 11px; }
+.report-workspace-dialog .report-workspace-summary.is-description small { grid-area: id; align-self: center; font-size: 10.5px; }
+.report-workspace-dialog .report-workspace-summary.is-description p { grid-area: text; font-size: 13.5px; line-height: 1.5; }
+@media (max-width: 560px) {
+  .report-workspace-dialog .report-workspace-summary.is-description { grid-template-columns: minmax(0, 1fr); grid-template-areas: "label" "text" "id"; }
+}
+.report-workspace-dialog .report-workspace-summary.is-description { align-self: start; align-content: start; height: auto; }
+.report-workspace-dialog .report-workspace-content { align-content: start; grid-auto-rows: max-content; }
+
+/* Report details step: clear facts, a readable location block, and consistent sections. */
+.report-workspace-dialog .report-workspace-location-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "problem office" "loc loc";
+  gap: 12px; margin-top: 14px; padding: 0; border: 0;
+}
+.report-workspace-dialog .report-workspace-location-grid > div { min-width: 0; padding: 0; border: 0; }
+.report-workspace-dialog .report-workspace-location-grid > div:nth-child(1) { grid-area: problem; }
+.report-workspace-dialog .report-workspace-location-grid > div:nth-child(3) { grid-area: office; }
+.report-workspace-dialog .report-workspace-location-grid > .report-location-details { grid-area: loc; }
+.report-workspace-dialog .report-workspace-location-grid > div > span,
+.report-workspace-dialog .report-handling dt { display: block; margin-bottom: 3px; color: var(--muted); font-size: 11.5px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.report-workspace-dialog .report-workspace-location-grid > div > strong,
+.report-workspace-dialog .report-handling dd { display: block; margin: 0; color: var(--ink); font-size: 14.5px; font-weight: 650; line-height: 1.4; }
+.report-workspace-dialog .report-workspace-location-grid > div:not(.report-location-details) { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.report-workspace-dialog .report-location-details {
+  display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 6px 14px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #f8fbfb;
+}
+.report-workspace-dialog .report-location-details > span,
+.report-workspace-dialog .report-location-details > strong { grid-column: 1 / -1; }
+.report-workspace-dialog .report-location-details > strong { margin-bottom: 6px; }
+.report-workspace-dialog .report-location-details > small { display: contents; color: var(--ink); font-size: 13px; line-height: 1.45; }
+.report-workspace-dialog .report-location-details > small > b { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.report-workspace-dialog .report-location-details > small:not(:has(> b)) { display: block; grid-column: 1 / -1; color: var(--muted); font-size: 12.5px; }
+.report-workspace-dialog .report-location-details > .report-directions {
+  grid-column: 1 / -1; justify-self: start; display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; padding: 8px 14px;
+  border: 1px solid var(--brand); border-radius: 10px; color: var(--brand); font-size: 13px; font-weight: 650; text-decoration: none;
+}
+.report-workspace-dialog .report-location-details > .report-directions:hover { background: var(--brand-soft); }
+.report-workspace-dialog .report-location-details > .walk-in-location-correction { grid-column: 1 / -1; }
+.report-workspace-dialog .report-handling dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0 0; }
+.report-workspace-dialog .report-handling dl > div { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.report-workspace-dialog .report-handling dl > div :is(small, a) { display: block; margin-top: 3px; color: var(--muted); font-size: 12.5px; }
+.report-workspace-dialog .report-handling dl > div a { color: var(--brand); }
+.report-workspace-dialog .report-handling-responsibility { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.report-workspace-dialog .report-handling-responsibility h4 { margin: 0 0 4px; color: var(--ink); font-size: 14px; }
+.report-workspace-dialog .report-handling-responsibility p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+@media (max-width: 640px) {
+  .report-workspace-dialog .report-workspace-location-grid,
+  .report-workspace-dialog .report-handling dl { grid-template-columns: minmax(0, 1fr); grid-template-areas: "problem" "office" "loc"; }
+  .report-workspace-dialog .report-location-details { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .report-workspace-dialog .report-location-details > small > b { display: block; margin-top: 6px; }
+}
+.report-workspace-dialog .report-workspace-location-grid > .report-location-details { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #f8fbfb; }
+@media (max-width: 1023px) {
+  /* Pinned step bar: covers the full width at the very top of the scroll area so content slides cleanly underneath. */
+  .report-workspace-dialog .report-workspace-content { padding-top: 0; }
+  .report-workspace-dialog .report-workspace-summary.is-description { margin-top: 14px; }
+  .report-workspace-dialog .report-workspace-nav {
+    top: 0; margin-left: -14px; margin-right: -14px; padding: 8px 10px;
+    background: #fff; box-shadow: 0 6px 12px -10px #102d3b55; border-bottom: 1px solid var(--line);
+  }
+}
+
+/* Map filters (phone/tablet): coverage and every filter are equal items in one flowing row, with one label style. */
+@media (max-width: 1023px) {
+  .shell[data-role] main#main .issue-map > .overview-map-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools > .overview-map-coverage,
+  .shell[data-role] main#main .issue-map > .overview-map-tools > .overview-map-filter,
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-filter-fields { display: contents; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-tool-icon,
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-filter > strong { display: none; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools :is(.map-coverage-picker, .overview-map-filter-fields > label) { flex: 1 1 150px; min-width: 0; display: grid; gap: 5px; margin: 0; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools .map-coverage-picker > strong,
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-filter-fields > label { color: #586f85; font-size: 12px; font-weight: 600; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-coverage > span { flex: 1 1 150px; min-width: 0; }
+  .shell[data-role] main#main .issue-map > .overview-map-tools .overview-map-custom-dates { flex: 1 1 100%; }
+}
+
+/* Residents list: status and Manage stacked together at the top right of each row. */
+@media (max-width: 1023px) {
+  .shell[data-role] main#main .resident-management tbody td[data-label="Account status"] { grid-column: 2; grid-row: 1; align-self: start; justify-self: end; }
+  .shell[data-role] main#main .resident-management tbody td[data-label="Profile"] { grid-column: 2; grid-row: 2 / span 2; align-self: start; justify-self: end; margin-top: 4px; }
+}
+
+/* Map overlays adapt to the map's own width (all roles; Overview and Map page share .overview-map-stage).
+   The map, pins, layers and behaviour are unchanged; only the floating controls and popup resize/move. */
+.overview-map-stage { container-type: inline-size; container-name: mapstage; display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.overview-map-stage > .map { flex: 1 1 100%; }
+@container mapstage (max-width: 760px) {
+  /* Layer switches leave the map and sit in a slim row directly below it. */
+  .overview-map-layer-switches {
+    position: static !important; inset: auto !important; transform: none !important; width: 100%; margin: 8px 0 0;
+    display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 6px 14px; padding: 8px 10px; box-shadow: none;
+  }
+  /* Compact basemap switch and density legend. */
+  .overview-map-base.segmented button { min-height: 32px; padding: 0 10px; font-size: 12px; }
+  .overview-map-density { padding: 6px 9px; font-size: 11px; }
+  .overview-map-density strong { font-size: 11px; }
+  /* Popup fits inside the map. */
+  .map-data-popup .maplibregl-popup-content { max-width: min(250px, 72cqw); }
+  .map-popup-card { width: min(240px, 68cqw); gap: 6px; padding: 12px; }
+  .map-popup-card h3, .map-popup-card strong { font-size: 14px; }
+  .map-popup-eyebrow { display: none; }
+  .map-popup-header { padding-right: 24px; }
+  .map-popup-drag-handle { flex-basis: 30px; width: 30px; min-height: 30px; }
+}
+@container mapstage (max-width: 760px) {
+  .map.maplibregl-map { height: clamp(350px, 62cqw, 460px) !important; min-height: 0 !important; }
+}
+@container mapstage (max-width: 760px) {
+  /* Below the map: layer switches and the density legend share one row (wrapping when narrow). */
+  .overview-map-stage > .overview-map-layer-switches { flex: 1 1 260px; width: auto; margin: 0; align-items: center; }
+  .overview-map-stage > .overview-map-density { position: static !important; inset: auto !important; flex: 0 1 auto; min-width: 0; box-shadow: none; }
+}
+.map-popup-card.map-popup-draggable { cursor: grab; touch-action: none; user-select: none; }
+.map-popup-card.map-popup-draggable.is-dragging { cursor: grabbing; }
+.map-popup-card.map-popup-draggable :is(button, a) { cursor: pointer; }
+.map-popup-card.map-popup-draggable:focus-visible { outline: 3px solid #f5b840; outline-offset: 2px; }
+.map-popup-header { padding-right: 24px; }
+
+/* ===== Staff forms: one field system for every dialog and page form (Admin, Barangay, Office). ===== */
+.shell[data-role] :is(dialog.modal, main#main) label { color: var(--ink); font-size: 13px; font-weight: 600; line-height: 1.35; }
+.shell[data-role] :is(dialog.modal, main#main) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select) {
+  min-height: 44px; padding: 0 12px; border: 1px solid #d3dfe3; border-radius: 10px; background-color: #fff;
+  color: var(--ink); font-size: 14px; font-weight: 400; line-height: 1.4;
+}
+.shell[data-role] :is(dialog.modal, main#main) textarea {
+  min-height: 112px; padding: 10px 12px; border: 1px solid #d3dfe3; border-radius: 10px; background: #fff;
+  color: var(--ink); font-size: 14px; font-weight: 400; line-height: 1.55; resize: vertical;
+}
+.shell[data-role] :is(dialog.modal, main#main) :is(input, select, textarea)::placeholder { color: #8a9ca8; font-weight: 400; }
+.shell[data-role] :is(dialog.modal, main#main) :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):hover:not(:disabled) { border-color: #b7cbd1; }
+.shell[data-role] :is(dialog.modal, main#main) :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus-visible {
+  border-color: var(--brand); outline: 3px solid #0b746833; outline-offset: 0;
+}
+.shell[data-role] :is(dialog.modal, main#main) :is(input, select, textarea):disabled { background: #f3f6f7; color: #6b7f8b; }
+.shell[data-role] :is(dialog.modal, main#main) :is(input, select, textarea)[aria-invalid="true"] { border-color: #c2413c; }
+.shell[data-role] :is(dialog.modal, main#main) label :is(small, .hint, .field-hint),
+.shell[data-role] :is(dialog.modal, main#main) :is(.field-hint, .form-hint) { color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.45; }
+.shell[data-role] dialog.modal :is(form small, .community-dialog-body small):not(.badge) { font-size: 12px; line-height: 1.45; }
+/* Section heading icon tiles inside dialogs: smaller, quieter. */
+.shell[data-role] dialog.modal :is(.consultation-edit-section, .announcement-edit-section, .walk-in-section, .resident-edit-section) :is(header, .section-heading, .consultation-edit-section-heading, .announcement-edit-section-heading) > span:first-child {
+  width: 30px; height: 30px; min-width: 30px; border-radius: 9px;
+}
+@media (max-width: 767px) {
+  .shell[data-role] :is(dialog.modal, main#main) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select, textarea) { font-size: 16px; }
+  .shell[data-role] :is(dialog.modal, main#main) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select) { min-height: 48px; }
+}
+/* Inputs with a leading icon keep room for it. */
+.shell[data-role] dialog.modal :is(label, div, span):has(> svg) > input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="search"]) { padding-left: 40px !important; }
+.shell[data-role] main#main .search-field > input { padding-left: 40px !important; }
+
+/* Manage resident: three titled groups on a two-column grid. */
+.shell[data-role] .resident-edit-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; align-items: start; margin: 0; padding: 0; border: 0; min-width: 0; }
+.shell[data-role] .resident-edit-fields > :is(.resident-edit-group, .resident-edit-name-hint, .resident-edit-reason, .report-form-hint, .resident-edit-error) { grid-column: 1 / -1; }
+.shell[data-role] .resident-edit-fields > label { display: grid; gap: 6px; min-width: 0; }
+.shell[data-role] .resident-edit-group { margin: 10px 0 -2px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--ink); font-size: 14px; font-weight: 700; }
+.shell[data-role] .resident-edit-fields > .resident-edit-group:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.shell[data-role] .resident-edit-name-hint { margin: -4px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.shell[data-role] .resident-edit-notifications { align-self: end; display: flex !important; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.shell[data-role] .resident-edit-notifications small { display: block; color: var(--muted); font-weight: 400; }
+.shell[data-role] .resident-edit-phone-wrap { position: relative; display: block; }
+.shell[data-role] .resident-edit-phone-wrap > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+@media (max-width: 640px) {
+  .shell[data-role] .resident-edit-fields { grid-template-columns: minmax(0, 1fr); }
+}
+/* Consultation discussion: a reading-width dialog. */
+@media (min-width: 1024px) {
+  .shell[data-role] .modal.discussion-detail-dialog { width: min(900px, calc(100vw - 48px)); }
+}
+
+/* Meeting details: underline tabs (same as the report dialog), steady height, titled follow-up form. */
+.shell[data-role] .meeting-details-dialog .meeting-section-tabs { gap: 0; padding: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: #fff; }
+.shell[data-role] .meeting-details-dialog .meeting-section-tabs button { min-height: 44px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-size: 13.5px; font-weight: 600; }
+.shell[data-role] .meeting-details-dialog .meeting-section-tabs button:hover { background: var(--brand-soft); color: var(--brand); }
+.shell[data-role] .meeting-details-dialog .meeting-section-tabs button[aria-selected="true"],
+.shell[data-role] .meeting-details-dialog .meeting-section-tabs button[aria-selected="true"]:hover { border-color: var(--brand); background: transparent; color: var(--brand); }
+@media (min-width: 1024px) {
+  .shell[data-role] .modal.meeting-details-dialog[open] { height: min(780px, calc(100dvh - 64px)); }
+}
+.shell[data-role] .meeting-form-title { margin: 6px 0 2px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--ink); font-size: 14px; font-weight: 700; }
+.shell[data-role] dialog.modal :is(label, div, span):has(> svg) > select { padding-left: 40px !important; }
+.shell[data-role] .report-workspace-dialog .report-action-section select { width: 100%; max-width: none; }
+.shell[data-role] .report-workspace-dialog .report-action-section :is(label, div):has(> svg) { width: 100%; }
+
+/* Phone dialog header: title + description stacked, status badge beneath, close button on its own. */
+@media (max-width: 767px) {
+  .shell[data-role] dialog.modal .community-dialog-heading { display: grid !important; grid-template-columns: minmax(0, 1fr) 44px !important; grid-template-areas: "title close" "meta meta"; gap: 6px 10px; }
+  .shell[data-role] dialog.modal .community-dialog-heading > .community-dialog-icon { display: none; }
+  .shell[data-role] dialog.modal .community-dialog-heading > .community-dialog-title { grid-area: title; display: block; min-width: 0; }
+  .shell[data-role] dialog.modal .community-dialog-heading > .community-dialog-title p { display: block; margin-top: 2px; }
+  .shell[data-role] dialog.modal .community-dialog-heading > .community-dialog-header-meta { grid-area: meta; justify-self: start; }
+  .shell[data-role] dialog.modal .community-dialog-heading > .community-dialog-close { grid-area: close; align-self: start; }
+}
+.shell[data-role] .report-workspace-dialog .report-action-form .report-action-status-field { width: 100%; }
+
+/* Walk-in report: numbered section titles match the other dialogs' bold headings. */
+.shell[data-role] .walk-in-report-dialog .walk-in-section-heading { display: flex; align-items: flex-start; gap: 10px; }
+.shell[data-role] .walk-in-report-dialog .walk-in-section-heading > span:first-child {
+  display: grid; flex: 0 0 26px; width: 26px; height: 26px; place-items: center; border-radius: 50%;
+  background: var(--brand); color: #fff; font-size: 12.5px; font-weight: 700;
+}
+.shell[data-role] .walk-in-report-dialog .walk-in-section-heading h3 { margin: 1px 0 0; color: var(--ink); font-size: 15px; font-weight: 700; line-height: 1.35; }
+.shell[data-role] .walk-in-report-dialog .walk-in-section-heading p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+
+/* Basemap switch: full segmented control on larger maps; collapses to a single ">" toggle on small maps. */
+.overview-map-base-toggle { display: none !important; }
+@container mapstage (max-width: 760px) {
+  .overview-map-base.segmented > .overview-map-base-toggle {
+    display: inline-flex !important; align-items: center; justify-content: center; gap: 2px; min-width: 44px; min-height: 40px; padding: 0 8px;
+    border: 0; border-radius: 8px; background: #fff; color: var(--brand);
+  }
+  .overview-map-base.segmented:not(.is-open) > button:not(.overview-map-base-toggle) { display: none; }
+  .overview-map-base.segmented.is-open > .overview-map-base-toggle { background: var(--brand-soft); }
+  .overview-map-base-chevron { transition: transform 160ms ease; }
+  .overview-map-base.is-open .overview-map-base-chevron { transform: rotate(180deg); }
+}
+@media (prefers-reduced-motion: reduce) { .overview-map-base-chevron { transition: none; } }
+@container mapstage (max-width: 760px) {
+  .overview-map-stage > .overview-map-base { position: absolute !important; top: 10px !important; left: 10px !important; right: auto !important; bottom: auto !important; z-index: 5; width: auto !important; margin: 0 !important; display: inline-flex !important; flex-wrap: nowrap !important; }
+  .overview-map-stage > .overview-map-base.is-open > button { white-space: nowrap; }
+}
+
+/* Map page: layer toggles sit above the map, side by side, on phone and tablet */
+.map-page-layer-bar { display: none; }
+@media (max-width: 1023px) {
+  .map-page-main { display: grid; gap: 8px; }
+  .map-page-layer-bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .map-page-layer-bar > button { display: flex; min-width: 0; min-height: 44px; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 10px; border: 1px solid #eae1e2; border-radius: 10px; background: #fff; color: #4c6379; font-size: 12px; font-weight: 600; line-height: 1.2; text-align: left; box-shadow: none; }
+  .map-page-layer-bar > button:hover:not(:disabled) { transform: none; background: var(--surface-hover); box-shadow: none; }
+  .map-page-layer-bar > button > span:first-child { min-width: 0; }
+  .map-page-layer-bar .overview-switch { width: 26px; height: 15px; flex: 0 0 26px; }
+  .map-page-layer-bar .overview-switch i { width: 11px; height: 11px; }
+  .map-page-layer-bar .overview-switch.on i { transform: translateX(11px); }
+  .map-reference-card:has(> .map-reference-layers) { display: none; }
+}
+@media (max-width: 479px) {
+  .map-page-layer-bar > button { flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 68px; padding: 8px 10px 10px; }
+  .map-page-layer-bar > button > span:first-child { font-size: 11px; }
+  .map-page-layer-bar .overview-switch { flex: none; width: 44px; height: 24px; padding: 3px; }
+  .map-page-layer-bar .overview-switch i { width: 18px; height: 18px; }
+  .map-page-layer-bar .overview-switch.on i { transform: translateX(20px); }
+}

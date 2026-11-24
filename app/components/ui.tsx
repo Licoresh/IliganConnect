@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { addressInputError, emailInputError, mobileInputError, personNameInputError, residentAgeError, textInputError, characterLimitHint } from "@community/shared";
+import { useFinePointer, isDesktopWeb } from "../hooks/desktop-web";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -475,7 +476,7 @@ export function Choices({
   const [open, setOpen] = useState(false), selectedName = items.find((i) => i.id === value)?.name;
   const anchorRef = useRef<View>(null);
   const { width } = useWindowDimensions();
-  const desktopWeb = Platform.OS === "web" && width >= 1200;
+  const desktopWeb = isDesktopWeb(width, useFinePointer());
   const kind = sheetKind || (shortCategoryNames ? "category" : title.toLowerCase().includes("problem") ? "problem" : items.length > 10 ? "barangay" : "generic");
   const selectionItems = kind === "barangay" && myBarangayId
     ? [...items.filter((item) => item.id === myBarangayId), ...items.filter((item) => item.id !== myBarangayId)]
@@ -575,7 +576,7 @@ export function SelectionSheet({
   const [dropdownPosition, setDropdownPosition] = useState<{ left: number; top: number; width: number; maxHeight: number; above: boolean; anchorTop: number } | null>(null);
   const popupRef = useRef<View>(null);
   const { width } = useWindowDimensions();
-  const desktopWeb = Platform.OS === "web" && width >= 1200 && !!anchorRef;
+  const desktopWeb = isDesktopWeb(width, useFinePointer()) && !!anchorRef;
   useEffect(() => {
     if (visible) { setDraft(value); setSearch(""); }
   }, [visible, value]);

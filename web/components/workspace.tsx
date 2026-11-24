@@ -37,6 +37,7 @@ import {
   MessageCircle,
   Eye,
   EyeOff,
+  MoreHorizontal,
 } from "lucide-react";
 import { db, result, configured } from "../lib/client";
 import { Profile, Report, Lookup, label, hasReportCoordinates } from "@community/shared";
@@ -92,6 +93,24 @@ const nav = [
   ["Administration", Settings],
   ["Settings", Settings],
 ] as const;
+const rolePrimarySections: Record<string, string[]> = {
+  barangay: ["Overview", "Issue reports", "Residents", "Issue Mapping & Heatmap"],
+  office: ["Overview", "Issue reports", "Category reports", "Issue Mapping & Heatmap"],
+  admin: ["Overview", "Issue reports", "Issue Mapping & Heatmap", "Administration"],
+};
+const compactNavLabels: Record<string, string> = {
+  "Overview": "Home",
+  "Issue reports": "Reports",
+  "Category reports": "Categories",
+  "Residents": "Residents",
+  "Issue Mapping & Heatmap": "Map",
+  "Geographic analytics": "Analytics",
+  "Consultations": "Consults",
+  "Meeting requests": "Meetings",
+  "Announcements": "Updates",
+  "Administration": "Admin",
+  "Settings": "Settings",
+};
 const appVersion = appConfig.expo.version;
 function titleCaseHeading(value: string) {
   return value.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
@@ -114,6 +133,7 @@ export default function Workspace() {
     [loading, setLoading] = useState(true),
     [section, setSection] = useState("Overview"),
     [drawer, setDrawer] = useState(false),
+    [navSheetOpen, setNavSheetOpen] = useState(false),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [showPassword, setShowPassword] = useState(false),
@@ -128,6 +148,9 @@ export default function Workspace() {
   const identity = useRef<string | null>(null),
     permissionStamp = useRef("");
   const menuButton = useRef<HTMLButtonElement>(null),
+    navMoreButton = useRef<HTMLButtonElement>(null),
+    navSheet = useRef<HTMLDialogElement>(null),
+    navSheetNavigating = useRef(false),
     restoreMenuFocus = useRef(false),
     sidebar = useRef<HTMLElement>(null),
     pageTitle = useRef<HTMLHeadingElement>(null),
@@ -287,18 +310,32 @@ export default function Workspace() {
         }
       }
     };
-    const desktop = window.matchMedia("(min-width: 1024px)");
+    const tablet = window.matchMedia("(min-width: 768px)");
     const resize = () => {
-      if (desktop.matches) setDrawer(false);
+      if (tablet.matches) setDrawer(false);
     };
-    desktop.addEventListener("change", resize);
+    tablet.addEventListener("change", resize);
     document.addEventListener("keydown", keys);
     return () => {
       document.body.style.overflow = previous;
       document.removeEventListener("keydown", keys);
-      desktop.removeEventListener("change", resize);
+      tablet.removeEventListener("change", resize);
     };
   }, [drawer]);
+  useEffect(() => {
+    const dialog = navSheet.current;
+    if (!dialog) return;
+    if (navSheetOpen && !dialog.open) dialog.showModal();
+    else if (!navSheetOpen && dialog.open) dialog.close();
+  }, [navSheetOpen]);
+  useEffect(() => {
+    const mobile = window.matchMedia("(max-width: 767px)");
+    const closeSheetOutsidePhone = () => {
+      if (!mobile.matches) setNavSheetOpen(false);
+    };
+    mobile.addEventListener("change", closeSheetOutsidePhone);
+    return () => mobile.removeEventListener("change", closeSheetOutsidePhone);
+  }, []);
   const refs = useQuery({
     queryKey: ["refs", session],
     enabled: !!access.data?.authorized,
@@ -328,7 +365,13 @@ export default function Workspace() {
       return { categories: categoriesWithProblems, barangays, organizations, includeSamples: settings.include_samples };
     },
   });
+  const closeNavSheet = (navigating = false) => {
+    if (navigating) navSheetNavigating.current = true;
+    if (navSheet.current?.open) navSheet.current.close();
+    setNavSheetOpen(false);
+  };
   const coordinate = (next: string, id: string) => {
+    closeNavSheet(navSheet.current?.open);
     setRecordTarget((target) => ({ id: "", revision: target.revision + 1 }));
     setScope(id);
     setSection(next);
@@ -337,6 +380,7 @@ export default function Workspace() {
     writeWorkspaceLocation({ section: next, scope: id, recordId: "", queue: "all" });
   };
   const navigate = (next: string, recordId = "", queue = "all") => {
+    closeNavSheet(navSheet.current?.open);
     setReportQueue(queue);
     setRecordTarget((target) => ({ id: recordId, revision: target.revision + 1 }));
     setScope("");
@@ -533,9 +577,17 @@ export default function Workspace() {
           "Office workspace";
   const availableSection = (n: string) => canOpenSection(context, n);
   const visibleSection = availableSection(section) ? section : "Overview";
+  const primarySections = (rolePrimarySections[profile.data.role] || rolePrimarySections.admin).filter(availableSection);
+  const primaryNav = nav.filter(([name]) => primarySections.includes(name));
+  const navGroups = [
+    { title: "Community operations", items: nav.slice(0, 6) },
+    { title: "Community", items: nav.slice(6, 9) },
+    { title: "System", items: nav.slice(9, 10) },
+    { title: "Account", items: nav.slice(10) },
+  ];
   return (
     <AccessContext.Provider value={context}>
-      <div className="shell">
+      <div className="shell" data-role={profile.data.role}>
         <a className="skip-link" href="#main">Skip to workspace</a>
         <aside
           id="workspace-navigation"
@@ -554,22 +606,17 @@ export default function Workspace() {
             <X size={20} />
           </button>
           <a className="brand" href="#main">
-            <Image src="/iligan-connect-logo.png" alt="" aria-hidden="true" width={34} height={34} /> ILIGAN <b>CONNECT</b>
+            <Image src="/iligan-connect-logo.png" alt="" aria-hidden="true" width={34} height={34} /> <span>ILIGAN <b>CONNECT</b></span>
           </a>
           <div className="workspace-edition"><span /> LOCAL ACTION · STRONGER ILIGAN</div>
           <nav aria-label="Main navigation">
-            {[
-              { title: "Community operations", items: nav.slice(0, 6) },
-              { title: "Community", items: nav.slice(6, 9) },
-              { title: "System", items: nav.slice(9, 10) },
-              { title: "Account", items: nav.slice(10) },
-            ].map((group) => {
+            {navGroups.map((group) => {
               const items = group.items.filter(([n]) => availableSection(n));
               return items.length ? <div className="nav-group" key={group.title}>
                 <p className="nav-caption">{group.title}</p>
-                {items.map(([n, Icon]) => <button key={n} className={visibleSection === n ? "active" : ""}
+                {items.map(([n, Icon]) => <button key={n} title={n} aria-label={n} className={visibleSection === n ? "active" : ""}
                   aria-current={visibleSection === n ? "page" : undefined} onClick={() => navigate(n)}>
-                  <Icon size={18} /><span>{n === "Issue Mapping & Heatmap" ? "Mapping & heatmap" : n}</span>
+                  <Icon size={18} /><span data-compact-label={compactNavLabels[n]}>{n === "Issue Mapping & Heatmap" ? "Mapping & heatmap" : n}</span>
                 </button>)}
               </div> : null;
             })}
@@ -658,7 +705,6 @@ export default function Workspace() {
               {visibleSection === "Overview" ? (
                 <>
                   <div className="overview-heading-copy">
-                    <p className="eyebrow">REPORTING &amp; COORDINATION</p>
                     <h1 ref={pageTitle} tabIndex={-1} className="overview-heading-title">
                       {titleCaseHeading(profile.data.role === "barangay"
                         ? `${jurisdiction} dashboard`
@@ -671,13 +717,11 @@ export default function Workspace() {
                 </>
               ) : visibleSection === "Issue Mapping & Heatmap" ? <>
                 <div className="overview-heading-copy">
-                  <p className="eyebrow">REPORTING &amp; COORDINATION</p>
                   <h1 ref={pageTitle} tabIndex={-1} className="overview-heading-title">Issue Mapping &amp; Heatmap</h1>
                   <p className="overview-heading-subtitle">Explore reported concerns and identify patterns in your authorized area.</p>
                 </div>
               </> : <>
                 <div>
-                  <p className="eyebrow">{visibleSection === "Settings" ? "ACCOUNT" : visibleSection === "Consultations" ? "COMMUNITY ENGAGEMENT" : "REPORTING & COORDINATION"}</p>
                   <h1 ref={pageTitle} tabIndex={-1}>{titleCaseHeading(visibleSection)}</h1>
                   <p>{({
                     "Issue reports": "Review evidence, route responsibility and keep each case moving.",
@@ -761,6 +805,46 @@ export default function Workspace() {
             <span>Human assessment informs every action.</span>
           </footer>
         </div>
+        <nav className="staff-bottom-nav" aria-label="Primary staff navigation">
+          {primaryNav.map(([name, Icon]) => {
+            const label = name === "Overview" ? "Home" : name === "Issue reports" ? "Reports" : name === "Issue Mapping & Heatmap" ? "Map" : name === "Category reports" ? "Categories" : name === "Administration" ? "Admin" : name;
+            return <button key={name} type="button" className={visibleSection === name ? "active" : ""}
+              aria-current={visibleSection === name ? "page" : undefined} onClick={() => navigate(name)}>
+              <Icon size={19} aria-hidden="true" /><span>{label}</span>
+            </button>;
+          })}
+          <button ref={navMoreButton} type="button" className={!primarySections.includes(visibleSection) ? "active" : ""}
+            aria-expanded={navSheetOpen} aria-controls="staff-more-sections" onClick={() => setNavSheetOpen(true)}>
+            <MoreHorizontal size={20} aria-hidden="true" /><span>More</span>
+          </button>
+        </nav>
+        <dialog ref={navSheet} id="staff-more-sections" className="staff-more-dialog"
+          aria-labelledby="staff-more-title" onCancel={(event) => { event.preventDefault(); closeNavSheet(); }}
+          onClose={() => {
+            setNavSheetOpen(false);
+            if (navSheetNavigating.current) {
+              navSheetNavigating.current = false;
+              requestAnimationFrame(() => pageTitle.current?.focus());
+            } else if (window.matchMedia("(max-width: 767px)").matches) navMoreButton.current?.focus();
+          }}
+          onClick={(event) => { if (event.target === event.currentTarget) closeNavSheet(); }}>
+          <div className="staff-more-header">
+            <div><span>Workspace</span><h2 id="staff-more-title">More sections</h2></div>
+            <button type="button" className="secondary" aria-label="Close more sections" onClick={() => closeNavSheet()}><X size={19} /></button>
+          </div>
+          <div className="staff-more-groups">
+            {navGroups.map((group) => {
+              const items = group.items.filter(([name]) => availableSection(name) && !primarySections.includes(name));
+              return items.length ? <section key={group.title} aria-label={group.title}>
+                <h3>{group.title}</h3>
+                {items.map(([name, Icon]) => <button type="button" key={name} className={visibleSection === name ? "active" : ""}
+                  aria-current={visibleSection === name ? "page" : undefined} onClick={() => navigate(name)}>
+                  <Icon size={19} aria-hidden="true" /><span>{name === "Issue Mapping & Heatmap" ? "Mapping & heatmap" : name}</span><ChevronRight size={17} aria-hidden="true" />
+                </button>)}
+              </section> : null;
+            })}
+          </div>
+        </dialog>
       </div>
     </AccessContext.Provider>
   );
@@ -849,11 +933,6 @@ function Overview({
   const densityOutsideCount = coordinateDensityReports.length - mappedDensityReports.length;
   const unresolvedDensityCount = mappedDensityReports.filter((report) => report.verified_at && !["resolved", "rejected", "duplicate"].includes(report.status)).length;
   const reportDensity = barangayArea > 0 ? activeDensityReports.length / barangayArea : null;
-  const scopeName = access.profile.role === "barangay"
-    ? barangayName || "Assigned barangay"
-    : access.profile.role === "admin"
-      ? "Citywide administration"
-      : access.organizations.map((o) => o.name).join(" · ") || "Authorized office coverage";
   const formatDate = (value: string, options: Intl.DateTimeFormatOptions = { dateStyle: "medium" }) =>
     new Intl.DateTimeFormat("en-PH", { ...options, timeZone: "Asia/Manila" }).format(new Date(value));
   const metricCards = [
@@ -871,7 +950,7 @@ function Overview({
   return (
     <div className="overview">
       <div className="dashboard-brief overview-scope">
-        <div className="overview-scope-copy"><span className="overview-scope-icon"><ShieldCheck size={17} /></span><span><b>{scopeName}</b> · Authorized records</span></div>
+        <div className="overview-scope-copy"><span className="overview-scope-icon"><ShieldCheck size={17} /></span><span>Authorized records</span></div>
         <button className="text-button overview-updated" disabled={q.isFetching} onClick={() => void q.refetch()} aria-label={q.isFetching ? "Refreshing dashboard data" : `Refresh dashboard. Last updated ${formatDate(new Date(q.dataUpdatedAt).toISOString(), { dateStyle: "medium", timeStyle: "short" })}`}>
           <RefreshCw size={14} className={q.isFetching ? "refreshing" : ""} />
           {q.isFetching ? "Refreshing…" : `Last updated · ${formatDate(new Date(q.dataUpdatedAt).toISOString(), { dateStyle: "medium", timeStyle: "short" })}`}

@@ -35,6 +35,7 @@ import { Profile, Lookup, Report, Status, statuses, label, textInputError, resid
 import { ReportForm, ReportTracking, Explore as ExploreScreen } from "../features/reports";
 import { Community as CommunityScreen, Announcements } from "../features/community";
 import { ListSkeleton } from "../components/loading";
+import { useFinePointer, isDesktopWeb, isTabletWeb } from "../hooks/desktop-web";
 const REPORT_PAGE_SIZE = 5;
 const RESIDENT_TERMS_VERSION = "2026-11-15";
 const RESIDENT_APP_VERSION = (require("../app.json") as { expo: { version: string } }).expo.version;
@@ -111,9 +112,10 @@ const tabs = [
 ] as const;
 export default function Home() {
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const finePointer = useFinePointer();
   const compactPhone = viewportWidth < 360;
-  const tabletWeb = Platform.OS === "web" && viewportWidth >= 768 && viewportWidth < 1200;
-  const desktopWeb = Platform.OS === "web" && viewportWidth >= 1200;
+  const tabletWeb = isTabletWeb(viewportWidth, finePointer);
+  const desktopWeb = isDesktopWeb(viewportWidth, finePointer);
   const compactTablet = tabletWeb && viewportHeight < 760;
   const wideDashboard = desktopWeb || (tabletWeb && viewportWidth >= 1024);
   const tabletContentMaxWidth = viewportWidth < 840
@@ -621,7 +623,7 @@ export default function Home() {
       >
         {tabletWeb && renderNavigation("tablet")}
         <ScrollView
-          style={Platform.select({ web: { flex: 1, width: "100%", scrollPaddingBottom: tabletWeb || desktopWeb ? 36 : 124 } })}
+          style={Platform.select({ web: { flex: 1, width: "100%", scrollPaddingBottom: tabletWeb || desktopWeb ? 36 : 124, ...(desktopWeb ? { scrollbarGutter: "stable" } : null) } as any })}
           ref={scroll}
           scrollEnabled={Platform.OS === "android" || !(tab === "Explore" && !selected && exploreMapGestureActive)}
           onScroll={(event) => { mainScrollY.current = event.nativeEvent.contentOffset.y; if (tab === "Explore" && !selected) exploreScrollY.current = mainScrollY.current; }}
@@ -649,7 +651,6 @@ export default function Home() {
               <Text accessibilityRole="header" style={{ color: "#173b45", fontSize: 27, lineHeight: 33, fontWeight: "700", letterSpacing: -0.65 }}>{tab === "Home" ? "Home" : tab === "Explore" ? "Explore Iligan" : tab === "Community" ? "Community" : tab === "Report" ? "Report a concern" : tab === "Profile" ? "Your profile" : tab === "Notifications" ? "Notifications" : "Announcements"}</Text>
               <Text numberOfLines={1} style={{ color: "#61777d", fontSize: 13, lineHeight: 19 }}>{tab === "Home" ? "Reports and local updates from your community." : tab === "Explore" ? "Browse local reports, places and barangay activity." : tab === "Community" ? "Join conversations and follow meeting updates in your area." : tab === "Report" ? "Share an issue with the city and follow its progress." : tab === "Profile" ? "Personal details, settings, and help for your resident account." : tab === "Notifications" ? "Updates about your reports and community activity." : "Official updates from your barangay and Iligan City."}</Text>
             </View>
-            {tab !== "Report" && tab !== "Home" && <Pressable accessibilityRole="button" accessibilityLabel="Start a report" onPress={() => report()} style={({ pressed }) => [{ minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 15, borderRadius: 9, backgroundColor: colors.brand, opacity: pressed ? 0.85 : 1 }]}><Ionicons name="add" size={18} color="white" /><Text style={{ color: "white", fontSize: 13, fontWeight: "700" }}>New report</Text></Pressable>}
           </View>}
           {q.isPending ? (
             <ListSkeleton variant="home" count={1} label="Loading your home screen" />
@@ -958,8 +959,9 @@ export default function Home() {
 function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRecoveryVerified: () => void }) {
   const insets = useSafeAreaInsets();
   const { width: authWidth, height: authHeight } = useWindowDimensions();
-  const tabletAuthWeb = Platform.OS === "web" && authWidth >= 768 && authWidth < 1200;
-  const wideAuthWeb = Platform.OS === "web" && authWidth >= 1200;
+  const authFinePointer = useFinePointer();
+  const tabletAuthWeb = isTabletWeb(authWidth, authFinePointer);
+  const wideAuthWeb = isDesktopWeb(authWidth, authFinePointer);
   const [mode, setMode] = useState("login"),
     [firstName, setFirstName] = useState(""),
     [middleName, setMiddleName] = useState(""),
@@ -1629,7 +1631,7 @@ function ProfileForm({
   const writeLock = useRef(false);
   const photoLock = useRef(false);
   const { width: screenWidth } = useWindowDimensions();
-  const desktopProfile = Platform.OS === "web" && screenWidth >= 1200;
+  const desktopProfile = isDesktopWeb(screenWidth, useFinePointer());
   const contentWidth = Math.min(screenWidth, desktopProfile ? 1360 : 620) - (desktopProfile ? 80 : 36);
   const compactProfile = contentWidth < 320;
   const wideProfile = contentWidth >= 500;
@@ -2078,7 +2080,7 @@ function ProfileForm({
           <View style={{ height: wideProfile ? 150 : compactProfile ? 112 : 130, overflow: "hidden", backgroundColor: colors.brandDark }}>
             <Image source={require("../assets/iligan-community-profile-header.jpg")} accessible={false} resizeMode="cover" style={{ position: "absolute", width: "100%", height: "100%" }} />
             <View pointerEvents="none" style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "#063d4375" }} />
-            <View style={{ paddingHorizontal: 16, paddingTop: 14, gap: 2 }}><Text style={{ color: "#c7f4e9", fontSize: 9, fontWeight: "800", letterSpacing: 1.4 }}>ILIGAN CONNECT</Text><Text style={{ color: "white", fontSize: 13, fontWeight: "700" }}>Resident profile</Text></View>
+            {!desktopProfile && <View style={{ paddingHorizontal: 16, paddingTop: 14, gap: 2 }}><Text style={{ color: "#c7f4e9", fontSize: 9, fontWeight: "800", letterSpacing: 1.4 }}>ILIGAN CONNECT</Text><Text style={{ color: "white", fontSize: 13, fontWeight: "700" }}>Resident profile</Text></View>}
           </View>
           <View style={{ paddingHorizontal: compactProfile ? 12 : 16, paddingBottom: 14 }}>
             <View style={{ flexDirection: "row", alignItems: "flex-start", gap: compactProfile ? 10 : 14, marginTop: -Math.min(avatarSize * 0.34, 36) }}>
@@ -2095,7 +2097,7 @@ function ProfileForm({
                 <View style={{ alignSelf: "flex-start", paddingHorizontal: 9, paddingVertical: 4, borderRadius: 12, backgroundColor: "#e8f5f1" }}><Text style={{ color: colors.brand, fontSize: 10, fontWeight: "800" }}>{label(p.role)}</Text></View>
               </View>
             </View>
-            <View style={{ marginTop: 14 }}><Button icon={editing ? "close-outline" : "create-outline"} secondary={editing} disabled={busy || emailBusy} title={editing ? "Cancel editing" : "Edit profile"} onPress={toggleProfileEditing} /></View>
+            <View style={desktopProfile ? { marginTop: 14, alignSelf: "flex-end", minWidth: 200 } : { marginTop: 14 }}><Button icon={editing ? "close-outline" : "create-outline"} secondary={editing} disabled={busy || emailBusy} title={editing ? "Cancel editing" : "Edit profile"} onPress={toggleProfileEditing} /></View>
           </View>
         </View>
       </>}

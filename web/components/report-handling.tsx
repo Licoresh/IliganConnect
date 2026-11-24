@@ -1,6 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { type Lookup, type Report } from "@community/shared";
+import { UserRound } from "lucide-react";
 import { db, result } from "../lib/client";
 
 export type Reporter = {
@@ -20,7 +21,7 @@ export function ReportHandling({ report, barangays }: { report: Report; barangay
   const person = reporter.data?.[0];
   const area = (id: string | null | undefined) => barangays.find(b => b.id === id)?.name || "Not recorded";
   return <section className="report-workspace-section report-document-section report-handling">
-    <h3>{report.submission_source === "walk_in" ? "Walk-in reporter" : "Reporting resident"}</h3>
+    <div className="report-workspace-section-heading"><UserRound size={20} aria-hidden="true" /><div><h3>{report.submission_source === "walk_in" ? "Walk-in reporter" : "Reporting resident"}</h3><p>Who raised the concern and where it was received.</p></div></div>
     {reporter.isPending ? <p role="status">Loading reporter information…</p> : reporter.error ? <div role="alert"><p>Reporter information could not be loaded.</p><button className="secondary" onClick={() => void reporter.refetch()}>Retry reporter details</button></div> : person ? <dl className="assessment-current">
       <div><dt>{report.submission_source === "walk_in" ? "Reported by" : "Submitted by"}</dt><dd>{person.resident_name || "Name not recorded"}</dd>
         {person.reporter_email && <a href={`mailto:${person.reporter_email}`}>Email: {person.reporter_email}</a>}
@@ -33,8 +34,9 @@ export function ReportHandling({ report, barangays }: { report: Report; barangay
         ? <div><dt>Intake barangay</dt><dd>{area(report.barangay_id)}</dd><small>No resident account is linked to this report.</small></div>
         : <div><dt>Resident’s registered barangay</dt><dd>{area(person.registered_barangay_id)}</dd><small>At submission: {person.submission_barangay_id ? area(person.submission_barangay_id) : "Not captured for this older report"}</small></div>}
     </dl> : <p>Reporter information is unavailable for this report.</p>}
-    <h3>Handling responsibility</h3>
+    <div className="report-handling-responsibility"><h4>Handling responsibility</h4>
     <p>{report.organization_id ? "Forwarded to an office. Its name and referral reason are shown in the report details and history." : area(report.barangay_id) + " barangay handles the report."}</p>
     {person?.assigned_to_name && <p>Barangay personnel responsible: <strong>{person.assigned_to_name}</strong></p>}
+    </div>
   </section>;
 }

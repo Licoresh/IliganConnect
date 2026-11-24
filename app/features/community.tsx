@@ -7,6 +7,7 @@ import { textInputError, SHORT_REASON_LIMIT, characterLimitHint, Lookup, label, 
 import { db, result } from "../lib/client";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryDescriptionFor, categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, contentGaps } from "../components/ui";
 import { ListSkeleton } from "../components/loading";
+import { useFinePointer, isDesktopWeb, isTabletWeb } from "../hooks/desktop-web";
 type Consultation = {
   id: string;
   title: string;
@@ -95,9 +96,10 @@ export function Community({
   const qc = useQueryClient();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const compactMobile = screenWidth < 600;
-  const tabletWeb = Platform.OS === "web" && screenWidth >= 768 && screenWidth < 1200;
+  const finePointer = useFinePointer();
+  const tabletWeb = isTabletWeb(screenWidth, finePointer);
   const compactTablet = tabletWeb && screenHeight < 760;
-  const desktopWeb = Platform.OS === "web" && screenWidth >= 1200;
+  const desktopWeb = isDesktopWeb(screenWidth, finePointer);
   const requestSubmission = useRef(false);
   const categoryPickerAnchorRef = useRef<View>(null);
   const meetingGrid = screenWidth >= 900;
@@ -485,7 +487,7 @@ export function Community({
               accessibilityRole="button"
               accessibilityLabel={`${phase === "closed" ? "Read discussion" : "Open conversation"}: ${c.title}`}
               accessibilityHint={`${barangays.find((b) => b.id === c.barangay_id)?.name ?? "Iligan City"} community conversation`}
-              style={({ pressed }) => [s.card, { gap: 14, borderColor: "#e3ecef", padding: desktopWeb ? 16 : 18, borderRadius: desktopWeb ? 12 : 18, width: desktopWeb ? "48%" : undefined, maxWidth: desktopWeb ? 620 : undefined, flexGrow: desktopWeb ? 1 : undefined, shadowOpacity: 0.035 }, pressed && { backgroundColor: "#f6fbf9" }]}
+              style={({ pressed }) => [s.card, { gap: 14, borderColor: "#e3ecef", padding: desktopWeb ? 16 : 18, borderRadius: desktopWeb ? 12 : 18, width: desktopWeb ? `calc(50% - ${contentGaps.grid / 2}px)` as any : undefined, minHeight: desktopWeb ? 330 : undefined, justifyContent: desktopWeb ? "space-between" : undefined, shadowOpacity: 0.035 }, pressed && { backgroundColor: "#f6fbf9" }]}
               key={c.id}
               onPress={() => { onPageNavigate?.(); setSelected(c.id); }}
             >
@@ -537,7 +539,7 @@ export function Community({
             const meetingMonth = hasMeetingDate
               ? new Intl.DateTimeFormat("en-PH", { month: "short", timeZone: "Asia/Manila" }).format(new Date(r.schedule!.starts_at)).toUpperCase()
               : "";
-            return <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`Open meeting details: ${r.title}`} accessibilityHint={`${state.label}. ${r.participation_mode === "open" ? "Open to residents who are eligible to join." : "Closed meeting."}`} onPress={() => setActiveMeetingId(r.id)} style={({ pressed }) => [s.card, { height: screenWidth < 600 ? 276 : screenWidth < 1200 ? 258 : 250, justifyContent: "space-between", gap: 8, padding: screenWidth < 600 ? 15 : 16, borderRadius: desktopWeb ? 14 : 18, width: meetingGrid ? "48%" : undefined, maxWidth: meetingGrid ? 620 : undefined, flexGrow: meetingGrid ? 1 : undefined, overflow: "hidden" }, pressed && { backgroundColor: "#f6fbf9", borderColor: "#acdcd2" }]}>
+            return <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`Open meeting details: ${r.title}`} accessibilityHint={`${state.label}. ${r.participation_mode === "open" ? "Open to residents who are eligible to join." : "Closed meeting."}`} onPress={() => setActiveMeetingId(r.id)} style={({ pressed }) => [s.card, { height: desktopWeb ? undefined : screenWidth < 600 ? 276 : screenWidth < 1200 ? 258 : 250, minHeight: desktopWeb ? 330 : undefined, justifyContent: "space-between", gap: 8, padding: screenWidth < 600 ? 15 : 16, borderRadius: desktopWeb ? 14 : 18, width: desktopWeb ? `calc(50% - ${contentGaps.grid / 2}px)` as any : meetingGrid ? "48%" : undefined, maxWidth: !desktopWeb && meetingGrid ? 620 : undefined, flexGrow: !desktopWeb && meetingGrid ? 1 : undefined, overflow: "hidden" }, pressed && { backgroundColor: "#f6fbf9", borderColor: "#acdcd2" }]}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 }}>
                 <View accessible accessibilityRole="image" accessibilityLabel={hasMeetingDate ? `Meeting date ${meetingDay} ${meetingMonth}` : "Meeting date not set"} style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: hasMeetingDate ? "#e4f6f1" : "#edf3fb", alignItems: "center", justifyContent: "center", gap: 0 }}>
                   {hasMeetingDate ? <><Text style={{ color: colors.brandDark, fontSize: 17, lineHeight: 19, fontWeight: "800" }}>{meetingDay}</Text><Text style={{ color: colors.brand, fontSize: 9, lineHeight: 12, fontWeight: "800", letterSpacing: 0.7 }}>{meetingMonth}</Text></> : <Ionicons name="calendar-outline" size={22} color="#426ca6" />}

@@ -34,6 +34,25 @@ import LocationMap from "../components/deferred-location-map";
 import type { MapStyle, Point } from "../components/location-map";
 import { ListSkeleton } from "../components/loading";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryToneFor, categoryIconFor, categoryDescriptionFor, categoryDisplayName, statusToneFor, contentGaps } from "../components/ui";
+import { useFinePointer, isDesktopWeb, isTabletWeb } from "../hooks/desktop-web";
+
+type ReportHistoryEvent = {
+  id: number;
+  old_status?: string | null;
+  new_status: string;
+  public_note: string;
+  created_at: string;
+  actor_name?: string;
+  action_kind?: string;
+  attachment_count?: number;
+};
+
+async function loadReportHistory(reportId: string, signal: AbortSignal): Promise<ReportHistoryEvent[]> {
+  const primary = await db!.rpc("report_action_history", { p_id: reportId }).abortSignal(signal);
+  if (!primary.error) return (primary.data as ReportHistoryEvent[] | null) ?? [];
+  if (primary.error.code !== "42501") throw primary.error;
+  return result<ReportHistoryEvent[]>(db!.rpc("public_report_action_history", { p_id: reportId }).abortSignal(signal));
+}
 
 type NoticeTone = "info" | "warning" | "success" | "error";
 type ManualPinResolution = {
@@ -193,7 +212,7 @@ export function ReportForm({
 }) {
   const categorySheetAnchorRef = useRef<View>(null);
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
-  const desktopReport = Platform.OS === "web" && windowWidth >= 1200;
+  const desktopReport = isDesktopWeb(windowWidth, useFinePointer());
   const insets = useSafeAreaInsets();
   const manualPinDialogHeight = Math.min(740, windowHeight - 48);
   const manualPinMapHeight = desktopReport
@@ -587,7 +606,7 @@ export function ReportForm({
     <>
       {!desktopReport && <Text onLayout={(event) => { sectionPositions.current.header = event.nativeEvent.layout.y; }} style={s.heading}>Report a concern</Text>}
       {residentProfile && <Text style={s.small}>Reporting as {residentProfile.display_name} · Registered in {barangays.find(b => b.id === residentProfile.barangay_id)?.name || "your barangay"}</Text>}
-      {!saved && <Text style={s.body}>Describe the concern, confirm its location, then check and send. Your name and registered barangay are taken from your signed-in account.</Text>}
+      {!saved && !desktopReport && <Text style={s.body}>Describe the concern, confirm its location, then check and send. Your name and registered barangay are taken from your signed-in account.</Text>}
       {!!message && <ReportNotice tone={messageTone} message={message} onDismiss={clearMessage} />}
       {saved ? (
         <View style={s.card}>
@@ -607,7 +626,7 @@ export function ReportForm({
       ) : (
         <>
           <View onLayout={(event) => { sectionPositions.current.header = event.nativeEvent.layout.y; }} style={desktopReport ? { flexDirection: "column", alignItems: "stretch", gap: 22, padding: 24, borderWidth: 1, borderColor: "#dfe9e6", borderRadius: 14, backgroundColor: "white" } : { gap: 0 }}>
-          <View style={desktopReport ? { position: "relative", flexDirection: "row", width: "100%", maxWidth: 900, alignSelf: "center", paddingVertical: 2 } : { position: "relative", flexDirection: "row", paddingVertical: 2, marginBottom: 0 }}>
+          <View style={desktopReport ? { position: "relative", flexDirection: "row", width: "100%", maxWidth: 760, alignSelf: "center", paddingVertical: 2 } : { position: "relative", flexDirection: "row", paddingVertical: 2, marginBottom: 0 }}>
             <View pointerEvents="none" style={{ position: "absolute", top: 17, left: "16.67%", right: "16.67%", height: 4, borderRadius: 2, backgroundColor: "#e3ebf2" }}>
               <View style={{ width: `${step * 50}%`, height: "100%", borderRadius: 2, backgroundColor: colors.brand }} />
             </View>
@@ -622,7 +641,7 @@ export function ReportForm({
               <View style={{ gap: 2, alignItems: "center" }}><Text style={{ textAlign: "center", color: i <= step ? colors.brandDark : colors.muted, fontSize: 12, fontWeight: i === step ? "800" : "600" }}>{title}</Text>{desktopReport && <Text style={{ textAlign: "center", color: "#71858a", fontSize: 10 }}>{i === 0 ? "Issue details" : i === 1 ? "Pin the location" : "Check before sending"}</Text>}</View>
             </Pressable>)}
           </View>
-          <View style={desktopReport ? { width: "100%", alignSelf: "center", maxWidth: 900, gap: 13 } : { gap: 0 }}>
+          <View style={desktopReport ? { width: "100%", alignSelf: "center", maxWidth: 760, gap: 13 } : { gap: 0 }}>
           {!desktopReport && <Text style={s.eyebrow}>
             STEP {step + 1} OF 3 · {["DETAILS", "LOCATION", "REVIEW"][step]}
           </Text>}
@@ -910,7 +929,7 @@ export function ReportTracking({
     [moreOpen, setMoreOpen] = useState(false),
     [mainTimelineOpen, setMainTimelineOpen] = useState(false);
   const { width: windowWidth } = useWindowDimensions();
-  const desktopTracking = Platform.OS === "web" && windowWidth >= 1200;
+  const desktopTracking = isDesktopWeb(windowWidth, useFinePointer());
   const qc = useQueryClient();
   const currentReport = useQuery({
     queryKey: ["resident-report", initialReport.id, meetingRequestId ?? null],
@@ -949,13 +968,14 @@ export function ReportTracking({
       const [problem, engagement, history, following, office] = await Promise.all([
         r.problem_type ? result<{ label: string }>(db!.from("report_problem_types").select("label").eq("category_id", r.category_id).eq("code", r.problem_type).abortSignal(signal).single()) : null,
         result<{ followers: number; endorsements: number }>(db!.rpc("report_engagement", { p_id: r.id }).abortSignal(signal)),
-        result<{ id: number; new_status: string; public_note: string; created_at: string; actor_name?: string; action_kind?: string; attachment_count?: number }[]>(
-          r.resident_id ? db!.rpc("report_action_history", { p_id: r.id }).abortSignal(signal) :
-            db!.from("report_status_history").select("id,new_status,public_note,created_at").eq("report_id", r.id).order("created_at").abortSignal(signal)),
+        loadReportHistory(r.id, signal),
         result<{ report_id: string }[]>(db!.from("report_followers").select("report_id").eq("report_id", r.id).abortSignal(signal)),
         r.organization_id && r.status !== "duplicate" ? result<Lookup>(db!.from("organizations").select("id,name").eq("id", r.organization_id).abortSignal(signal).single()) : null,
       ]);
-      return { problem, engagement, history, following, office };
+      const timeline = history.some((event) => event.new_status === "submitted")
+        ? history
+        : [{ id: -1, new_status: "submitted", public_note: "Report received by the system", created_at: r.created_at }, ...history];
+      return { problem, engagement, history: timeline, following, office };
     },
   });
   const attachments = useQuery({
@@ -1195,8 +1215,9 @@ export function Explore({
 }) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const safeArea = useSafeAreaInsets();
-  const desktopExplore = Platform.OS === "web" && windowWidth >= 1200;
-  const tabletExplore = Platform.OS === "web" && windowWidth >= 768 && windowWidth < 1200;
+  const explorePointer = useFinePointer();
+  const desktopExplore = isDesktopWeb(windowWidth, explorePointer);
+  const tabletExplore = isTabletWeb(windowWidth, explorePointer);
   const compactFilterLayout = windowWidth < 480;
   const compactTabletExplore = tabletExplore && windowHeight < 760;
   const thumbnailWidth = windowWidth < 390 ? 76 : 88;

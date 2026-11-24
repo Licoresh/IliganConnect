@@ -125,17 +125,20 @@ export function ResidentsManagement({ barangays, active }: { barangays: Lookup[]
           <div className="resident-edit-meta-item"><CalendarDays size={19} aria-hidden="true" /><div><span>Account activity</span><strong>Registered {formatDate(selected.created_at)} <i aria-hidden="true">·</i> Last sign-in {formatDate(selected.last_sign_in_at)}</strong></div></div>
         </div>
         <fieldset className="resident-edit-fields" disabled={busy}>
+          <h4 className="resident-edit-group">Personal details</h4>
           <p className="resident-edit-name-hint">Current name: <strong>{selected.display_name}</strong>. Leave all three fields blank to keep it, or enter both first and last name to update it.</p>
           <label>First name<input id="resident-edit-first-name" name="first_name" autoComplete="given-name" maxLength={60} defaultValue={selected.first_name || ""} onChange={e => { if (validationError) revalidateResidentEdit(e.currentTarget.form); }} /></label>
           <label>Middle name (optional)<input name="middle_name" autoComplete="additional-name" maxLength={60} defaultValue={selected.middle_name || ""} onChange={e => { if (validationError) revalidateResidentEdit(e.currentTarget.form); }} /></label>
           <label>Last name<input name="last_name" autoComplete="family-name" maxLength={60} defaultValue={selected.last_name || ""} onChange={e => { if (validationError) revalidateResidentEdit(e.currentTarget.form); }} /></label>
           <label>Age (optional for existing accounts)<input id="resident-edit-age" name="age" type="text" inputMode="numeric" maxLength={3} defaultValue={selected.age == null ? "" : String(selected.age)} onChange={e => { if (validationError) revalidateResidentEdit(e.currentTarget.form); }} /><small>Whole number from 1 to 120.</small></label>
+          <h4 className="resident-edit-group">Contact and barangay</h4>
           <label>Mobile number
             <span className="resident-edit-phone-wrap"><Smartphone size={17} aria-hidden="true" /><input id="resident-edit-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" maxLength={24} defaultValue={selected.phone || ""} aria-invalid={!!phoneError} aria-describedby={phoneError ? "resident-edit-phone-hint resident-edit-phone-error" : "resident-edit-phone-hint"} onBlur={e => { setPhoneTouched(true); setPhoneError(mobileInputError(e.currentTarget.value)); }} onChange={e => { if (phoneTouched) setPhoneError(mobileInputError(e.currentTarget.value)); }} /></span>
             <small id="resident-edit-phone-hint">Optional · saved as the resident’s contact number. Use a Philippine mobile number.</small>
             {phoneError && <small id="resident-edit-phone-error" className="error" role="alert">{phoneError}</small>}
           </label>
           <label>Registered barangay<select name="barangay" required defaultValue={selected.barangay_id || ""}><option value="">Choose barangay</option>{barangays.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+          <h4 className="resident-edit-group">Account access</h4>
           <label>Account status<select name="status" defaultValue={selected.account_status}><option value="active">Active</option><option value="pending">Pending approval</option><option value="disabled">Deactivated</option></select></label>
           <label className="resident-edit-notifications"><input type="checkbox" name="notifications" defaultChecked={selected.notifications_enabled} /><span><strong>In-app notifications enabled</strong><small>Allow this account to receive resident updates in the app.</small></span></label>
           <label className="resident-edit-reason">Reason for change<textarea name="reason" required minLength={5} maxLength={500} placeholder="Explain this profile or access change." /><small>5–500 characters. Recorded in the administrator audit trail.</small></label>
@@ -162,7 +165,7 @@ export function BarangayResidents({ active, barangayName }: { active: boolean; b
   });
 
   return <section className="resident-management barangay-resident-directory">
-    <header className="organization-section-heading"><div><h2>Residents in {barangayName}</h2><p>View the resident directory for your assigned barangay. Account changes are managed by city administrators.</p></div></header>
+
     <div className="resident-directory-scope"><UserRound size={18} aria-hidden="true" /><span>Read-only directory · Limited to {barangayName}</span></div>
     <div className="resident-filters barangay-resident-filters">
       <label>Search residents<input type="search" value={search} maxLength={160} placeholder="Name, email, or mobile" onChange={e => { setSearch(e.target.value); setPage(0); }} /></label>

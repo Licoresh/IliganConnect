@@ -748,7 +748,7 @@ export function Community({
           close={() => setEditing(null)}
           className={table === "consultations" ? "consultation-edit-dialog" : table === "announcements" ? "announcement-edit-dialog" : undefined}
           icon={table === "consultations" ? <Pencil size={22} /> : table === "announcements" ? <Megaphone size={22} /> : undefined}
-          description={table === "consultations" ? "Update the discussion details and keep your community informed." : table === "announcements" ? editing === "new" ? "Share an update with residents now or schedule it for later." : "Update the announcement and its publication time." : undefined}
+          description={table === "consultations" ? editing === "new" ? "Open a discussion residents can join and comment on." : "Update the discussion details and keep your community informed." : table === "announcements" ? editing === "new" ? "Share an update with residents now or schedule it for later." : "Update the announcement and its publication time." : undefined}
         >
           <form
             key={editing === "new" ? `${table}-new` : `${table}-${editing.id}`}
@@ -1242,7 +1242,7 @@ function MeetingRequestsView({
       </div>
 
       <div className="meeting-results-heading">
-        <div><h2>Meeting requests</h2><p>{loading || invitationCheckPending ? "Loading requests…" : invitationCheckFailed ? "Invitations could not be checked" : `${visibleRows.length} ${visibleRows.length === 1 ? "request" : "requests"} in these results`}</p></div>
+        <div><p>{loading || invitationCheckPending ? "Loading requests…" : invitationCheckFailed ? "Invitations could not be checked" : `${visibleRows.length} ${visibleRows.length === 1 ? "request" : "requests"} in these results`}</p></div>
         <div className="meeting-results-actions">
           <button className="secondary meeting-refresh" onClick={onRetry} disabled={loading || invitationCheckPending}><RefreshCw size={15} /> Refresh</button>
           <div className="meeting-view-toggle" aria-label="Request layout">
@@ -1270,26 +1270,16 @@ function MeetingRequestsView({
                 const officeInvitations = invitationByRequest.get(row.id) ?? [];
                 const pendingOfficeInvitation = officeInvitations.some((invitation) => invitation.status === "pending");
                 const barangayName = refs.barangays.find((item) => item.id === row.barangay_id)?.name ?? "Barangay not specified";
-                const meetingLink = normalizeGoogleMeetUrl(schedule?.meet_url || "");
                 return (
-                  <article className="meeting-card" key={row.id}>
+                  <article className="meeting-card report-row-clickable" key={row.id} onClick={(event) => { if (!(event.target as HTMLElement).closest("a, button")) onOpen(row.id); }}>
                     <div className="meeting-card-main">
                       <div className="meeting-card-top"><span className={`meeting-status ${status.key}`}>{statusIcon(status.key)}{status.label}</span><time dateTime={row.created_at}>{formatDate(row.created_at)}</time></div>
                       <h3>{row.title}</h3>
                       <p className="meeting-card-body">{row.body}</p>
-                      <div className="meeting-card-meta"><span><MapPin size={15} />{barangayName}</span><span><CalendarDays size={15} />Requested {formatDate(row.created_at)}</span></div>
+                      <div className="meeting-card-meta"><span><MapPin size={15} />{barangayName}</span><span><CalendarDays size={15} />{schedule ? formatMeetingTimeRange(schedule.starts_at, schedule.ends_at) : `Requested ${formatDate(row.created_at)}`}</span></div>
                     </div>
                     <div className="meeting-card-details">
-                      {officeIds.length > 0 && (invitationsQuery.isPending || invitationsQuery.error || officeInvitations.length > 0) && <div className="meeting-office-invitations" aria-live="polite">
-                        {invitationsQuery.isPending ? <span className="muted">Checking your office invitation…</span> : invitationsQuery.error ? <span className="meeting-invitation-error">Invitation status unavailable</span> : officeInvitations.map((invitation) => (
-                          <span className={`meeting-invitation-status ${invitation.status}`} key={invitation.organization_id}>
-                            <strong>{refs.organizations.find((item) => item.id === invitation.organization_id)?.name ?? "Your office"}</strong>
-                            <span>{invitation.status === "pending" ? "Reply needed" : label(invitation.status)}</span>
-                          </span>
-                        ))}
-                      </div>}
-                      {schedule && <div className="meeting-schedule"><CalendarDays size={16} /><div><strong>{formatMeetingTimeRange(schedule.starts_at, schedule.ends_at)}</strong><span>{schedule.venue}</span></div>{meetingLink && <a className="meeting-join-link" href={meetingLink} target="_blank" rel="noreferrer"><Link2 size={14} aria-hidden="true" />Join Google Meet</a>}</div>}
-                      {row.decision_reason && <p className="meeting-decision">{row.decision_reason}</p>}
+                      {pendingOfficeInvitation && <span className="meeting-invitation-status pending meeting-card-reply"><strong>Your office</strong><span>Reply needed</span></span>}
                       <button className="meeting-review" onClick={() => onOpen(row.id)}><FileText size={16} /> {isOffice ? pendingOfficeInvitation ? "Respond to invitation" : "View meeting" : "Review & follow up"} <ChevronRight size={17} /></button>
                     </div>
                   </article>
@@ -1305,10 +1295,6 @@ function MeetingRequestsView({
                 const request = visibleRows.find((row) => row.id === meeting.request_id);
                 return <button className="meeting-upcoming" key={meeting.id} onClick={() => request && onOpen(request.id)} disabled={!request}><span className="meeting-date-tile"><strong>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { day: "2-digit", timeZone: "Asia/Manila" })}</strong><small>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { month: "short", timeZone: "Asia/Manila" }).toUpperCase()}</small></span><span className="meeting-upcoming-copy"><strong>{request?.title ?? "Meeting request"}</strong><small>{meetingTimeInput(meeting.starts_at)}–{meetingTimeInput(meeting.ends_at)} · {refs.barangays.find((item) => item.id === request?.barangay_id)?.name ?? "Barangay"}</small></span><ChevronRight size={16} /></button>;
               })}
-            </section>
-            <section className="panel meeting-rail-panel">
-              <div className="meeting-rail-heading"><span className="meeting-rail-icon clock"><Clock3 size={18} /></span><div><h3>Recent requests</h3><p>Latest resident submissions</p></div></div>
-              {[...visibleRows].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 4).map((row) => <button className="meeting-recent" key={row.id} onClick={() => onOpen(row.id)}><span className={`meeting-recent-dot ${statusFor(row).key}`} /><span><strong>{row.title}</strong><small>{statusFor(row).label} · {formatDate(row.created_at)}</small></span><ChevronRight size={15} /></button>)}
             </section>
           </aside>
         </div>
@@ -1358,7 +1344,7 @@ function Discussion({ row, manage }: { row: Row; manage: boolean }) {
           <span className={`consultation-status ${row.status}`}>{label(row.status)}</span>
           <p className="preserve-lines">{row.body}</p>
         </div>
-        {row.opens_at && row.closes_at && <div className="discussion-window"><CalendarDays size={20} /><span><strong>Discussion window</strong><time>{new Date(row.opens_at).toLocaleString("en-PH")} – {new Date(row.closes_at).toLocaleString("en-PH")}</time></span></div>}
+        {row.opens_at && row.closes_at && <div className="discussion-window"><CalendarDays size={20} /><span><strong>Discussion window</strong><time>{new Date(row.opens_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" })} – {new Date(row.closes_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" })}</time></span></div>}
       </section>
       {row.outcome && (
         <section className="discussion-outcome">
@@ -1987,6 +1973,7 @@ function Meeting({
               const organizationId = String(f.get("office") || "");
               if (await run(db!.from("meeting_action_items").insert({ meeting_id: meeting.id, description: f.get("description"), organization_id: organizationId || null, due_at: f.get("due") || null }))) form.reset();
             }}>
+              <h4 className="meeting-form-title">Add a follow-up action</h4>
               <label className="meeting-field"><span>Agreed action</span><textarea name="description" required minLength={5} maxLength={2000} placeholder="Write the agreed action, decision, or finding…" /></label>
               <div className="meeting-form-grid">
                 <label className="meeting-field"><span>Responsible office</span><select name="office"><option value="">Unassigned</option>{refs.organizations.filter((organization) => (organization as { active?: boolean }).active !== false).map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label>

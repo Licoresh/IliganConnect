@@ -3,7 +3,7 @@ import { z } from "zod";
 import { parseDecimal, textInputError } from "./validation";
 export { BARANGAY_GIS_CATEGORY_ZOOM, BARANGAY_TOTAL_ZOOM, INDIVIDUAL_REPORT_PIN_ZOOM, clusterReportsByCategory, clusterReportPinGroups, mapZoomFromLongitudeDelta, offsetMapCoordinate, separateNearbyMapPoints } from "./map-clusters";
 export type { CategoryReportCluster, ClusterableReportPoint, PositionedMapPoint, ReportPinGroup } from "./map-clusters";
-export { parseDecimal, textInputError, residentNamePartsError, residentDisplayName, normalizePersonName, personNameInputError, residentAgeError, emailInputError, mobileInputError, normalizePhilippineMobile, addressInputError, numericInputError, dateInputError, passwordInputError, imageHeaderError, UUID_PATTERN, SHORT_REASON_LIMIT, MIN_PASSWORD_LENGTH, EMAIL_OTP_LENGTH, EMAIL_OTP_EXPIRY_SECONDS, EMAIL_RESEND_INTERVAL_SECONDS, characterLimitHint } from "./validation";
+export { parseDecimal, textInputError, residentNamePartsError, residentDisplayName, normalizePersonName, personNameInputError, residentAgeError, emailInputError, mobileInputError, normalizePhilippineMobile, addressInputError, numericInputError, dateInputError, passwordInputError, imageHeaderError, UUID_PATTERN, SHORT_REASON_LIMIT, MIN_PASSWORD_LENGTH, MIN_REGISTRATION_PASSWORD_LENGTH, EMAIL_OTP_LENGTH, EMAIL_OTP_EXPIRY_SECONDS, EMAIL_RESEND_INTERVAL_SECONDS, characterLimitHint } from "./validation";
 export { ILIGAN_CITY_MAX_MAP_ZOOM, ILIGAN_CITY_MIN_MAP_ZOOM, ILIGAN_MAP_BOUNDS } from "./iligan";
 export { formatMeetingTimeRange, googleCalendarDraftUrl, meetingDateInput, meetingDateTimeInput, meetingTimeInput, normalizeGoogleMeetUrl, parseManilaDateTimeInput } from "./meeting-links";
 export { resolveGoogleLocation } from "./google-geocoding";

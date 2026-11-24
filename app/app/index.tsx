@@ -31,7 +31,7 @@ import { expoProjectId, getDevicePushPreference, hasRegisteredDevicePushToken, r
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, result, configured } from "../lib/client";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryIconFor, categoryToneFor, statusToneFor, categoryDisplayName } from "../components/ui";
-import { Profile, Lookup, Report, Status, statuses, label, textInputError, residentNamePartsError, residentDisplayName, residentAgeError, emailInputError, mobileInputError, normalizePhilippineMobile, passwordInputError, MIN_PASSWORD_LENGTH, EMAIL_OTP_LENGTH, EMAIL_OTP_EXPIRY_SECONDS, EMAIL_RESEND_INTERVAL_SECONDS } from "@community/shared";
+import { Profile, Lookup, Report, Status, statuses, label, textInputError, residentNamePartsError, residentDisplayName, residentAgeError, emailInputError, mobileInputError, normalizePhilippineMobile, passwordInputError, MIN_PASSWORD_LENGTH, MIN_REGISTRATION_PASSWORD_LENGTH, EMAIL_OTP_LENGTH, EMAIL_OTP_EXPIRY_SECONDS, EMAIL_RESEND_INTERVAL_SECONDS } from "@community/shared";
 import { ReportForm, ReportTracking, Explore as ExploreScreen } from "../features/reports";
 import { Community as CommunityScreen, Announcements } from "../features/community";
 import { ListSkeleton } from "../components/loading";
@@ -52,13 +52,16 @@ const RESIDENT_TERMS = [
 const Explore = memo(ExploreScreen);
 const Community = memo(CommunityScreen);
 if (Platform.OS === "web") WebBrowser.maybeCompleteAuthSession();
-function formatAuthError(error: unknown, step: "sign-in" | "verification" | "resend" | "recovery" | "password" = "sign-in") {
+function formatAuthError(error: unknown, step: "sign-in" | "registration" | "verification" | "resend" | "recovery" | "password" = "sign-in") {
   const detail = error instanceof Error ? error.message.toLowerCase() : "";
   if (step === "sign-in" && /invalid login credentials|invalid credentials|email or password/.test(detail)) return "Email or password is incorrect.";
   if (step === "sign-in" && /email not confirmed|email is not confirmed/.test(detail)) return "Confirm your email address before signing in.";
+  if (step === "registration" && /email.*already|user already (registered|exists)|email_exists|user_already_exists/.test(detail)) return "Email already taken. Sign in or use a different email address.";
   if (detail.includes("terms")) return "New resident accounts must be created with email after accepting the current Terms and Conditions. Existing social accounts can still sign in.";
   if (detail.includes("rate limit") || detail.includes("too many requests")) return "Too many attempts. Wait a few minutes before trying again.";
   if (detail.includes("network") || detail.includes("fetch")) return "We could not reach the sign-in service. Check your connection and retry.";
+  if (step === "registration" && /smtp|mailer|send.*email|email.*send|deliver.*email/.test(detail)) return "We could not send your verification email. Please try again later. If this continues, contact support.";
+  if (step === "registration") return "We could not create your account. Check your details and try again.";
   if (step === "verification") return "That code is invalid or expired. Check the email or request a new code.";
   if (step === "resend") return "We could not send a new code just now. Wait a moment, then try again.";
   if (step === "recovery") return "We could not start account recovery. Please try again shortly.";
@@ -1008,6 +1011,7 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
   const fullName = residentDisplayName(firstName, middleName, lastName);
   const namePartsProblem = residentNamePartsError(firstName, middleName, lastName);
   const ageProblem = residentAgeError(age, true);
+  const registrationPasswordMet = password.length >= MIN_REGISTRATION_PASSWORD_LENGTH;
   const redirect = () =>
     Platform.OS === "web"
       ? window.location.origin
@@ -1028,7 +1032,7 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
     setResendSeconds(0);
     setShowPassword(false);
   };
-  const setAuthFailure = (error: unknown, step: "sign-in" | "verification" | "resend" | "recovery" | "password" = "sign-in") => {
+  const setAuthFailure = (error: unknown, step: "sign-in" | "registration" | "verification" | "resend" | "recovery" | "password" = "sign-in") => {
     setMessage(formatAuthError(error, step));
     setMessageIsError(true);
   };
@@ -1289,9 +1293,7 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                 {mode !== "reset" && (
                   <View style={wideAuthWeb && mode === "register" ? { width: "47%" } : undefined}><Field maxLength={1024}
                     label={
-                      mode === "register"
-                        ? `Password (at least ${MIN_PASSWORD_LENGTH} characters)`
-                        : "Password"
+                      "Password"
                     }
                     required
                     hint={mode === "register" ? "Avoid reusing a password from another account." : undefined}
@@ -1317,7 +1319,16 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                         </Text>
                       </Pressable>
                     }
-                  /></View>
+                  />{mode === "register" && <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+                    <Ionicons name={registrationPasswordMet ? "checkmark-circle" : "alert-circle-outline"} size={15} color={registrationPasswordMet ? colors.brand : "#765400"} />
+                    <Text style={{ color: registrationPasswordMet ? colors.brand : "#765400", fontSize: 12, lineHeight: 17 }}>
+                      {registrationPasswordMet
+                        ? `Minimum length met (${MIN_REGISTRATION_PASSWORD_LENGTH} characters).`
+                        : password.length > 0
+                          ? `${MIN_REGISTRATION_PASSWORD_LENGTH - password.length} more character${MIN_REGISTRATION_PASSWORD_LENGTH - password.length === 1 ? "" : "s"} needed.`
+                          : `At least ${MIN_REGISTRATION_PASSWORD_LENGTH} characters required.`}
+                    </Text>
+                  </View>}</View>
                 )}
                 {mode === "register" && <View style={wideAuthWeb ? { width: "47%" } : undefined}><Field
                   label="Confirm password"
@@ -1373,7 +1384,7 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                     busy ||
                     !email ||
                     (mode === "register" && (
-                      password.length < MIN_PASSWORD_LENGTH ||
+                      !registrationPasswordMet ||
                       !confirmPassword || password !== confirmPassword ||
                       !!namePartsProblem ||
                       !!ageProblem ||
@@ -1388,7 +1399,7 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                   loading={busy}
                   onPress={async () => {
                     if (mode === "reset") { await sendRecoveryCode(); return; }
-                    const problem = emailInputError(email) || (mode === "register" ? namePartsProblem || ageProblem || mobileInputError(mobile) || (password !== confirmPassword ? "Passwords do not match." : "") || (!registeredBarangay || !signupBarangays.data?.some((item) => item.id === registeredBarangay) ? "Choose your registered barangay before creating an account." : "") || (!termsRead || !termsAccepted ? "Read and agree to the Terms and Conditions before creating an account." : "") : "") || passwordInputError(password, mode === "register" ? MIN_PASSWORD_LENGTH : 1);
+                    const problem = emailInputError(email) || (mode === "register" ? namePartsProblem || ageProblem || mobileInputError(mobile) || (password !== confirmPassword ? "Passwords do not match." : "") || (!registeredBarangay || !signupBarangays.data?.some((item) => item.id === registeredBarangay) ? "Choose your registered barangay before creating an account." : "") || (!termsRead || !termsAccepted ? "Read and agree to the Terms and Conditions before creating an account." : "") : "") || passwordInputError(password, mode === "register" ? MIN_REGISTRATION_PASSWORD_LENGTH : 1);
                     if (problem) { setMessage(problem); setMessageIsError(true); return; }
                     setBusy(true);
                     setMessage("");
@@ -1420,6 +1431,11 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                               password,
                             });
                       if (response.error) throw response.error;
+                      if (mode === "register" && response.data.user && Array.isArray(response.data.user.identities) && response.data.user.identities.length === 0) {
+                        setMessage("Email already taken. Sign in or use a different email address.");
+                        setMessageIsError(true);
+                        return;
+                      }
                       if (mode === "register") { setPassword(""); setConfirmPassword(""); setConfirmPasswordTouched(false); }
                       if (mode === "register" && !response.data.session) {
                         setMode("verify");
@@ -1429,7 +1445,7 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                         setMessage(`If this address can receive verification messages, check for a code or confirmation link. Codes expire in ${EMAIL_OTP_EXPIRY_SECONDS / 60} minutes.`);
                       }
                     } catch (e) {
-                      setAuthFailure(e, mode === "reset" ? "recovery" : "sign-in");
+                      setAuthFailure(e, mode === "reset" ? "recovery" : mode === "register" ? "registration" : "sign-in");
                     } finally {
                       setBusy(false);
                     }

@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { withTitle, withTitles } from "../lib/report-title";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, CalendarDays, Camera, Check, ChevronDown, ChevronRight, CircleCheck, CircleX, ClipboardCheck, Clock3, ClipboardList, Copy, Download, FilePlus2, FileText, History, Image as ImageIcon, ListFilter, LockKeyhole, MapPin, Paperclip, RefreshCw, Save, Send, SlidersHorizontal, Upload, UsersRound } from "lucide-react";
+import { ArrowUpRight, MessageSquareQuote, CalendarDays, Camera, Check, ChevronDown, ChevronRight, CircleCheck, CircleX, ClipboardCheck, Clock3, ClipboardList, Copy, Download, FilePlus2, FileText, History, Image as ImageIcon, ListFilter, LockKeyhole, MapPin, Paperclip, RefreshCw, Save, Send, SlidersHorizontal, Upload, UsersRound } from "lucide-react";
 import { Report, statuses, transitions, label, hasReportCoordinates, reportAssessmentSchema, reportScheduleDayReached, reportScheduleLabel, reportStatusDescription, reportStatusLabel, textInputError, type Status } from "@community/shared";
 import { db, result } from "../lib/client";
 import { openReportFromRow } from "../lib/report-row";
@@ -15,7 +16,7 @@ import { downloadCsv, philippineDateBoundary } from "../lib/export";
 import { useDebouncedValue } from "../lib/use-debounced-value";
 import { reportCategoryPresentation, ReportCategoryLabel } from "./report-category";
 import { reportLocalAddress } from "../lib/report-location";
-import { AssessmentFields, ReportAssessment } from "./report-assessment";
+import { AssessmentFields, focusField, ReportAssessment } from "./report-assessment";
 import { ReportHandling, useReportResidents } from "./report-handling";
 import { useAccess } from "./access-context";
 import { WalkInReport } from "./walk-in-report";
@@ -69,7 +70,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
       if (officeView) query = officeOrganizationIds.length
         ? query.in("organization_id", officeOrganizationIds).in("status", ["assigned", "scheduled", "in_progress", "resolved"])
         : query.eq("id", "00000000-0000-0000-0000-000000000000");
-      return result<Report | null>(query.maybeSingle());
+      return result<Report | null>(query.maybeSingle()).then((row) => row && withTitle(row));
     },
   });
   const selected = target.data;
@@ -136,7 +137,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
       const { data, count, error } = await query.order("created_at", { ascending: sort === "oldest" })
         .order("id").range(page * 20, page * 20 + 19);
       if (error) throw new Error(error.message);
-      return { rows: data as Report[], count: count ?? 0 };
+      return { rows: withTitles(data as Report[]), count: count ?? 0 };
     },
   });
   const residents = useReportResidents(q.data?.rows.map(row => row.id) || []);
@@ -324,7 +325,7 @@ export function Reports({ refs, initialRecordId = "", initialSearch = "", initia
                 <ReportThumb className="report-table-thumb" url={listPhotos.data?.urls.get(r.id)} categoryName={category} />
                 <div className="report-table-cell-copy"><button className="report-title" aria-label={`Open report: ${r.title}`} onClick={() => onOpenReport(r.id, queue)}><span>{r.title}</span><ArrowUpRight size={15} aria-hidden="true" /></button>
                 <small className="record-meta">{r.id.slice(0, 8).toUpperCase()}{r.severity && ` · Severity ${r.severity}/5`}{r.urgency && ` · Urgency ${r.urgency}/5`}</small>
-                {!duplicateSummary.error && (possibleCounts.get(r.id) ?? 0) > 0 && <button type="button" className="duplicate-queue-indicator" aria-label={`Review ${possibleCounts.get(r.id)} possible duplicates for ${r.title}`} onClick={() => onOpenReport(r.id, queue)}><Copy size={13} aria-hidden="true" /><span>Possible duplicates · {possibleCounts.get(r.id)}</span></button>}</div></div></th>
+                {!duplicateSummary.error && (possibleCounts.get(r.id) ?? 0) > 0 && <button type="button" className="duplicate-queue-indicator" aria-label={`Review ${possibleCounts.get(r.id)} possible duplicates for ${r.title}`} onClick={() => onOpenReport(r.id, queue)}><Copy size={12} aria-hidden="true" /><span>{possibleCounts.get(r.id)} possible {possibleCounts.get(r.id) === 1 ? "duplicate" : "duplicates"}</span></button>}</div></div></th>
               <td data-label="Location"><span className="report-location"><MapPin size={13} aria-hidden="true" /><strong>{refs.barangays.find((b) => b.id === r.barangay_id)?.name}</strong></span>
                 {reportLocalAddress(r) && <small className="record-meta">{reportLocalAddress(r)}</small>}
                 <ReportCategoryLabel name={category} compact className="report-category" /></td>
@@ -494,11 +495,18 @@ export function ReportDetail({
     actionForm.current?.querySelector<HTMLSelectElement>('select[name="duplicate"]')?.focus({ preventScroll: true });
   }, [canonical, selectedStatus, activeStep, reviewPending]);
   const [assessmentErrors, setAssessmentErrors] = useState<Partial<Record<"severity" | "urgency" | "note", string>>>({});
-  const ActionStatusIcon = selectedStatus === "under_review" ? Clock3
-    : selectedStatus === "scheduled" ? CalendarDays
-    : ["verified", "resolved"].includes(selectedStatus) ? CircleCheck
-    : selectedStatus === "assigned" ? UsersRound
-    : selectedStatus === "in_progress" ? RefreshCw : ClipboardList;
+  const statusChoiceLabel = (next: string) => reviewPending && next === "verified" ? "Verify · keep with barangay" : reviewPending && next === "assigned" ? "Verify & forward to office" : next === "under_review" ? r.status === "submitted" ? "Acknowledge and review" : "Reopen for barangay review" : next === "scheduled" ? r.status === "scheduled" ? "Reschedule work" : "Schedule work" : next === "in_progress" ? "Start work · Ongoing" : next === "resolved" ? "Resolve report" : next === "duplicate" ? "Link as duplicate" : next === "rejected" ? "Reject report" : reportStatusLabel(next);
+  const statusChoiceHint = (next: string) => ({
+    verified: "Confirm the issue; the barangay team handles it.",
+    assigned: "Confirm the issue and hand it to an eligible office.",
+    under_review: r.status === "submitted" ? "Let the resident know review has started." : "Send the case back for barangay review.",
+    scheduled: r.status === "scheduled" ? "Move the planned work to a new date." : "Set a date and time for the planned work.",
+    in_progress: "Work has started on site.",
+    resolved: "Work is complete and the issue is addressed.",
+    duplicate: "Same incident as an existing report.",
+    rejected: "Not actionable or outside scope; explain why.",
+  } as Record<string, string>)[next] || "";
+  const statusChoiceIcon = (next: string) => next === "under_review" ? Clock3 : next === "scheduled" ? CalendarDays : next === "verified" || next === "resolved" ? CircleCheck : next === "assigned" ? UsersRound : next === "in_progress" ? RefreshCw : next === "duplicate" ? Copy : next === "rejected" ? CircleX : ClipboardList;
   const canWrite = !barangayReadOnly && !!(q.data?.permissions.review || q.data?.permissions.update);
   const requiresAssessment = reviewPending && ["verified", "assigned"].includes(selectedStatus);
   const noteError = textInputError(actionNote, { min: 5, max: 4000, required: true });
@@ -599,7 +607,7 @@ export function ReportDetail({
     { id: "details" as const, title: "Report details", detail: "Location, context and photos", icon: MapPin, state: "available", disabled: false },
     ...(!readOnly ? [
       { id: "review" as const, title: "Review & route", detail: reviewPending ? "Matches, ratings and decision" : canRouteFromReview ? "Review recorded · route if needed" : reviewComplete ? "Barangay review recorded" : "Review details", icon: ClipboardCheck, state: reviewPending || !reviewComplete ? "required" : "complete", disabled: false },
-      { id: "action" as const, title: "Status & progress", detail: barangayReadOnly ? `Read-only · managed by ${assignedOfficeName}` : reviewPending ? "Available after review" : "Case stage and resident updates", icon: ClipboardList, state: r.status === "resolved" ? "complete" : "available", disabled: reviewPending },
+      { id: "action" as const, title: "Status & progress", detail: barangayReadOnly ? `Read-only · managed by ${assignedOfficeName}` : reviewPending ? "Review the report first" : "Case stage and resident updates", icon: ClipboardList, state: r.status === "resolved" ? "complete" : "available", disabled: false },
       { id: "notes" as const, title: "Private notes", detail: "Staff-only context", icon: LockKeyhole, state: "available", disabled: false },
     ] : []),
   ];
@@ -650,7 +658,7 @@ export function ReportDetail({
           const next: Partial<Record<"severity" | "urgency" | "note", string>> = {};
           for (const issue of assessment.error.issues) { const name = issue.path[0] as keyof typeof next; if (!next[name]) next[name] = issue.message; }
           setAssessmentErrors(next);
-          (event.currentTarget.elements.namedItem(String(assessment.error.issues[0]?.path[0])) as HTMLElement | null)?.focus();
+          focusField(event.currentTarget, String(assessment.error.issues[0]?.path[0]));
           return;
         }
       }
@@ -686,6 +694,14 @@ export function ReportDetail({
       } catch (cause) { setError((cause as Error).message); }
       finally { setBusy(false); }
     }}>
+      {reviewPending && <section className="report-review-checklist-panel" aria-labelledby={`review-checklist-${r.id}`}>
+        <div className="report-review-checklist-heading"><div><strong id={`review-checklist-${r.id}`}>Review checklist</strong><p>{actionReady ? "All required items are complete." : "Complete these items before saving."}</p></div><span className={actionReady ? "ready" : "pending"}>{actionReady ? "Ready" : "Action needed"}</span></div>
+        <ul className="report-review-checklist" aria-label="Required review items">{checklist.map(item => <li key={item.label} className={item.complete ? "complete" : "incomplete"}>
+          <span className="report-review-checklist-icon">{item.complete ? <Check size={15} aria-hidden="true" /> : <CircleX size={15} aria-hidden="true" />}</span>
+          <span className="report-review-checklist-label">{item.label}</span>
+          <small>{item.complete ? "Done" : "Required"}</small>
+        </li>)}</ul>
+      </section>}
       {!reviewPending && activeStep === "action" && stepStatuses.length > 0 && canRecordProgress && <div className="report-action-mode-wrap">
         <span className="report-action-mode-label">Update type</span>
         <div className="report-action-mode" role="group" aria-label="Case update type">
@@ -697,9 +713,18 @@ export function ReportDetail({
       {routeDecisionOnly
         ? <div className="report-route-decision"><span>Routing decision</span><strong><UsersRound size={16} aria-hidden="true" /> Forward to an eligible office</strong><small>The barangay review and assessment are already recorded.</small></div>
         : progressOnly ? <div className="report-action-current-status"><span>Current status stays the same</span><strong className={`report-current-status-value status-${r.status}`}>{currentStatusTitle}</strong></div>
-        : <label className="report-action-status-field"><span>{reviewPending ? "Review decision" : r.status === "scheduled" ? "Next action" : "Case status"} <span className="report-action-required" aria-hidden="true">*</span></span><span className="report-action-status-control"><ActionStatusIcon className="report-action-status-icon" data-status={selectedStatus} size={20} aria-hidden="true" /><select required value={selectedStatus} onChange={(event) => { setStatus(event.target.value); setAssessmentErrors({}); }}>
-          {stepStatuses.map(next => <option key={next} value={next}>{reviewPending && next === "verified" ? "Verify · keep with barangay" : reviewPending && next === "assigned" ? "Verify & forward to office" : next === "under_review" ? r.status === "submitted" ? "Acknowledge and review" : "Reopen for barangay review" : next === "scheduled" ? r.status === "scheduled" ? "Reschedule work" : "Schedule work" : next === "in_progress" ? "Start scheduled work · Ongoing" : next === "resolved" ? "Work completed · Resolve report" : reportStatusLabel(next)}</option>)}
-        </select></span></label>}
+        : <fieldset className="report-decision report-form-step" aria-required="true">
+          <legend>{reviewPending ? "Review decision" : r.status === "scheduled" ? "Next action" : "Case status"} <span className="report-action-required" aria-hidden="true">*</span></legend>
+          <div className="report-decision-options">{stepStatuses.map(next => {
+            const NextIcon = statusChoiceIcon(next);
+            return <label key={next} className={"report-decision-option" + (selectedStatus === next ? " is-selected" : "")} data-status={next}>
+              <input type="radio" name="decision" value={next} checked={selectedStatus === next} onChange={() => { setStatus(next); setAssessmentErrors({}); }} />
+              <span className="report-decision-icon" aria-hidden="true"><NextIcon size={18} /></span>
+              <span className="report-decision-copy"><strong>{statusChoiceLabel(next)}</strong><small>{statusChoiceHint(next)}</small></span>
+              <span className="report-decision-check" aria-hidden="true"><Check size={14} /></span>
+            </label>;
+          })}</div>
+        </fieldset>}
       {r.status === "scheduled" && !scheduleDayReached && <p className="report-schedule-action-hint"><Clock3 size={16} aria-hidden="true" /><span>Work actions open on {scheduledDayLabel} (Philippine time). You can reschedule before then.</span></p>}
       {!progressOnly && selectedStatus === "scheduled" && <label className="report-action-schedule-field"><span>{r.status === "scheduled" ? "New work date and time" : "Planned work date and time"} <span className="report-action-required" aria-hidden="true">*</span></span><span className="report-action-schedule-control"><CalendarDays size={18} aria-hidden="true" /><input name="scheduled_at" type="datetime-local" required min={manilaDateTimeInput()} value={scheduledAt} onChange={event => { setScheduledAt(event.target.value); setError(""); }} aria-invalid={!!scheduleError && !!scheduledAt || undefined} /></span><small>{r.status === "scheduled" ? "Choose a new future date and time. The resident will be notified." : "Use Philippine time. The resident will see this schedule in report tracking."}</small>{scheduleError && scheduledAt && <small className="field-validation-message" role="alert">{scheduleError}</small>}</label>}
       {requiresAssessment && <AssessmentFields idPrefix={`review-${r.id}`} severity={r.severity} urgency={r.urgency} errors={assessmentErrors} disabled={busy} values={reviewRatings} onValueChange={(field, value) => setReviewRatings(previous => ({ ...previous, [field]: value }))} />}
@@ -709,7 +734,7 @@ export function ReportDetail({
         {q.data?.routing.map((rule, index) => <p key={index} className="notice">Routing guidance: {refs.organizations.find(organization => organization.id === rule.organization_id)?.name}. {rule.notes}</p>)}
         <label>Responsible office <span className="report-action-required" aria-hidden="true">*</span><select name="office" required value={selectedOffice} onChange={event => setSelectedOffice(event.target.value)}><option value="">Select an eligible office</option>{q.data?.referralOptions.map(organization => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label>
       </>}
-      <label className="report-action-note"><span>{progressOnly ? "Progress update" : selectedStatus === "duplicate" ? "Reason for linking these reports" : selectedStatus === "assigned" ? "Public review note & routing reason" : reviewPending ? selectedStatus === "rejected" ? "Reason for rejection" : "Public review note" : selectedStatus === "scheduled" ? r.status === "scheduled" ? "Reason for rescheduling" : "Schedule note for the resident" : selectedStatus === "resolved" ? "Completion and resolution details" : "Public action update"} <span className="report-action-required" aria-hidden="true">*</span></span><textarea name="note" required minLength={5} maxLength={4000} value={actionNote} onChange={event => {
+      <label className="report-action-note report-form-step"><span>{progressOnly ? "Progress update" : selectedStatus === "duplicate" ? "Reason for linking these reports" : selectedStatus === "assigned" ? "Public review note & routing reason" : reviewPending ? selectedStatus === "rejected" ? "Reason for rejection" : "Public review note" : selectedStatus === "scheduled" ? r.status === "scheduled" ? "Reason for rescheduling" : "Schedule note for the resident" : selectedStatus === "resolved" ? "Completion and resolution details" : "Public action update"} <span className="report-action-required" aria-hidden="true">*</span></span><textarea name="note" required minLength={5} maxLength={4000} value={actionNote} onChange={event => {
         const value = event.target.value;
         setActionNote(value);
         const note = textInputError(value, { min: 5, max: 4000, required: true });
@@ -717,19 +742,12 @@ export function ReportDetail({
       }} aria-invalid={!!assessmentErrors.note || undefined} aria-describedby={`report-action-note-hint${assessmentErrors.note ? " report-action-note-error" : ""}`} placeholder={progressOnly ? "Describe what was checked, what changed, and the next follow-up step…" : selectedStatus === "scheduled" ? r.status === "scheduled" ? "Explain why the work must move and what date the resident should expect…" : "Explain what work is planned and what the resident should expect…" : selectedStatus === "resolved" ? "Describe what was completed and how the issue was addressed…" : selectedStatus === "duplicate" ? "Explain how the location, problem, and evidence describe the same incident…" : selectedStatus === "assigned" ? "Explain what the barangay verified and why the office should take over…" : reviewPending ? "Summarize what was reviewed and what should happen next…" : "Describe the work underway and the next follow-up step…"} /></label>
       <small id="report-action-note-hint" className="report-action-note-hint">{progressOnly ? "5–4,000 characters. Visible to the resident; case status stays unchanged." : selectedStatus === "scheduled" && r.status === "scheduled" ? "The resident will be notified about the updated Philippine-time schedule." : "5–4,000 characters. Shared with the resident; for a referral, this also records the handoff reason."}</small>
       {assessmentErrors.note && <p id="report-action-note-error" className="field-validation-message" role="alert">{assessmentErrors.note}</p>}
-      {requiresAssessment && <>
-        <label>Public case summary (optional)<textarea name="summary" maxLength={160} value={publicSummary} onChange={event => setPublicSummary(event.target.value)} placeholder="A short, privacy-safe summary for the map." /></label>
+      {requiresAssessment && <details className="report-summary-disclosure" open={!!publicSummary || undefined}>
+        <summary>Add a public map summary <span>(optional)</span></summary>
+        <label><span className="sr-only">Public case summary</span><textarea name="summary" maxLength={160} value={publicSummary} onChange={event => setPublicSummary(event.target.value)} placeholder="A short, privacy-safe summary for the map." /></label>
         <p className="report-form-hint">A summary publishes a rounded map location.</p>
-      </>}
+      </details>}
       {selectedStatus === "duplicate" && <label>Suggested main report <span className="report-action-required" aria-hidden="true">*</span><select name="duplicate" required value={canonical.id} onChange={event => { const candidate = duplicateCandidates.find(item => item.id === event.target.value); setCanonical(candidate || { id: "", title: "" }); }}><option value="">Select a possible main report</option>{duplicateCandidates.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.title} · {candidate.id.slice(0, 8)}</option>)}</select><small>Only reports identified by the possible-duplicate check can be linked.</small>{canonical.title && <span className="duplicate-selected-original" role="status">Selected main report: <strong>{canonical.title}</strong>.</span>}</label>}
-      {reviewPending && <section className="report-review-checklist-panel" aria-labelledby={`review-checklist-${r.id}`}>
-        <div className="report-review-checklist-heading"><div><strong id={`review-checklist-${r.id}`}>Review checklist</strong><p>{actionReady ? "All required items are complete." : "Complete these items before saving."}</p></div><span className={actionReady ? "ready" : "pending"}>{actionReady ? "Ready" : "Action needed"}</span></div>
-        <ul className="report-review-checklist" aria-label="Required review items">{checklist.map(item => <li key={item.label} className={item.complete ? "complete" : "incomplete"}>
-          <span className="report-review-checklist-icon">{item.complete ? <Check size={15} aria-hidden="true" /> : <CircleX size={15} aria-hidden="true" />}</span>
-          <span className="report-review-checklist-label">{item.label}</span>
-          <small>{item.complete ? "Done" : "Required"}</small>
-        </li>)}</ul>
-      </section>}
     </form>
   </section> : null;
 
@@ -737,9 +755,12 @@ export function ReportDetail({
     <Dialog title={r.title} description={category.label} descriptionMeta={<span className={`badge ${r.status} report-workspace-header-status`}>{r.status === "duplicate" ? "Linked duplicate" : reportStatusLabel(r.status)}</span>} icon={<CategoryIcon size={23} />} className="report-workspace-dialog" close={close}>
       <div className="report-workspace-content" ref={workspaceContent}>
         <section className="report-workspace-summary is-description" aria-label="Resident's description">
-          <span className="report-workspace-summary-label">Resident&apos;s description</span>
+          <div className="report-description-head">
+            <span className="report-description-icon" aria-hidden="true"><MessageSquareQuote size={17} /></span>
+            <span className="report-workspace-summary-label">Resident&apos;s description</span>
+            <small className="mono report-description-id" title={r.id}>ID {r.id.slice(0, 8).toUpperCase()}</small>
+          </div>
           <p>{r.description}</p>
-          <small className="mono">Report ID {r.id}</small>
         </section>
 
         {(q.error || error) && <p role="alert" className="error">{error || q.error?.message}</p>}
@@ -808,17 +829,21 @@ export function ReportDetail({
                 <div className="report-workspace-section-heading"><MapPin size={22} aria-hidden="true" /><div><h3>Location and classification</h3><p>Report location, issue type, and current responsibility.</p></div></div>
                 <div className="report-workspace-location-grid">
                   <div><span>Problem type</span><strong>{q.data?.problem?.label || (r.problem_type ? label(r.problem_type) : categoryName)}</strong>{r.problem_other && <small>{r.problem_other}</small>}</div>
-                  <div className="report-location-details"><span>Reported location</span>
-                    <strong>{refs.barangays.find(barangay => barangay.id === r.barangay_id)?.name || "Barangay not recorded"} · Iligan City</strong>
-                    {r.purok && <small><b>Purok:</b> {r.purok}</small>}
-                    {r.zone && <small><b>Zone:</b> {r.zone}</small>}
-                    {r.landmark && <small><b>Additional details:</b> {r.landmark}</small>}
-                    {r.location_address && <small><b>Detected address:</b> {r.location_address}</small>}
-                    {hasReportCoordinates(r) ? <>
-                      <small><b>Coordinates:</b> {r.latitude.toFixed(6)}, {r.longitude.toFixed(6)}</small>
-                      <small>{r.location_source === "gps" ? "Device GPS" : r.location_source === "pin" ? "Map pin" : r.location_source === "coordinates" ? "Entered coordinates" : "Saved coordinates"}{r.location_accuracy != null && Number.isFinite(r.location_accuracy) && " · accuracy about ±" + Math.round(r.location_accuracy) + " m"}</small>
-                      <a className="report-directions" href={"https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(r.latitude + "," + r.longitude)} target="_blank" rel="noopener noreferrer">Get directions <ArrowUpRight size={15} aria-hidden="true" /><span className="sr-only"> in Google Maps (opens a new tab)</span></a>
-                    </> : <small>Manual address · no map pin provided. Use the details above to locate the issue.</small>}
+                  <div className="report-location-details">
+                    <div className="report-location-head">
+                      <span className="report-location-icon" aria-hidden="true"><MapPin size={18} /></span>
+                      <div><span>Reported location</span><strong>{refs.barangays.find(barangay => barangay.id === r.barangay_id)?.name || "Barangay not recorded"} · Iligan City</strong></div>
+                      {hasReportCoordinates(r) && <a className="report-directions" href={"https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(r.latitude + "," + r.longitude)} target="_blank" rel="noopener noreferrer">Get directions <ArrowUpRight size={15} aria-hidden="true" /><span className="sr-only"> in Google Maps (opens a new tab)</span></a>}
+                      <em className="report-location-source">{hasReportCoordinates(r) ? (r.location_source === "gps" ? "Device GPS" : r.location_source === "pin" ? "Map pin" : r.location_source === "coordinates" ? "Entered coordinates" : "Saved coordinates") : "Manual address"}</em>
+                    </div>
+                    {(r.purok || r.zone || r.landmark || r.location_address || hasReportCoordinates(r)) && <dl className="report-location-facts">
+                      {r.purok && <div><dt>Purok</dt><dd>{r.purok}</dd></div>}
+                      {r.zone && <div><dt>Zone</dt><dd>{r.zone}</dd></div>}
+                      {r.landmark && <div><dt>Additional details</dt><dd>{r.landmark}</dd></div>}
+                      {r.location_address && <div className="is-address"><dt>Detected address</dt><dd>{r.location_address}</dd></div>}
+                      {hasReportCoordinates(r) && <div><dt>Coordinates</dt><dd><span className="mono">{r.latitude.toFixed(6)}, {r.longitude.toFixed(6)}</span>{r.location_accuracy != null && Number.isFinite(r.location_accuracy) && <small> · accuracy about ±{Math.round(r.location_accuracy)} m</small>}</dd></div>}
+                    </dl>}
+                    {!hasReportCoordinates(r) && <p className="report-location-note">No map pin was provided. Use the details above to locate the issue.</p>}
                     {r.submission_source === "walk_in" && access.profile.role === "barangay" && access.profile.barangay_id === r.barangay_id && !barangayReadOnly && q.data?.permissions.review && <div className="walk-in-location-correction">
                       {!editingWalkInPin ? <button type="button" className="secondary" onClick={() => { setWalkInPin(hasReportCoordinates(r) ? { latitude: r.latitude, longitude: r.longitude } : null); setEditingWalkInPin(true); }}><MapPin size={15} aria-hidden="true" />Correct pin after site visit</button> : <>
                         <p>Set the verified issue location inside the barangay boundary. The change and staff member will be added to the case timeline.</p>

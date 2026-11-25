@@ -11,6 +11,22 @@ import "../lib/background-alerts";
 import { expoProjectId, getDevicePushPreference, pollResidentAlerts, registerDevicePushToken, removeDevicePushTokens } from "../lib/push-notifications";
 import { syncResidentBackgroundAlerts } from "../lib/background-alerts";
 
+// Resident website typography: Inter for text, Public Sans for headings (same pairing as the staff site).
+// Native apps keep the platform font. Scoped under #root so it outranks react-native-web's text classes;
+// icon fonts set fontFamily inline and are unaffected.
+if (Platform.OS === "web" && typeof document !== "undefined" && !document.getElementById("ic-typography")) {
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Public+Sans:wght@600..800&display=swap";
+  const style = document.createElement("style");
+  style.id = "ic-typography";
+  style.textContent = `
+    #root :is(div, span, input, textarea, button) { font-family: Inter, "Segoe UI", Roboto, system-ui, sans-serif; letter-spacing: -0.003em; font-feature-settings: "cv11", "ss01"; }
+    #root [role="heading"], #root [aria-level] { font-family: "Public Sans", Inter, "Segoe UI", sans-serif; letter-spacing: -0.015em; }
+  `;
+  document.head.append(link, style);
+}
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,

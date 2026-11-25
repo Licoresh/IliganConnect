@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
+import { withTitle, withTitles } from "../lib/report-title";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { openReportFromRow } from "../lib/report-row";
 import Image from "next/image";
@@ -54,6 +55,7 @@ import {
   permissionFingerprint,
 } from "../lib/access";
 import { NotificationCenter } from "./notification-center";
+import { MobileSelectSheet } from "./mobile-select-sheet";
 import { readWorkspaceLocation, shouldResetWorkspace, workspaceLocationUrl, type WorkspaceLocation } from "../lib/workspace-location";
 import { ReportCategoryLabel } from "./report-category";
 import { ReportThumb, useReportListPhotos } from "./report-photos";
@@ -407,7 +409,7 @@ export default function Workspace() {
       <main className="login">
         <section className="login-story">
           <div className="brand">
-            <Image src="/iligan-connect-logo.png" alt="" aria-hidden="true" width={48} height={48} /> ILIGAN CONNECT
+            <Image src="/iligan-connect-mark.png" alt="" aria-hidden="true" width={48} height={48} /> ILIGAN CONNECT
           </div>
           <h1>
             Local concerns.
@@ -426,7 +428,7 @@ export default function Workspace() {
         <section className="login-form">
           <div className="brand login-brand">
             <Image
-              src="/iligan-connect-logo.png"
+              src="/iligan-connect-mark.png"
               alt="Iligan Connect logo"
               width={46}
               height={46}
@@ -516,7 +518,7 @@ export default function Workspace() {
   if (session && !access.isPending && !access.error && !access.data?.authorized)
     return (
       <main className="access-state panel">
-        <Image src="/iligan-connect-logo.png" alt="" aria-hidden="true" width={52} height={52} />
+        <Image src="/iligan-connect-mark.png" alt="" aria-hidden="true" width={52} height={52} />
         <p className="eyebrow">ILIGAN CONNECT</p>
         <h1>
           {profile.data?.account_status === "disabled"
@@ -584,6 +586,7 @@ export default function Workspace() {
   return (
     <AccessContext.Provider value={context}>
       <div className="shell" data-role={profile.data.role}>
+        <MobileSelectSheet />
         <a className="skip-link" href="#main">Skip to workspace</a>
         <aside
           id="workspace-navigation"
@@ -602,7 +605,7 @@ export default function Workspace() {
             <X size={20} />
           </button>
           <a className="brand" href="#main">
-            <Image src="/iligan-connect-logo.png" alt="" aria-hidden="true" width={34} height={34} /> <span>ILIGAN <b>CONNECT</b></span>
+            <Image src="/iligan-connect-mark.png" alt="" aria-hidden="true" width={34} height={34} /> <span>ILIGAN <b>CONNECT</b></span>
           </a>
           <div className="workspace-edition"><span /> LOCAL ACTION · STRONGER ILIGAN</div>
           <nav aria-label="Main navigation">
@@ -861,12 +864,12 @@ function Overview({
         result<AnalyticsData>(db!.rpc("geographic_analytics")),
         result<Report[]>(
           db!.from("reports").select("*").order("created_at", { ascending: false }).limit(6),
-        ),
+        ).then(withTitles),
         (async () => {
           const { data, count, error } = await db!.from("reports").select("*", { count: "exact" })
             .in("status", ["assigned", "scheduled", "in_progress"]).order("created_at").limit(5);
           if (error) throw new Error(error.message);
-          return { rows: data as Report[], count: count ?? 0 };
+          return { rows: withTitles(data as Report[]), count: count ?? 0 };
         })(),
         result<{ id: string; title: string; barangay_id: string; status: string; created_at: string }[]>(
           db!.from("meeting_requests").select("id,title,barangay_id,status,created_at").order("created_at", { ascending: false }).limit(5),

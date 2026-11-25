@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { FilePlus2, MapPin, UserRound } from "lucide-react";
-import { addressInputError, createReportSchema, emailInputError, mobileInputError, normalizePhilippineMobile, personNameInputError, textInputError } from "@community/shared";
+import { addressInputError, createReportSchema, properCaseTitle, emailInputError, mobileInputError, normalizePhilippineMobile, personNameInputError, textInputError } from "@community/shared";
 import { db, result } from "../lib/client";
 import { Dialog } from "./dialog";
 import { WalkInLocationMap, type WalkInPin } from "./walk-in-location-map";
@@ -80,7 +80,7 @@ export function WalkInReport({ refs, barangayId, onClose, onCreated }: {
         p_reporter_name: reporterName,
         p_reporter_email: reporterEmail.toLowerCase() || null,
         p_reporter_phone: normalizePhilippineMobile(reporterPhone) || null,
-        p_title: report.data.title,
+        p_title: properCaseTitle(report.data.title),
         p_description: report.data.description,
         p_latitude: report.data.latitude,
         p_longitude: report.data.longitude,

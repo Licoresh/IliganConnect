@@ -13,6 +13,12 @@ const rating = (options: typeof SEVERITY_OPTIONS | typeof URGENCY_OPTIONS, value
   return option ? `${option.value}/5 · ${option.label}` : "Not assessed";
 };
 
+/** Focuses a named form control; radio groups focus their first option. */
+export function focusField(form: HTMLFormElement | null, name: string) {
+  const item = form?.elements.namedItem(name);
+  ((item instanceof RadioNodeList ? item[0] : item) as HTMLElement | null | undefined)?.focus();
+}
+
 export function AssessmentFields({ idPrefix, severity, urgency, errors = {}, disabled = false, values, onValueChange }: {
   idPrefix: string; severity?: number | null; urgency?: number | null; errors?: Errors; disabled?: boolean;
   values?: { severity: string; urgency: string };
@@ -24,9 +30,9 @@ export function AssessmentFields({ idPrefix, severity, urgency, errors = {}, dis
   const updateRating = (field: "severity" | "urgency", value: string) => {
     onValueChange ? onValueChange(field, value) : field === "severity" ? setSeverity(value) : setUrgency(value);
   };
-  return <fieldset className="assessment-fields" disabled={disabled}>
+  return <fieldset className="assessment-fields report-form-step" disabled={disabled}>
     <legend>Staff assessment</legend>
-    <p className="assessment-fields-intro">Severity describes the impact. Urgency describes how soon staff attention is needed.</p>
+    <p className="assessment-fields-intro">Severity is the impact; urgency is how soon staff attention is needed.</p>
     <div className="assessment-rating-grid">
       {([
         ["severity", "Severity · impact", SEVERITY_OPTIONS, ratingValues.severity],
@@ -34,14 +40,16 @@ export function AssessmentFields({ idPrefix, severity, urgency, errors = {}, dis
       ] as const).map(([name, title, options, value]) => {
         const id = `${idPrefix}-${name}`;
         const fieldError = options.some((option) => String(option.value) === value) ? "" : errors[name];
-        return <div key={name} className="assessment-rating-field">
-          <label htmlFor={id}>{title} <span aria-hidden="true">*</span></label>
-          <select id={id} name={name} value={value} required aria-invalid={!!fieldError || undefined}
-            aria-describedby={`${id}-hint${fieldError ? ` ${id}-error` : ""}`} onChange={(event) => updateRating(name, event.target.value)}>
-            <option value="">Choose {name}</option>
-            {options.map((option) => <option key={option.value} value={option.value}>{option.value} · {option.label}</option>)}
-          </select>
-          <small id={`${id}-hint`}>{options.find((option) => String(option.value) === value)?.description || `Choose an assessed ${name} from 1 to 5.`}</small>
+        const selected = options.find((option) => String(option.value) === value);
+        return <div key={name} className="assessment-rating-field" role="radiogroup" aria-labelledby={`${id}-label`} aria-describedby={`${id}-hint${fieldError ? ` ${id}-error` : ""}`} aria-invalid={!!fieldError || undefined}>
+          <span id={`${id}-label`} className="assessment-rating-label">{title} <span aria-hidden="true">*</span></span>
+          <div className="assessment-scale" data-kind={name}>
+            {options.map((option) => <label key={option.value} className={String(option.value) === value ? "is-selected" : ""} data-level={option.value}>
+              <input type="radio" name={name} value={option.value} checked={String(option.value) === value} required onChange={(event) => updateRating(name, event.target.value)} />
+              <b>{option.value}</b><span>{option.label}</span>
+            </label>)}
+          </div>
+          <small id={`${id}-hint`} className="assessment-scale-hint">{selected ? <><strong>{selected.value} · {selected.label}.</strong> {selected.description}</> : `Choose 1 (lowest) to 5 (highest).`}</small>
           {fieldError && <p id={`${id}-error`} className="field-validation-message" role="alert">{fieldError}</p>}
         </div>;
       })}
@@ -86,7 +94,7 @@ export function ReportAssessment({ reportId, canReview }: { reportId: string; ca
             const nextErrors: Errors = {};
             for (const issue of parsed.error.issues) { const name = issue.path[0] as keyof Errors; if (!nextErrors[name]) nextErrors[name] = issue.message; }
             setErrors(nextErrors);
-            (formRef.current?.elements.namedItem(String(parsed.error.issues[0]?.path[0])) as HTMLElement | null)?.focus();
+            focusField(formRef.current, String(parsed.error.issues[0]?.path[0]));
             return;
           }
           saveLock.current = true;

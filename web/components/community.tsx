@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { properCaseTitle } from "@community/shared";
 import { validateImageFile } from "../lib/images";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1043,11 +1044,13 @@ export function Community({
       {selectedId && (
         <Dialog
           key={selectedId}
-          title={selected?.title || "Community update"}
+          title={table === "meeting_requests" && selected?.title ? properCaseTitle(selected.title) : selected?.title || "Community update"}
           close={() => setSelected(null)}
           className={table === "consultations" ? "discussion-detail-dialog" : table === "meeting_requests" ? "meeting-details-dialog" : undefined}
           icon={table === "consultations" ? <MessageSquare size={22} /> : table === "meeting_requests" ? <CalendarDays size={22} /> : undefined}
-          description={table === "consultations" ? "Review the consultation and follow the community discussion." : table === "meeting_requests" ? profile.role === "office" ? "View meeting details, respond to invitations, and follow actions assigned to your office." : "Review the request and manage its meeting details." : undefined}
+          description={table === "consultations" ? "Review the consultation and follow the community discussion." : table === "meeting_requests" && selected
+            ? `${refs.barangays.find((item) => item.id === (selected as { barangay_id?: string }).barangay_id)?.name || "Iligan City"} · Requested ${new Date(selected.created_at).toLocaleDateString("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" })}`
+            : undefined}
           headerMeta={table === "meeting_requests" && meetingHeaderStatus?.requestId === selectedId
             ? <span className={meetingHeaderStatus.className}>{meetingHeaderStatus.label}</span>
             : undefined}
@@ -1630,8 +1633,9 @@ function Meeting({
         selectSection(nextSection.key);
         document.getElementById(meetingSectionId(`tab-${nextSection.key}`))?.focus();
       }}>
-        {sectionTabs.map((section) => (
-          <button
+        {sectionTabs.map((section) => {
+          const TabIcon = section.key === "overview" ? LayoutGrid : section.key === "schedule" ? CalendarDays : section.key === "invitations" ? Users : section.key === "follow-up" ? Flag : CheckCircle2;
+          return <button
             key={section.key}
             id={meetingSectionId(`tab-${section.key}`)}
             type="button"
@@ -1641,9 +1645,10 @@ function Meeting({
             tabIndex={activeSection === section.key ? 0 : -1}
             onClick={() => selectSection(section.key)}
           >
-            {section.label}
-          </button>
-        ))}
+            <TabIcon size={16} aria-hidden="true" />
+            <span>{section.label}</span>
+          </button>;
+        })}
       </nav>
 
       {q.isPending ? <p className="meeting-feedback">Loading meeting details…</p> : null}
@@ -1653,19 +1658,19 @@ function Meeting({
       {!isMeetingCompleted && (isOffice || manage && !manageSchedule) && <p className="meeting-office-view-note"><Eye size={15} aria-hidden="true" />{isOffice ? "Meeting details are managed by the barangay. You can respond to your invitation and update action items assigned to an office you have accepted for." : "The assigned barangay manages the venue and schedule. You can review the request, invitations, and agreed actions."}</p>}
 
       <div id={meetingSectionId("panel-overview")} className="meeting-section-panel" role="tabpanel" aria-labelledby={meetingSectionId("tab-overview")} tabIndex={0} hidden={activeSection !== "overview"}>
-      <section className="meeting-section meeting-overview">
-        <div className="meeting-section-heading meeting-overview-heading">
-          <span className="meeting-section-icon"><FileText size={20} /></span>
-          <div><h3>Request overview</h3><p>Review the request, its current status, and scheduled time.</p></div>
-        </div>
-        <div className="meeting-overview-main">
+      <section className="meeting-section meeting-overview meeting-summary">
+        <div className="meeting-request-quote">
+          <div className="meeting-quote-head"><span className="meeting-quote-icon" aria-hidden="true"><MessageSquare size={16} /></span><span>Residents&apos; request</span></div>
           <p>{row.body}</p>
-          {meeting && <div className="meeting-overview-place"><MapPin size={16} aria-hidden="true" /><div><strong>{meeting.venue_type === "online" ? "Online meeting" : "Meeting venue"}</strong><span>{meeting.venue_type === "online" ? "Google Meet" : meeting.venue}</span></div></div>}
-          {meetingLink && <a className="meeting-join-link" href={meetingLink} target="_blank" rel="noreferrer"><Link2 size={15} aria-hidden="true" />Join Google Meet</a>}
         </div>
-        <div className="meeting-overview-date">
-          <CalendarDays size={21} aria-hidden="true" />
-          <div><strong>Meeting date and time</strong><span>{meeting ? formatMeetingTimeRange(meeting.starts_at, meeting.ends_at) : "Not scheduled yet"}</span></div>
+        <div className="meeting-when">
+          <span className="meeting-when-label">When &amp; where</span>
+          {meeting ? <div className="meeting-when-date">
+            <span className="meeting-date-tile meeting-when-tile" aria-hidden="true"><strong>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { day: "2-digit", timeZone: "Asia/Manila" })}</strong><small>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { month: "short", timeZone: "Asia/Manila" }).toUpperCase()}</small></span>
+            <div><strong>{new Date(meeting.starts_at).toLocaleDateString("en-PH", { weekday: "long", month: "long", day: "numeric", timeZone: "Asia/Manila" })}</strong><span>{formatMeetingTimeRange(meeting.starts_at, meeting.ends_at)}</span></div>
+          </div> : <div className="meeting-when-empty"><CalendarDays size={18} aria-hidden="true" /><span><strong>Not scheduled yet</strong><small>The barangay sets the date after approving the request.</small></span></div>}
+          {meeting && <div className="meeting-when-place"><MapPin size={16} aria-hidden="true" /><span><strong>{meeting.venue_type === "online" ? "Online meeting" : "Venue"}</strong><small>{meeting.venue_type === "online" ? "Google Meet" : meeting.venue}</small></span></div>}
+          {meetingLink && <a className="meeting-join-link" href={meetingLink} target="_blank" rel="noreferrer"><Link2 size={15} aria-hidden="true" />Join Google Meet</a>}
         </div>
       </section>
 
@@ -1712,7 +1717,7 @@ function Meeting({
                       <span>{refs.categories.find((category) => category.id === relatedReportQuery.data!.report!.category_id)?.name || "Community report"}</span>
                       <span>{label(relatedReportQuery.data.report.status)}</span>
                     </div>
-                    <h4>{relatedReportQuery.data.report.title}</h4>
+                    <h4>{properCaseTitle(relatedReportQuery.data.report.title)}</h4>
                     {(relatedReportQuery.data.report.public_summary || relatedReportQuery.data.report.description) && <p>{relatedReportQuery.data.report.public_summary || relatedReportQuery.data.report.description}</p>}
                     <div className="meeting-report-details">
                       <span>{refs.barangays.find((barangay) => barangay.id === relatedReportQuery.data!.report!.barangay_id)?.name || "Iligan City"}</span>
@@ -1996,7 +2001,19 @@ function Meeting({
             const reason = String(f.get("reason") || "").trim();
             await run(db!.from("meeting_requests").update({ status, decision_reason: reason || null }).eq("id", row.id));
           }}>
-            <label className="meeting-field"><span>Decision</span><select name="status"><option value="approved">Approve</option><option value="declined">Decline</option></select></label>
+            <fieldset className="report-decision meeting-decision-choice">
+              <legend>Decision</legend>
+              <div className="report-decision-options">
+                {([["approved", "Approve request", "The barangay will schedule the meeting.", CheckCircle2], ["declined", "Decline request", "Explain why so residents know what happens next.", X]] as const).map(([value, title, hint, ChoiceIcon]) => (
+                  <label key={value} className="report-decision-option" data-status={value === "declined" ? "rejected" : value}>
+                    <input type="radio" name="status" value={value} defaultChecked={value === "approved"} required />
+                    <span className="report-decision-icon" aria-hidden="true"><ChoiceIcon size={18} /></span>
+                    <span className="report-decision-copy"><strong>{title}</strong><small>{hint}</small></span>
+                    <span className="report-decision-check" aria-hidden="true"><Check size={14} /></span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <label className="meeting-field"><span>Reason (optional)</span><textarea maxLength={SHORT_REASON_LIMIT} name="reason" placeholder="Explain the decision or share next steps…" /></label>
             <div className="meeting-form-actions"><button disabled={busy}>{busy ? "Saving…" : "Record decision"}</button></div>
           </form>}

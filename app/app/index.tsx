@@ -31,7 +31,7 @@ import { expoProjectId, getDevicePushPreference, hasRegisteredDevicePushToken, r
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, result, configured } from "../lib/client";
 import { styles as s, Button, Field, Choices, SelectionSheet, PhotoViewer, AppBackNavigation, colors, categoryIconFor, categoryToneFor, statusToneFor, categoryDisplayName } from "../components/ui";
-import { Profile, Lookup, Report, Status, statuses, label, textInputError, residentNamePartsError, residentDisplayName, residentAgeError, emailInputError, mobileInputError, normalizePhilippineMobile, passwordInputError, MIN_PASSWORD_LENGTH, MIN_REGISTRATION_PASSWORD_LENGTH, EMAIL_OTP_LENGTH, EMAIL_OTP_EXPIRY_SECONDS, EMAIL_RESEND_INTERVAL_SECONDS } from "@community/shared";
+import { properCaseTitle, Profile, Lookup, Report, Status, statuses, label, textInputError, residentNamePartsError, residentDisplayName, residentAgeError, emailInputError, mobileInputError, normalizePhilippineMobile, passwordInputError, MIN_PASSWORD_LENGTH, MIN_REGISTRATION_PASSWORD_LENGTH, EMAIL_OTP_LENGTH, EMAIL_OTP_EXPIRY_SECONDS, EMAIL_RESEND_INTERVAL_SECONDS } from "@community/shared";
 import { ReportForm, ReportTracking, Explore as ExploreScreen } from "../features/reports";
 import { Community as CommunityScreen, Announcements } from "../features/community";
 import { ListSkeleton } from "../components/loading";
@@ -343,7 +343,7 @@ export default function Home() {
         .order("created_at", { ascending: false }).order("id", { ascending: false })
         .range(page * REPORT_PAGE_SIZE, (page + 1) * REPORT_PAGE_SIZE - 1);
       if (error) throw error;
-      return { reports: data as Report[], count: count ?? 0 };
+      return { reports: (data as Report[]).map((report) => ({ ...report, title: properCaseTitle(report.title) })), count: count ?? 0 };
     },
   });
   const reportsLoading = reportsQuery.isPending || reportsQuery.isPlaceholderData;
@@ -541,7 +541,7 @@ export default function Home() {
         alignItems: "center",
       }}>
         <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 11 }}>
-          <Image source={require("../assets/iligan-connect-logo.png")} accessibilityLabel="Iligan Connect logo" resizeMode="contain" style={{ width: 46, height: 46 }} />
+          <Image source={require("../assets/iligan-connect-badge.png")} accessibilityLabel="Iligan Connect logo" resizeMode="contain" style={{ width: 46, height: 46 }} />
           <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
             <Text numberOfLines={1} style={[s.eyebrow, { color: colors.brand, fontSize: 13, letterSpacing: 1.8 }]}>ILIGAN CONNECT</Text>
             {!compactPhone && <Text numberOfLines={1} style={{ fontSize: 9, letterSpacing: 1.3, color: "#5d7378", fontWeight: "600" }}>A CLEANER · SAFER · STRONGER ILIGAN</Text>}
@@ -1119,9 +1119,9 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          <View style={[s.authHero, wideAuthWeb && { width: "48%", maxWidth: 600, minWidth: 420, height: 600, flexShrink: 0, alignSelf: "flex-start", justifyContent: "space-between", padding: 40, paddingTop: 40, gap: 20, borderRadius: 28, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }, minimalDesktopLogin && { width: "56%", maxWidth: 840, minWidth: 420, height: "auto", flexShrink: 1, alignSelf: "stretch", justifyContent: "center", padding: 56, gap: 44, borderRadius: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderRightWidth: 1, borderRightColor: "#e4ece9", backgroundColor: "white", overflow: "visible" }, minimalDesktopRegister && { display: "none" }]}>
+          <View style={[s.authHero, !wideAuthWeb && !tabletAuthWeb && { paddingBottom: 64 }, wideAuthWeb && { width: "48%", maxWidth: 600, minWidth: 420, height: 600, flexShrink: 0, alignSelf: "flex-start", justifyContent: "space-between", padding: 40, paddingTop: 40, gap: 20, borderRadius: 28, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }, minimalDesktopLogin && { width: "56%", maxWidth: 840, minWidth: 420, height: "auto", flexShrink: 1, alignSelf: "stretch", justifyContent: "center", padding: 56, gap: 44, borderRadius: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderRightWidth: 1, borderRightColor: "#e4ece9", backgroundColor: "white", overflow: "visible" }, minimalDesktopRegister && { display: "none" }]}>
             <View style={s.authBrand}>
-              <Image source={require("../assets/iligan-connect-logo.png")} accessibilityLabel="Iligan Connect logo" resizeMode="contain" style={{ width: minimalDesktopLogin ? 62 : wideAuthWeb ? 54 : 48, height: minimalDesktopLogin ? 62 : wideAuthWeb ? 54 : 48 }} />
+              <Image source={require("../assets/iligan-connect-badge.png")} accessibilityLabel="Iligan Connect logo" resizeMode="contain" style={{ width: minimalDesktopLogin ? 62 : wideAuthWeb ? 54 : 48, height: minimalDesktopLogin ? 62 : wideAuthWeb ? 54 : 48 }} />
               <View>
                 <Text style={[s.authBrandName, minimalDesktopLogin && { color: colors.brandDark }]}>ILIGAN CONNECT</Text>
                 <Text style={[s.authBrandPlace, minimalDesktopLogin && { color: colors.muted }]}>Community reporting · Iligan City</Text>
@@ -1144,8 +1144,8 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
               <Image source={require("../assets/iligan-home-header.jpg")} accessibilityLabel="Iligan City Hall" resizeMode="cover" style={{ width: "100%", height: "100%" }} />
             </View>}
           </View>
-          <View style={[s.authPanel, wideAuthWeb && mode !== "register" && { flex: 1, minWidth: 420, maxWidth: 520, alignSelf: "flex-start", alignItems: "center", justifyContent: "center", backgroundColor: "transparent", paddingHorizontal: 0, paddingVertical: 0 }, minimalDesktopLogin && { minWidth: 420, maxWidth: 600, alignSelf: "stretch", justifyContent: "center", paddingHorizontal: 48 }, minimalDesktopRegister && { flexGrow: 0, flexShrink: 0, width: 640, minWidth: 0, maxWidth: 640, alignItems: "stretch", justifyContent: "flex-start" }]}>
-            <View style={[s.card, s.authCard, wideAuthWeb && { maxWidth: mode === "register" ? 640 : 520, padding: 32, gap: 18, borderRadius: 24 }, minimalDesktopLogin && { maxWidth: 500, padding: 0, gap: 20, borderWidth: 0, borderColor: "transparent", borderRadius: 0, backgroundColor: "transparent", shadowOpacity: 0, shadowRadius: 0, elevation: 0 }]}>
+          <View style={[s.authPanel, !wideAuthWeb && !tabletAuthWeb && { marginTop: -52, backgroundColor: "transparent" }, wideAuthWeb && mode !== "register" && { flex: 1, minWidth: 420, maxWidth: 520, alignSelf: "flex-start", alignItems: "center", justifyContent: "center", backgroundColor: "transparent", paddingHorizontal: 0, paddingVertical: 0 }, minimalDesktopLogin && { minWidth: 420, maxWidth: 600, alignSelf: "stretch", justifyContent: "center", paddingHorizontal: 48 }, minimalDesktopRegister && { flexGrow: 0, flexShrink: 0, width: 640, minWidth: 0, maxWidth: 640, alignItems: "stretch", justifyContent: "flex-start" }]}>
+            <View style={[s.card, s.authCard, !wideAuthWeb && !tabletAuthWeb && { borderWidth: 0, boxShadow: "0 10px 28px rgba(16,45,59,0.14)", elevation: 6 } as any, wideAuthWeb && { maxWidth: mode === "register" ? 640 : 520, padding: 32, gap: 18, borderRadius: 24 }, minimalDesktopLogin && { maxWidth: 500, padding: 0, gap: 20, borderWidth: 0, borderColor: "transparent", borderRadius: 0, backgroundColor: "transparent", shadowOpacity: 0, shadowRadius: 0, elevation: 0 }]}>
               <View style={s.authCardHeading}>
                 <Text accessibilityRole="header" style={[s.authTitleText, wideAuthWeb && { fontSize: 26, letterSpacing: -0.45 }]}>
                   {mode === "register" || mode === "verify"
@@ -1319,9 +1319,7 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                         onPress={() => setShowPassword((visible) => !visible)}
                         style={s.inputAction}
                       >
-                        <Text style={s.inputActionText}>
-                          {showPassword ? "Hide" : "Show"}
-                        </Text>
+                        <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={21} color={colors.muted} />
                       </Pressable>
                     }
                   />{mode === "register" && <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
@@ -1356,24 +1354,20 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                       hitSlop={8}
                       onPress={() => setShowPassword((visible) => !visible)}
                       style={s.inputAction}
-                    ><Text style={s.inputActionText}>{showPassword ? "Hide" : "Show"}</Text></Pressable>
+                    ><Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={21} color={colors.muted} /></Pressable>
                   }
                 /></View>}
                 </View>
-                {mode === "register" && <View style={[s.card, { gap: 10, padding: 13, backgroundColor: "#f8fbfa" }]}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
-                    <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: colors.brandSoft, alignItems: "center", justifyContent: "center" }}><Ionicons name="document-text-outline" size={19} color={colors.brand} /></View>
-                    <View style={{ flex: 1, gap: 2 }}><Text style={s.fieldLabel}>Terms and Conditions</Text><Text style={s.small}>Read the terms before creating your account.</Text></View>
-                  </View>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Read Terms and Conditions" onPress={() => { setTermsReachedEnd(false); setTermsOpen(true); }} style={({ pressed }) => [{ minHeight: 46, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: "#cfe4df", backgroundColor: "white", flexDirection: "row", alignItems: "center", justifyContent: "space-between", opacity: pressed ? 0.78 : 1 }]}>
-                    <Text style={{ color: colors.brand, fontSize: 13, fontWeight: "700" }}>{termsRead ? "Terms reviewed" : "Read Terms and Conditions"}</Text>
-                    <Ionicons name={termsRead ? "checkmark-circle" : "open-outline"} size={18} color={colors.brand} />
+                {mode === "register" && <View style={{ flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 }}>
+                  <Pressable accessibilityRole="checkbox" accessibilityLabel="I agree to the Terms and Conditions" accessibilityHint={termsRead ? undefined : "Opens the terms first"} accessibilityState={{ checked: termsAccepted }} aria-checked={termsAccepted} hitSlop={10}
+                    onPress={() => { if (termsRead) setTermsAccepted((value) => !value); else { setTermsReachedEnd(false); setTermsOpen(true); } }}
+                    style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: termsAccepted ? colors.brand : "#9aadae", backgroundColor: termsAccepted ? colors.brand : "white", alignItems: "center", justifyContent: "center" }}>
+                    {termsAccepted && <Ionicons name="checkmark" size={15} color="white" />}
                   </Pressable>
-                  <Pressable accessibilityRole="checkbox" accessibilityLabel="I have read and agree to the Terms and Conditions" accessibilityState={{ checked: termsAccepted, disabled: !termsRead }} disabled={!termsRead} onPress={() => setTermsAccepted((value) => !value)} style={({ pressed }) => [{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, opacity: !termsRead ? 0.55 : pressed ? 0.78 : 1 }]}>
-                    <View style={{ width: 23, height: 23, borderRadius: 6, borderWidth: 1.5, borderColor: termsAccepted ? colors.brand : "#9aadae", backgroundColor: termsAccepted ? colors.brand : "white", alignItems: "center", justifyContent: "center" }}>{termsAccepted && <Ionicons name="checkmark" size={16} color="white" />}</View>
-                    <Text style={{ flex: 1, color: colors.brandDark, fontSize: 13, lineHeight: 19 }}>I have read and agree to the Terms and Conditions.<Text style={{ color: "#b42318" }}> *</Text></Text>
-                  </Pressable>
-                  {!termsRead && <Text style={s.small}>Open the terms and scroll to the end to enable agreement.</Text>}
+                  <Text style={{ flex: 1, color: colors.brandDark, fontSize: 13, lineHeight: 19 }}>I agree to the{" "}
+                    <Text accessibilityRole="link" onPress={() => { setTermsReachedEnd(termsRead); setTermsOpen(true); }} style={{ color: colors.brand, fontWeight: "700", textDecorationLine: "underline" }}>Terms and Conditions</Text>
+                    <Text style={{ color: "#b42318" }}> *</Text>
+                  </Text>
                 </View>}
                 <Button
                   title={
@@ -1506,15 +1500,17 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
             value={registeredBarangay}
             onConfirm={setRegisteredBarangay}
           />
-          <Modal visible={termsOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setTermsOpen(false)}>
-            <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper }}>
+          <Modal visible={termsOpen} animationType={wideAuthWeb ? "fade" : "slide"} transparent={wideAuthWeb} presentationStyle={wideAuthWeb ? undefined : "pageSheet"} onRequestClose={() => setTermsOpen(false)}>
+            {/* Desktop web: centered, readable-width dialog over a dimmed page. Phones keep the full sheet. */}
+            <View style={wideAuthWeb ? { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, backgroundColor: "rgba(16,45,59,0.55)" } : { flex: 1 }}>
+            <SafeAreaView style={wideAuthWeb ? { width: "100%", maxWidth: 760, height: "88%", maxHeight: 860, overflow: "hidden", borderRadius: 22, backgroundColor: colors.paper, boxShadow: "0 24px 60px rgba(16,45,59,0.28)" } as any : { flex: 1, backgroundColor: colors.paper }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.line, backgroundColor: "white" }}>
                 <View style={{ flex: 1, gap: 3 }}><Text accessibilityRole="header" style={[s.title, { fontSize: 18 }]}>Resident Terms of Use</Text><Text style={s.small}>Iligan Connect · Version {RESIDENT_TERMS_VERSION}</Text></View>
                 <Pressable accessibilityRole="button" accessibilityLabel="Close terms" onPress={() => setTermsOpen(false)} style={{ width: 44, height: 44, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: "white", alignItems: "center", justifyContent: "center" }}><Ionicons name="close" size={21} color={colors.brandDark} /></Pressable>
               </View>
               <ScrollView
                 style={{ flex: 1 }}
-                contentContainerStyle={{ padding: 18, gap: 15, paddingBottom: 24 }}
+                contentContainerStyle={wideAuthWeb ? { paddingHorizontal: 36, paddingVertical: 28, gap: 18, paddingBottom: 32 } : { padding: 18, gap: 15, paddingBottom: 24 }}
                 showsVerticalScrollIndicator
                 onScroll={(event) => {
                   const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -1523,13 +1519,14 @@ function Auth({ initialError, onRecoveryVerified }: { initialError: string; onRe
                 scrollEventThrottle={80}
               >
                 <Text style={[s.body, { fontSize: 14, textAlign: "justify" }]}>Please read these terms before registering. They explain how to use the reporting and community features responsibly.</Text>
-                {RESIDENT_TERMS.map((section) => <View key={section.title} style={{ gap: 5 }}><Text style={[s.fieldLabel, { fontSize: 14 }]}>{section.title}</Text><Text style={[s.body, { fontSize: 13, lineHeight: 20, textAlign: "justify" }]}>{section.body}</Text></View>)}
+                {RESIDENT_TERMS.map((section) => <View key={section.title} style={{ gap: wideAuthWeb ? 7 : 5 }}><Text style={[s.fieldLabel, { fontSize: wideAuthWeb ? 16 : 14 }]}>{section.title}</Text><Text style={[s.body, wideAuthWeb ? { fontSize: 15, lineHeight: 24, textAlign: "justify" } : { fontSize: 13, lineHeight: 20, textAlign: "justify" }]}>{section.body}</Text></View>)}
               </ScrollView>
               <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: "white", gap: 8 }}>
                 {!termsReachedEnd && <Text style={s.small}>Scroll through the terms to continue.</Text>}
-                <Button title={termsRead ? "Done" : "I’ve read the terms"} disabled={!termsReachedEnd} onPress={() => { setTermsRead(true); setTermsOpen(false); }} />
+                <Button title={termsRead ? "Done" : "Accept and continue"} disabled={!termsReachedEnd} onPress={() => { if (!termsRead) setTermsAccepted(true); setTermsRead(true); setTermsOpen(false); }} />
               </View>
             </SafeAreaView>
+            </View>
           </Modal>
           <Text style={[s.small, s.authFoot]}>
             Not an emergency service. Your precise report location and

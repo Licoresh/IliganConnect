@@ -242,9 +242,8 @@ export const styles = StyleSheet.create({
     borderRadius: 12,
     paddingRight: 14,
   },
-  inputActionInput: { flex: 1, minHeight: 52, borderWidth: 0, backgroundColor: "transparent" },
-  inputAction: { minWidth: 48, minHeight: 48, padding: 6, alignItems: "center", justifyContent: "center" },
-  inputActionText: { color: colors.brand, fontWeight: "700", fontSize: 13 },
+  inputActionInput: { flex: 1, minWidth: 0, minHeight: 52, borderWidth: 0, backgroundColor: "transparent" },
+  inputAction: { width: 44, minHeight: 44, flexShrink: 0, alignItems: "center", justifyContent: "center" },
   fieldLabel: { color: colors.brandDark, fontSize: 13, fontWeight: "600" },
   button: {
     backgroundColor: colors.brand,
@@ -343,6 +342,7 @@ export const styles = StyleSheet.create({
 
 export function Button({
   title,
+  accessibilityLabel,
   onPress,
   icon,
   disabled = false,
@@ -351,6 +351,7 @@ export function Button({
   grow = false,
 }: {
   title: string;
+  accessibilityLabel?: string;
   onPress: () => void;
   icon?: IconName;
   disabled?: boolean;
@@ -362,6 +363,7 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? title}
       accessibilityState={{ disabled: unavailable, busy: loading }}
       disabled={unavailable}
       onPress={onPress}

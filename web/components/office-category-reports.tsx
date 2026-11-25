@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { withTitle, withTitles } from "../lib/report-title";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, RefreshCw } from "lucide-react";
 import { Report, label, reportStatusLabel } from "@community/shared";
@@ -40,7 +41,7 @@ export function OfficeCategoryReports({ refs }: { refs: References }) {
       if (term) request = request.ilike("title", `%${term.replace(/[\\%_]/g, "\\$&")}%`);
       const { data, count, error } = await request.order("created_at", { ascending: false }).order("id").range(page * 20, page * 20 + 19);
       if (error) throw new Error(error.message);
-      return { rows: data as Report[], count: count ?? 0 };
+      return { rows: withTitles(data as Report[]), count: count ?? 0 };
     },
   });
   const pageCount = Math.max(1, Math.ceil((query.data?.count ?? 0) / 20));

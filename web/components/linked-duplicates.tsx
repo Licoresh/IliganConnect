@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { properCaseTitle } from "@community/shared";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Copy, RefreshCw } from "lucide-react";
 import { label, type Status } from "@community/shared";
@@ -37,7 +38,7 @@ export function LinkedDuplicateReports({ reportId, onOpen }: { reportId: string;
         <summary><Copy size={21} aria-hidden="true" /><strong>Linked duplicate reports</strong><span className="linked-report-count" aria-label={`${q.data.total_count} linked report${q.data.total_count === 1 ? "" : "s"}`}>{q.data.total_count}</span><ChevronDown size={18} aria-hidden="true" /></summary>
         <p className="linked-report-intro">Confirmed duplicates linked to this main report, within your access. Their progress follows this report.</p>
         <div className="linked-report-list">{q.data.items.map(item => <article key={item.id}>
-          <div className="linked-report-copy"><h4>{item.title}</h4><p className="linked-report-meta">Submitted {date(item.created_at)}</p></div>
+          <div className="linked-report-copy"><h4>{properCaseTitle(item.title)}</h4><p className="linked-report-meta">Submitted {date(item.created_at)}</p></div>
           {onOpen && <button type="button" className="secondary linked-report-open" onClick={() => onOpen(item.id)} aria-label={`Open linked duplicate report: ${item.title}`}>Open report<ArrowUpRight size={16} aria-hidden="true" /></button>}
           <details className="linked-report-details"><summary aria-label={`Link details for ${item.title}`}>Link details<ChevronDown size={16} aria-hidden="true" /></summary><p className="linked-report-reason"><strong>Link reason:</strong> {item.reason}</p><span className="linked-report-id">Report ID: {item.id}</span></details>
         </article>)}</div>

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { withTitle, withTitles } from "../lib/report-title";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useQuery } from "@tanstack/react-query";
@@ -344,14 +345,14 @@ export default function IssueMap({
         const responses = await Promise.all(organizations.flatMap((organization) => ["assigned", "scheduled", "in_progress"].map((reportState) =>
           result<Report[]>(db!.rpc("map_reports", { ...mapArgs, report_state: reportState, office: organization.id }).abortSignal(signal)),
         )));
-        return [...new Map(responses.flat().map((report) => [report.id, report])).values()]
-          .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 1000);
+        return withTitles([...new Map(responses.flat().map((report) => [report.id, report])).values()]
+          .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 1000));
       }
       return result<Report[]>(db!.rpc("map_reports", {
         ...mapArgs,
         report_state: state || null,
         office: null,
-      }).abortSignal(signal));
+      }).abortSignal(signal)).then(withTitles);
   }
   const q = useQuery<Report[]>({
     enabled: !invalidDates,
@@ -368,7 +369,7 @@ export default function IssueMap({
   const linkedReport = useQuery({
     queryKey: ["map-linked-report", selectedId, permissionFingerprint(access)],
     enabled: !!selectedId && !selectedMapReport,
-    queryFn: ({ signal }) => result<Report | null>(db!.from("reports").select("*").eq("id", selectedId).abortSignal(signal).maybeSingle()),
+    queryFn: ({ signal }) => result<Report | null>(db!.from("reports").select("*").eq("id", selectedId).abortSignal(signal).maybeSingle()).then((row) => row && withTitle(row)),
   });
   const selectedReport = selectedMapReport || linkedReport.data;
   const gis = useQuery({

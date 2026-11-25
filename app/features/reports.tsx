@@ -25,6 +25,7 @@ import {
   distanceMeters,
   parseReportCoordinates,
   hasReportCoordinates,
+  properCaseTitle,
 } from "@community/shared";
 import { db, result } from "../lib/client";
 import { storage } from "../lib/storage";
@@ -546,7 +547,7 @@ export function ReportForm({
           p_id: requestId,
           p_category: v.category_id,
           p_barangay: v.barangay_id,
-          p_title: v.title,
+          p_title: properCaseTitle(v.title),
           p_description: v.description,
           p_latitude: v.latitude,
           p_longitude: v.longitude,
@@ -876,7 +877,7 @@ export function ReportForm({
       )}
       {pinModalOpen && <Modal visible animationType={desktopReport ? "fade" : "slide"} presentationStyle="fullScreen" onRequestClose={closeManualPin}>
         <View style={desktopReport ? { flex: 1, justifyContent: "center", alignItems: "center", padding: 24, backgroundColor: "rgba(18, 52, 61, 0.48)" } : { flex: 1, backgroundColor: "#f4f8f7" }}>
-          <SafeAreaView style={desktopReport ? { flex: 0, width: Math.min(1100, windowWidth - 48), height: manualPinDialogHeight, backgroundColor: "#f4f8f7", borderRadius: 20, overflow: "hidden" } : { flex: 1 }} edges={["top", "bottom"]}>
+          <SafeAreaView style={desktopReport ? { flexGrow: 0, flexShrink: 0, width: Math.min(1100, windowWidth - 48), height: manualPinDialogHeight, backgroundColor: "#f4f8f7", borderRadius: 20, overflow: "hidden" } : { flex: 1 }} edges={["top", "bottom"]}>
             <View style={{ minHeight: 64, paddingHorizontal: 14, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 10 }}>
               <Pressable accessibilityRole="button" accessibilityLabel="Close pin map" onPress={closeManualPin} style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: "white", alignItems: "center", justifyContent: "center" }}><Ionicons name="close" size={23} color={colors.brandDark} /></Pressable>
               <View style={{ flex: 1, gap: 2 }}><Text style={[s.fieldLabel, { fontSize: 16 }]}>Pin the issue location</Text><Text style={s.small}>Tap the map to place your pin.</Text></View>
@@ -897,7 +898,7 @@ export function ReportForm({
               </Text>
               <View style={s.actionRow}>
                 <Button secondary grow title="Cancel" onPress={closeManualPin} />
-                <Button grow icon="checkmark" title="Confirm location" disabled={!manualPinResolution || checkingManualPin} onPress={confirmManualPin} />
+                <Button grow icon="checkmark" title={windowWidth <= 460 ? "Confirm" : "Confirm location"} accessibilityLabel="Confirm location" disabled={!manualPinResolution || checkingManualPin} onPress={confirmManualPin} />
               </View>
             </View>
           </SafeAreaView>
@@ -1021,7 +1022,7 @@ export function ReportTracking({
       </>} />
       {currentReport.error && <View style={s.card}><Text accessibilityRole="alert" style={s.error}>Could not refresh this report. The details below may be out of date.</Text><Button secondary title="Retry report" loading={currentReport.isFetching} onPress={() => void currentReport.refetch()} /></View>}
       <View style={{ gap: 9, paddingHorizontal: 2, paddingBottom: 2 }}>
-        <Text accessibilityRole="header" style={[s.heading, { fontSize: 25, lineHeight: 31 }]}>{r.title}</Text>
+        <Text accessibilityRole="header" style={[s.heading, { fontSize: 25, lineHeight: 31 }]}>{properCaseTitle(r.title)}</Text>
         {!!r.description && <>
           <Text style={[s.body, { color: colors.muted }]}>{r.description}</Text>
         </>}
@@ -1275,7 +1276,7 @@ export function Explore({
   const q = useQuery({
     queryKey: ["public-reports", includeSamples],
     refetchInterval: 30_000,
-    queryFn: ({ signal }) => result<Report[]>(db!.rpc("public_reports").abortSignal(signal)),
+    queryFn: ({ signal }) => result<Report[]>(db!.rpc("public_reports").abortSignal(signal)).then((rows) => rows.map((report) => ({ ...report, title: properCaseTitle(report.title) }))),
   });
   const follows = useQuery({
     queryKey: ["follows"],

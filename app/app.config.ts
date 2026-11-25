@@ -11,6 +11,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: "Iligan Connect",
   slug: "iligan-connect",
+  ...(process.env.EXPO_PUBLIC_EAS_PROJECT_ID
+    ? {
+        extra: {
+          ...config.extra,
+          eas: {
+            ...config.extra?.eas,
+            projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
+          },
+        },
+      }
+    : {}),
   android: {
     ...config.android,
     ...(process.env.GOOGLE_SERVICES_JSON

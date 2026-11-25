@@ -1,5 +1,6 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
+import { withTitle, withTitles } from "../lib/report-title";
 import { useEffect, useState } from "react";
 import { ChevronDown, Copy, Image as ImageIcon, MapPin, RefreshCw } from "lucide-react";
 import { label, type Report, type Status } from "@community/shared";
@@ -45,14 +46,17 @@ function DuplicateComparison({ report, candidate }: { report: Report; candidate:
   return <details className="duplicate-comparison" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary>Compare reports<ChevronDown size={16} aria-hidden="true" /></summary>
     <div className="duplicate-comparison-grid">
-      {items.map((item, index) => <div key={item.id}>
-        <strong className="duplicate-comparison-label">{item.heading}</strong><h5>{item.title}</h5>
-        <p className="duplicate-comparison-meta">{label(item.status)} · {date(item.created_at)}</p>
-        {item.area && <p className="duplicate-comparison-meta">{item.area}</p>}
+      {items.map((item, index) => <article key={item.id} className={"duplicate-compare-card" + (index ? " is-candidate" : " is-current")}>
+        <header className="duplicate-compare-top">
+          <span className="duplicate-compare-tag">{index ? "Possible main report" : "Reviewing"}</span>
+          <span className={`badge ${item.status}`}>{label(item.status)}</span>
+        </header>
+        <h5>{item.title}</h5>
+        <p className="duplicate-compare-meta"><time dateTime={item.created_at}>{date(item.created_at)}</time>{item.area && <><span aria-hidden="true">·</span><span className="duplicate-compare-area"><MapPin size={13} aria-hidden="true" />{item.area}</span></>}</p>
+        <blockquote className="duplicate-compare-quote" role="region" aria-label={`${item.heading} description`} tabIndex={0}>{item.description}</blockquote>
         <div className="duplicate-comparison-photos" aria-label={`${item.heading} photos`}>
-          <span>Report photos</span>
           {photoQuery.isPending ? <p className="duplicate-comparison-photo-state" role="status">Loading photos…</p>
-            : photoQuery.error ? <p className="duplicate-comparison-photo-state" role="status">Photos could not be loaded.</p>
+            : photoQuery.error ? <p className="duplicate-comparison-photo-state" role="status">Photos could not load.</p>
               : photoQuery.data?.[index]?.length ? <div className="duplicate-comparison-photo-grid">
                 {photoQuery.data[index].map((photo, photoIndex) => photo.url
                   ? <a className="duplicate-comparison-photo" key={photo.path} href={photo.url} target="_blank" rel="noreferrer" aria-label={`Open photo ${photoIndex + 1} for ${item.heading}`}>
@@ -60,12 +64,13 @@ function DuplicateComparison({ report, candidate }: { report: Report; candidate:
                   </a>
                   : <span className="duplicate-comparison-photo duplicate-comparison-photo-unavailable" key={photo.path}><ImageIcon size={18} aria-label="Photo preview unavailable" /></span>)}
               </div>
-                : <p className="duplicate-comparison-photo-state">No photos attached.</p>}
+                : <p className="duplicate-comparison-photo-state"><ImageIcon size={14} aria-hidden="true" /> No photos attached</p>}
         </div>
-        <div className="duplicate-comparison-description" role="region" aria-label={`${item.heading} description`} tabIndex={0}>{item.description}</div>
-        <p className="duplicate-comparison-meta"><strong>Landmark:</strong> {item.landmark?.trim() || "Not provided"}</p>
-        <p className="duplicate-comparison-id">{item.id}</p>
-      </div>)}
+        <dl className="duplicate-compare-facts">
+          <div><dt>Landmark</dt><dd>{item.landmark?.trim() || "Not provided"}</dd></div>
+          <div><dt>Report ID</dt><dd className="mono" title={item.id}>{item.id.slice(0, 8).toUpperCase()}</dd></div>
+        </dl>
+      </article>)}
     </div>
     {candidate.problem_label && <p className="duplicate-comparison-note">Suggested report’s problem: {candidate.problem_label}</p>}
     {candidate.status === "resolved" && <p className="duplicate-comparison-note">This report was resolved. Check whether the new report describes a fresh incident before linking it.</p>}
@@ -78,7 +83,7 @@ export function DuplicateReview({ report, onCandidatesChange }: {
 }) {
   const q = useQuery({
     queryKey: ["duplicate-candidates", report.id], staleTime: 30_000,
-    queryFn: ({ signal }) => result<Candidate[]>(db!.rpc("report_duplicate_candidates", { p_id: report.id }).abortSignal(signal)),
+    queryFn: ({ signal }) => result<Candidate[]>(db!.rpc("report_duplicate_candidates", { p_id: report.id }).abortSignal(signal)).then(withTitles),
   });
   useEffect(() => {
     onCandidatesChange(q.data?.map(({ id, title }) => ({ id, title })) ?? []);

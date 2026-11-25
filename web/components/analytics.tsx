@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState, type FormEvent } from "react";
+import { withTitles } from "../lib/report-title";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LineChart,
@@ -303,7 +304,7 @@ function BarangayDetail({
     queryKey: ["barangay-detail", id],
     queryFn: async () => ({
       analytics: await result<AnalyticsData>(db!.rpc("geographic_analytics", { p_barangay: id })),
-      reports: await result<Report[]>(db!.from("reports").select("*").eq("barangay_id", id).not("status", "in", "(resolved,rejected,duplicate)").order("created_at", { ascending: false }).limit(20)),
+      reports: await result<Report[]>(db!.from("reports").select("*").eq("barangay_id", id).not("status", "in", "(resolved,rejected,duplicate)").order("created_at", { ascending: false }).limit(20)).then(withTitles),
       assessments: await result<{ id: string; assessment: string; created_at: string }[]>(db!.from("issue_assessments").select("id,assessment,created_at").eq("barangay_id", id).order("created_at", { ascending: false }).limit(10)),
       consultations: await result<{ id: string; title: string; status: string }[]>(db!.from("consultations").select("id,title,status").eq("barangay_id", id).order("created_at", { ascending: false }).limit(10)),
       meetings: await result<{ id: string; title: string; status: string }[]>(db!.from("meeting_requests").select("id,title,status").eq("barangay_id", id).order("created_at", { ascending: false }).limit(10)),

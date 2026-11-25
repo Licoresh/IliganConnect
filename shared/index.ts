@@ -130,6 +130,29 @@ export interface Profile {
   notifications_enabled: boolean;
   avatar_path?: string | null;
 }
+const TITLE_SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "in", "nor", "of", "on", "or", "per", "the", "to", "up", "via", "vs", "ng", "sa", "na", "ang", "mga"]);
+
+/** Proper Case for report titles: "cracked pavement at the market" -> "Cracked Pavement at the Market".
+ *  Keeps acronyms (DPWH) and deliberate inner capitals; an all-caps title is treated as shouting. */
+export function properCaseTitle(value: string | null | undefined) {
+  const text = (value ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return text;
+  const letters = text.replace(/[^A-Za-z]/g, "");
+  const shouting = letters.length > 3 && letters === letters.toUpperCase();
+  const words = text.split(" ");
+  return words.map((word, index) => word.split("-").map((part, partIndex) => {
+    const core = part.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "");
+    if (!core) return part;
+    const isAcronym = !shouting && core.length >= 2 && core === core.toUpperCase() && /[A-Z]/.test(core);
+    const hasInnerCaps = !shouting && /[a-z][A-Z]/.test(core);
+    if (isAcronym || hasInnerCaps || /^\d/.test(core)) return part;
+    const lower = part.toLowerCase();
+    const edge = index === 0 || index === words.length - 1;
+    if (!edge && partIndex === 0 && TITLE_SMALL_WORDS.has(core.toLowerCase())) return lower;
+    return lower.replace(/[a-z]/, (letter) => letter.toUpperCase());
+  }).join("-")).join(" ");
+}
+
 export const label = (s: string) =>
   s.replaceAll("_", " ").replace(/^./, (s) => s.toUpperCase());
 

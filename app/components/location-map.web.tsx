@@ -6,8 +6,18 @@ import * as maplibre from "maplibre-gl";
 import { reportHeatCellsByBarangay, BARANGAY_TOTAL_ZOOM, clusterReportsByCategory, ILIGAN_CITY_MAX_MAP_ZOOM, ILIGAN_CITY_MIN_MAP_ZOOM, ILIGAN_MAP_BOUNDS, INDIVIDUAL_REPORT_PIN_ZOOM, mapZoomFromLongitudeDelta } from "@community/shared";
 import { barangayAreaKm2, barangayCenter, barangayDensity, barangayDensityColor, barangayHeatColor, barangayMapKey, iliganBarangayBoundaries } from "../lib/barangay-map";
 import { categoryDisplayName, categoryIconFor, categoryToneFor, statusToneFor, colors } from "./ui";
+import { mapPinGlyphs } from "./map-pin-glyphs";
 import "maplibre-gl/dist/maplibre-gl.css";
 const EMPTY_POINTS: NonNullable<MapProps["points"]> = [];
+const svgNamespace = "http://www.w3.org/2000/svg";
+function createMapPinGlyph(name: string, size: number) {
+  const icon = document.createElementNS(svgNamespace, "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  icon.style.cssText = `display:block;flex:none;width:${size}px;height:${size}px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round`;
+  icon.innerHTML = mapPinGlyphs[name] || mapPinGlyphs["alert-circle-outline"];
+  return icon;
+}
 function centerOnReport(map: maplibre.Map, point: Point) {
   map.stop();
   map.easeTo({
@@ -342,7 +352,7 @@ export default function LocationMap({
         pin.append(label);
       }
       const iconName = isUser ? "locate" : categoryIconFor(p.categoryName || "");
-      core.textContent = String.fromCodePoint(Number(Ionicons.glyphMap[iconName]));
+      core.append(createMapPinGlyph(iconName, 18));
       pin.append(body, core);
       if (!isUser) {
         pin.addEventListener("click", (event) => {
@@ -432,7 +442,7 @@ export default function LocationMap({
           const tile = document.createElement("div");
           tile.setAttribute("aria-label", `${p.categoryName ? categoryDisplayName(p.categoryName) : "Community report"} icon`);
           tile.style.cssText = `display:flex;flex:none;width:76px;height:94px;align-items:center;justify-content:center;border-radius:12px;background:${tone.background};color:${tone.foreground};font-size:31px;font-family:Ionicons,sans-serif`;
-          tile.textContent = String.fromCodePoint(Number(Ionicons.glyphMap[categoryIconFor(p.categoryName || "")]));
+          tile.append(createMapPinGlyph(categoryIconFor(p.categoryName || ""), 31));
           return tile;
         };
         if (!isUser && p.photoUrl) {
@@ -589,7 +599,7 @@ export default function LocationMap({
         .report-map-cluster__count{position:absolute;top:0;right:0;display:grid;min-width:18px;height:18px;padding:0 3px;place-items:center;border:1.5px solid #fff;border-radius:10px;background:#12343d;color:#fff;font:800 8px/1 system-ui,sans-serif}
         .report-map-cluster:focus-visible{outline:3px solid #f5b840;outline-offset:2px;border-radius:12px}
         .report-map-pin__label{position:absolute;left:50%;bottom:calc(100% + 4px);z-index:2;max-width:220px;overflow:hidden;padding:6px 9px;transform:translateX(-50%);border:1px solid #dce8e4;border-radius:12px;background:#fff;color:#173b3a;box-shadow:0 3px 10px #173b3a30;font:700 11px system-ui,sans-serif;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
-        .report-map-pin__core{position:absolute;left:12px;top:8px;display:flex;width:20px;height:20px;align-items:center;justify-content:center;color:#fff;font:15px Ionicons,ionicons,sans-serif;box-sizing:border-box;pointer-events:none}
+        .report-map-pin__core{position:absolute;left:12px;top:8px;display:flex;width:20px;height:20px;align-items:center;justify-content:center;color:#fff;box-sizing:border-box;pointer-events:none}
         .report-map-pin--you .report-map-pin__core{border-radius:50%;transform:none}
         .report-map-pin--selected{z-index:10000!important}
         .report-map-pin--selected .report-map-pin__body{filter:drop-shadow(0 0 3px #f5b840) drop-shadow(0 2px 3px #10263f99)}

@@ -7349,3 +7349,21 @@ button, input, select, textarea { font-family: inherit; letter-spacing: inherit;
   .reports-table tbody td.report-received time { display: inline-block; white-space: nowrap; vertical-align: middle; }
   .reports-table tbody td.report-received .report-open { position: absolute; top: 50%; right: 4px; width: 24px; min-width: 24px; min-height: 24px; padding: 2px; transform: translateY(-50%); }
 }
+
+/* Meeting details: readable date tile in "When & where". */
+.shell[data-role] .meeting-details-dialog .meeting-when-tile { background: var(--brand); }
+.shell[data-role] .meeting-details-dialog .meeting-when-tile :is(strong, small) { color: #fff; opacity: 1; }
+.shell[data-role] .meeting-details-dialog .meeting-when-date { align-items: center; gap: 14px; }
+
+/* Meetings page: "Upcoming meetings" strip keeps its heading clear of the meeting card. */
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel { flex-wrap: nowrap; gap: 18px; padding: 12px 16px; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel .meeting-rail-heading { flex: 0 0 auto; white-space: nowrap; gap: 12px; padding-right: 4px; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel > .meeting-upcoming { flex: 1 1 0; min-width: 0; padding: 8px 14px; gap: 12px; background: #fbfdfd; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel > .meeting-upcoming:hover:not(:disabled) { background: var(--surface-hover, #f1f7f6); }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel .meeting-upcoming .meeting-date-tile { flex-basis: 44px; width: 44px; min-height: 46px; background: var(--brand-soft); color: var(--brand-hover); }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel .meeting-upcoming-copy strong { font-size: 13px; }
+.shell[data-role] main#main .meeting-rail > .meeting-rail-panel .meeting-upcoming-copy small { font-size: 12px; }
+@media (max-width: 760px) {
+  .shell[data-role] main#main .meeting-rail > .meeting-rail-panel { flex-wrap: wrap; }
+  .shell[data-role] main#main .meeting-rail > .meeting-rail-panel > .meeting-upcoming { flex: 1 1 100%; }
+}

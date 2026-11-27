@@ -1678,8 +1678,7 @@ function Meeting({
         <section className="meeting-section meeting-overview-participants">
           <div className="meeting-section-heading">
             <span className="meeting-section-icon"><Users size={20} aria-hidden="true" /></span>
-            <div><h3>Residents participating</h3><p>Residents who have joined this meeting.</p></div>
-            {(profileRole === "admin" || profileRole === "barangay") && <span className="meeting-roster-count" aria-label={`${residentParticipantCount} participating residents`}>{residentParticipantCount}</span>}
+            <div><h3>Residents participating{(profileRole === "admin" || profileRole === "barangay") && <span className="meeting-roster-count" aria-label={`${residentParticipantCount} participating residents`}>{residentParticipantCount}</span>}</h3><p>Residents who have joined this meeting.</p></div>
           </div>
           {profileRole === "admin" || profileRole === "barangay" ? participantsQuery.isPending
             ? <p className="meeting-empty" role="status">Loading resident list…</p>
@@ -1720,8 +1719,8 @@ function Meeting({
                     <h4>{properCaseTitle(relatedReportQuery.data.report.title)}</h4>
                     {(relatedReportQuery.data.report.public_summary || relatedReportQuery.data.report.description) && <p>{relatedReportQuery.data.report.public_summary || relatedReportQuery.data.report.description}</p>}
                     <div className="meeting-report-details">
-                      <span>{refs.barangays.find((barangay) => barangay.id === relatedReportQuery.data!.report!.barangay_id)?.name || "Iligan City"}</span>
-                      <time dateTime={relatedReportQuery.data.report.created_at}>{new Date(relatedReportQuery.data.report.created_at).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium" })}</time>
+                      <span><MapPin size={13} aria-hidden="true" />{refs.barangays.find((barangay) => barangay.id === relatedReportQuery.data!.report!.barangay_id)?.name || "Iligan City"}</span>
+                      <time dateTime={relatedReportQuery.data.report.created_at}><CalendarDays size={13} aria-hidden="true" />{new Date(relatedReportQuery.data.report.created_at).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium" })}</time>
                       {(relatedReportQuery.data.report.location_address || relatedReportQuery.data.report.purok || relatedReportQuery.data.report.zone) && <span>{relatedReportQuery.data.report.location_address || [relatedReportQuery.data.report.purok, relatedReportQuery.data.report.zone].filter(Boolean).join(" · ")}</span>}
                     </div>
                   </div>

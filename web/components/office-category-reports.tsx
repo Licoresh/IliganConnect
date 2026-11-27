@@ -9,6 +9,7 @@ import { useDebouncedValue } from "../lib/use-debounced-value";
 import { permissionFingerprint } from "../lib/access";
 import { reportCategoryPresentation, ReportCategoryLabel } from "./report-category";
 import { ReportDetail } from "./reports";
+import { ReportThumb, useReportListPhotos } from "./report-photos";
 import { useAccess } from "./access-context";
 import type { References } from "./workspace";
 
@@ -44,6 +45,7 @@ export function OfficeCategoryReports({ refs }: { refs: References }) {
       return { rows: withTitles(data as Report[]), count: count ?? 0 };
     },
   });
+  const listPhotos = useReportListPhotos(query.data?.rows.map((row) => row.id) ?? []);
   const pageCount = Math.max(1, Math.ceil((query.data?.count ?? 0) / 20));
 
   return <>
@@ -63,15 +65,17 @@ export function OfficeCategoryReports({ refs }: { refs: References }) {
         : query.error ? <div className="error" role="alert"><p>{query.error.message}</p><button className="secondary" type="button" onClick={() => void query.refetch()}>Try again</button></div>
           : query.data.rows.length ? <div className="table-scroll">
             <table className="reports-table office-category-table"><caption className="sr-only">Barangay-managed reports within approved office coverage</caption>
-              <thead><tr><th scope="col">Report</th><th scope="col">Location &amp; category</th><th scope="col">Status</th><th scope="col">Assessment</th><th scope="col">Received</th></tr></thead>
+              <thead><tr><th scope="col">Report</th><th scope="col">Location &amp; category</th><th scope="col">Status</th><th scope="col">Received</th></tr></thead>
               <tbody>{query.data.rows.map((report) => {
                 const categoryName = refs.categories.find((item) => item.id === report.category_id)?.name || "Other";
                 const barangayName = refs.barangays.find((item) => item.id === report.barangay_id)?.name || "Iligan City";
                 return <tr key={report.id} className="report-row-clickable" onClick={() => setSelected(report)}>
-                  <th scope="row"><button className="report-title" onClick={() => setSelected(report)}><span>{report.title}</span><ChevronRight size={15} aria-hidden="true" /></button>{report.public_summary && report.public_summary.trim().toLowerCase() !== report.title.trim().toLowerCase() && <small className="office-category-summary">{report.public_summary}</small>}<small className="mono">{report.id.slice(0, 8).toUpperCase()}</small></th>
+                  <th scope="row"><div className="report-table-cell">
+                    <ReportThumb className="report-table-thumb" url={listPhotos.data?.urls.get(report.id)} categoryName={categoryName} />
+                    <div className="report-table-cell-copy"><button className="report-title" onClick={() => setSelected(report)}><span>{report.title}</span><ChevronRight size={15} aria-hidden="true" /></button>
+                    <div className="report-meta-row"><small className="record-meta">{report.id.slice(0, 8).toUpperCase()}{report.severity != null && ` · Severity ${report.severity}/5`}{report.urgency != null && ` · Urgency ${report.urgency}/5`}</small></div></div></div></th>
                   <td data-label="Location & category"><span className="office-category-location">{barangayName}</span><ReportCategoryLabel compact name={categoryName} className="report-category" /></td>
                   <td data-label="Status"><span className={`badge ${report.status}`}>{label(report.status)}</span></td>
-                  <td data-label="Assessment">{report.severity == null && report.urgency == null ? "—" : `Severity ${report.severity ?? "—"}/5 · Urgency ${report.urgency ?? "—"}/5`}</td>
                   <td data-label="Received"><time dateTime={report.created_at}>{new Date(report.created_at).toLocaleDateString("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" })}</time></td>
                 </tr>;
               })}</tbody>

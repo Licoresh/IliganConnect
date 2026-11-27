@@ -7280,3 +7280,72 @@ button, input, select, textarea { font-family: inherit; letter-spacing: inherit;
   .meeting-details-dialog .meeting-report-preview { grid-template-columns: 64px minmax(0, 1fr); }
   .meeting-details-dialog .meeting-report-preview > img, .meeting-details-dialog .meeting-report-photo-empty { width: 64px; height: 64px; }
 }
+
+/* Overview: fixed-height panels; long content scrolls inside (all roles). */
+@media (min-width: 1101px) {
+  .overview-reporting, .overview-community-panels { align-items: stretch; }
+  .overview-reporting-aside { grid-template-rows: minmax(0, 1fr); }
+  .overview-reporting .overview-panel { height: 460px; }
+  .overview-community-panels .overview-panel { height: 320px; }
+  .overview-reporting-aside > .overview-panel, .overview-reporting > .overview-panel, .overview-community-panels > .overview-panel { display: flex; flex-direction: column; min-height: 0; }
+  .overview-panel > .overview-table-wrap, .overview-panel > .overview-assigned-list, .overview-panel > .overview-community-list, .overview-panel > .overview-empty { flex: 1 1 auto; min-height: 0; }
+  .overview-panel > .overview-table-wrap, .overview-panel > .overview-assigned-list, .overview-panel > .overview-community-list { overflow-y: auto; overscroll-behavior: contain; }
+  .overview-panel > .overview-assigned-list, .overview-panel > .overview-community-list { align-content: start; }
+  .overview-panel > .overview-table-wrap thead th { position: sticky; top: 0; z-index: 1; background: #fff; }
+}
+
+/* Report rows: meta + duplicate chip on one line so all rows share one height. */
+.report-meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.shell[data-role] main#main .report-meta-row > .duplicate-queue-indicator { margin: 0; min-height: 22px; padding: 1px 8px; }
+
+/* Meeting details overview (desktop only): equal fixed-height cards, content scrolls inside. */
+@media (min-width: 761px) {
+  .meeting-details-dialog .meeting-overview-support { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  .meeting-details-dialog .meeting-overview-support > .meeting-section { display: flex; flex-direction: column; height: 330px; min-height: 0; gap: 14px; padding: 20px; border-radius: 16px; }
+  .meeting-details-dialog .meeting-overview-support .meeting-section-heading { flex: 0 0 auto; align-items: center; }
+  .meeting-details-dialog .meeting-overview-support .meeting-resident-list,
+  .meeting-details-dialog .meeting-overview-support .meeting-report-preview { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
+  .meeting-details-dialog .meeting-overview-support .meeting-empty { flex: 1 1 auto; display: grid; place-items: center; }
+  .meeting-details-dialog .meeting-overview-support .meeting-resident { padding: 10px 4px; }
+  .meeting-details-dialog .meeting-report-preview { grid-template-columns: 120px minmax(0, 1fr); gap: 16px; }
+  .meeting-details-dialog .meeting-report-preview > img, .meeting-details-dialog .meeting-report-photo-empty { width: 120px; height: 120px; border-radius: 12px; }
+  .meeting-details-dialog .meeting-report-details { display: flex; flex-wrap: wrap; gap: 2px 12px; padding-top: 8px; border-top: 1px solid #e6eeed; }
+}
+
+/* Duplicate indicator: compact badge on the thumbnail so every report row keeps one height. */
+.reports-table .report-table-cell { position: relative; }
+.shell[data-role] main#main .report-meta-row > .duplicate-queue-indicator,
+.reports-table .report-meta-row > .duplicate-queue-indicator { position: absolute; left: 2px; bottom: 2px; z-index: 1; min-width: 0; min-height: 0; margin: 0; padding: 1px 6px 1px 5px; gap: 3px; border: 1px solid #e0b25a; border-radius: 999px; background: #fff1d6; color: #8a5a00; font-size: 11px; line-height: 1.3; box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.reports-table .report-meta-row > .duplicate-queue-indicator > span { font-size: 0; }
+.reports-table .report-meta-row > .duplicate-queue-indicator > span::before { content: attr(data-count); font-size: 11px; font-weight: 700; }
+
+/* Assigned work / community rows: stop rows collapsing inside the scroll area. */
+.overview-panel > .overview-assigned-list, .overview-panel > .overview-community-list { grid-auto-rows: max-content; }
+.overview-assigned-item, .overview-community-row { flex-shrink: 0; min-height: 60px; padding-block: 10px; }
+.overview-assigned-copy { gap: 4px; }
+.overview-assigned-copy strong, .overview-assigned-copy small { line-height: 1.4; }
+
+/* Meeting overview: Related report as a stacked card with photo banner (desktop only). */
+@media (min-width: 761px) {
+  .meeting-details-dialog .meeting-overview-related-report .meeting-report-preview { grid-template-columns: minmax(0, 1fr); gap: 12px; align-content: start; }
+  .meeting-details-dialog .meeting-overview-related-report .meeting-report-preview > img { width: 100%; height: 130px; border-radius: 12px; }
+  .meeting-details-dialog .meeting-overview-related-report .meeting-report-photo-empty { width: 100%; height: 72px; grid-auto-flow: column; justify-content: center; gap: 8px; border: 1px dashed #cfe2de; background: #f4faf8; }
+  .meeting-details-dialog .meeting-overview-related-report .meeting-report-copy { gap: 8px; }
+  .meeting-details-dialog .meeting-overview-related-report .meeting-report-details { padding-top: 10px; gap: 4px 16px; color: #5c7485; }
+  .meeting-details-dialog .meeting-overview-related-report .meeting-report-details > :is(span, time):is(:nth-child(1), :nth-child(2)) { display: inline-flex; align-items: center; gap: 5px; }
+}
+
+.meeting-overview-participants h3 { display: flex; align-items: center; gap: 8px; }
+.meeting-overview-participants h3 .meeting-roster-count { margin: 0; flex: 0 0 auto; }
+
+@media (min-width: 1101px) {
+  .overview-panel > .overview-table-wrap { border-inline: 0; border-radius: 0; scrollbar-width: thin; scrollbar-gutter: stable; }
+  .overview-panel > .overview-table-wrap .overview-recent-table th:first-child, .overview-panel > .overview-table-wrap .overview-recent-table td:first-child { padding-left: 4px; }
+}
+
+/* Reports table (desktop): Received is a real table cell so row borders and height stay aligned. */
+@media (min-width: 761px) {
+  .reports-table tbody td.report-received { display: table-cell; position: relative; vertical-align: middle; padding-right: 34px; text-align: left; }
+  .reports-table tbody td.report-received time { display: inline-block; white-space: nowrap; vertical-align: middle; }
+  .reports-table tbody td.report-received .report-open { position: absolute; top: 50%; right: 4px; width: 24px; min-width: 24px; min-height: 24px; padding: 2px; transform: translateY(-50%); }
+}

@@ -863,19 +863,19 @@ function Overview({
       const [analytics, recent, taskResult, meetings, announcements] = await Promise.all([
         result<AnalyticsData>(db!.rpc("geographic_analytics")),
         result<Report[]>(
-          db!.from("reports").select("*").order("created_at", { ascending: false }).limit(6),
+          db!.from("reports").select("*").order("created_at", { ascending: false }).limit(10),
         ).then(withTitles),
         (async () => {
           const { data, count, error } = await db!.from("reports").select("*", { count: "exact" })
-            .in("status", ["assigned", "scheduled", "in_progress"]).order("created_at").limit(5);
+            .in("status", ["assigned", "scheduled", "in_progress"]).order("created_at").limit(10);
           if (error) throw new Error(error.message);
           return { rows: withTitles(data as Report[]), count: count ?? 0 };
         })(),
         result<{ id: string; title: string; barangay_id: string; status: string; created_at: string }[]>(
-          db!.from("meeting_requests").select("id,title,barangay_id,status,created_at").order("created_at", { ascending: false }).limit(5),
+          db!.from("meeting_requests").select("id,title,barangay_id,status,created_at").order("created_at", { ascending: false }).limit(10),
         ),
         result<{ id: string; title: string; kind: string; publish_at: string; barangay_id: string | null; organization_id: string | null }[]>(
-          db!.from("announcements").select("id,title,kind,publish_at,barangay_id,organization_id").eq("status", "published").lte("publish_at", new Date().toISOString()).order("publish_at", { ascending: false }).limit(5),
+          db!.from("announcements").select("id,title,kind,publish_at,barangay_id,organization_id").eq("status", "published").lte("publish_at", new Date().toISOString()).order("publish_at", { ascending: false }).limit(10),
         ),
       ]);
       const tasks = taskResult.rows;

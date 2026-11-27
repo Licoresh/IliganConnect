@@ -1,0 +1,9 @@
+-- Applied to the project through the Supabase MCP on 2026-11-27, in this order:
+-- 1) fill_enclosed_gaps       - every gap fully enclosed by barangays goes to the neighbour sharing the longest edge
+--                               (the Buru-un / Maria Cristina river gap goes to Buru-un).
+-- 2) smooth_coastal_outline   - within 200 m of the city outline: opening 50 m then closing 60 m on each barangay, keeping parts over 3 ha.
+-- 3) resolve_overlaps         - overlap goes to the barangay with the lower PSGC code.
+-- 4) fill_gaps_after_smoothing - repeat of step 1 on geometry snapped to a 5 cm grid.
+-- The live data is the source of truth; app/assets/iligan-barangays.json mirrors it.
+-- 5) fill_pier_notch_north_coast - closing 120 m inside 124.246..124.256E, 8.300..8.312N (Dalipuga pier notch).
+-- 6) poblacion_tambacan_border_follow_river - Poblacion/Tambacan border now follows the Iligan River north channel; the peninsula (about 9.6 ha) moved from Poblacion to Tambacan.

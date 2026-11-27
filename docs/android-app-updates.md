@@ -2,7 +2,7 @@
 
 ## App updates
 
-The resident app checks GitHub Releases when it opens and when it returns to the foreground, at most once every six hours. A newer stable APK is offered in the app; Android still asks the resident to confirm installation.
+The resident app checks GitHub Releases when it opens and when it returns to the foreground, at most once every six hours. A newer stable APK downloads inside the app and opens Android's package installer; residents must confirm installation and allow installs from Iligan Connect if Android asks.
 
 For each release:
 
